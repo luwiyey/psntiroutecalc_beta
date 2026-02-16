@@ -1,0 +1,5 @@
+{
+  "name": "PSNTI RouteCalc",
+  "description": "A comprehensive fare calculator and waybill tally system designed for bus conductors on the Bayambang to Baguio route, featuring distance-based pricing and automated remittance reporting.",
+  "requestFramePermissions": []
+}
