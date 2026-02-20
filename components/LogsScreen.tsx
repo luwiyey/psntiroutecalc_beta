@@ -15,7 +15,7 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
   return (
     <div className="flex flex-col min-h-full animate-fade-in bg-[#f8f6f6] dark:bg-black transition-all">
       {/* Red Header - Exactly as requested */}
-      <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40">
+      <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40 h-[72px]">
         <div className="flex items-center gap-3">
           <span className="material-icons text-white text-2xl">history</span>
           <h1 className="text-xl font-medium text-white tracking-tight">History Logs</h1>

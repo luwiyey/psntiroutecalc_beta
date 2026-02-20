@@ -54,8 +54,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     alert('Full Audit Report copied to clipboard! You can now paste this into your supervisor\'s message or email.');
   };
 
-  const isCM = settings.conductorMode;
-
   return (
     <div className="flex flex-col min-h-full animate-fade-in bg-[#f8f6f6] dark:bg-black transition-all">
       {/* Red Header - Exactly as requested */}
@@ -73,39 +71,39 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       </header>
 
       <div className="p-4 space-y-6 pb-24">
-        <div className={`bg-white dark:bg-night-charcoal rounded-2xl shadow-sm border border-primary/5 flex items-center transition-all mt-4 ${isCM ? 'p-10 gap-8' : 'p-5 gap-4'}`}>
-          <div className={`bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg transition-all ${isCM ? 'w-20 h-20' : 'w-12 h-12'}`}>
-            <span className={`material-icons ${isCM ? 'text-4xl' : 'text-xl'}`}>badge</span>
+        <div className={`bg-white dark:bg-night-charcoal rounded-2xl shadow-sm border border-primary/5 flex items-center transition-all mt-4 p-5 gap-4`}>
+          <div className={`bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg transition-all w-12 h-12`}>
+            <span className={`material-icons text-xl`}>badge</span>
           </div>
           <div>
             <p className="text-[10px] font-black text-primary uppercase tracking-widest">Active Conductor</p>
-            <p className={`font-black leading-tight dark:text-white ${isCM ? 'text-3xl' : 'text-lg'}`}>{authState.employeeName}</p>
-            <p className={`${isCM ? 'text-[12px]' : 'text-[10px]'} font-bold text-slate-400 mt-1`}>ID: {authState.employeeId}</p>
+            <p className={`font-black leading-tight dark:text-white text-lg`}>{authState.employeeName}</p>
+            <p className={`text-[10px] font-bold text-slate-400 mt-1`}>ID: {authState.employeeId}</p>
           </div>
         </div>
 
         <section className="space-y-3">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Live Audit</h2>
-          <div className={`bg-white dark:bg-night-charcoal rounded-3xl border border-primary/5 space-y-6 shadow-sm transition-all ${isCM ? 'p-12' : 'p-6'}`}>
+          <div className={`bg-white dark:bg-night-charcoal rounded-3xl border border-primary/5 space-y-6 shadow-sm transition-all p-6`}>
             <div className="grid grid-cols-2 gap-6">
                <div>
                  <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Trip Logs</p>
-                 <p className={`font-900 text-slate-800 dark:text-white ${isCM ? 'text-4xl' : 'text-2xl'}`}>₱{totalTripLogs.toLocaleString()}</p>
+                 <p className={`font-900 text-slate-800 dark:text-white text-2xl`}>₱{totalTripLogs.toLocaleString()}</p>
                </div>
                <div className="border-l pl-6 dark:border-white/10">
                  <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Waybill Tally</p>
-                 <p className={`font-900 text-green-500 ${isCM ? 'text-4xl' : 'text-2xl'}`}>₱{totalTallyGross.toLocaleString()}</p>
+                 <p className={`font-900 text-green-500 text-2xl`}>₱{totalTallyGross.toLocaleString()}</p>
                </div>
             </div>
             
             <div className="pt-6 border-t dark:border-white/5">
                <div className="flex justify-between items-end mb-6">
                   <p className="text-[11px] font-black text-primary uppercase tracking-widest">Total Due</p>
-                  <p className={`font-900 text-primary ${isCM ? 'text-6xl' : 'text-3xl'}`}>₱{(totalTripLogs + totalTallyGross).toLocaleString()}</p>
+                  <p className={`font-900 text-primary text-3xl`}>₱{(totalTripLogs + totalTallyGross).toLocaleString()}</p>
                </div>
                <button 
                  onClick={handleExportAudit}
-                 className={`w-full bg-zinc-900 dark:bg-black text-white rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 active:scale-95 shadow-xl transition-all ${isCM ? 'py-10 text-[13px]' : 'py-5'}`}
+                 className={`w-full bg-zinc-900 dark:bg-black text-white rounded-2xl font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 active:scale-95 shadow-xl transition-all py-5`}
                >
                  <span className="material-icons text-sm">ios_share</span>
                  Generate Remittance Report
@@ -117,30 +115,17 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         <section className="space-y-3">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Preferences</h2>
           <div className="bg-white dark:bg-night-charcoal rounded-2xl border border-primary/5 divide-y dark:divide-white/5 shadow-sm">
-            <div className={`flex items-center justify-between transition-all ${isCM ? 'p-10' : 'p-5'}`}>
+            <div className={`flex items-center justify-between transition-all p-5`}>
               <div className="flex items-center gap-4">
-                <div className={`bg-primary text-white p-3 rounded-xl ${isCM ? 'scale-125' : ''}`}><span className="material-icons">zoom_in</span></div>
+                <div className={`bg-primary/10 text-primary p-3 rounded-xl`}><span className="material-icons">dark_mode</span></div>
                 <div>
-                  <p className={`font-bold dark:text-white ${isCM ? 'text-2xl' : ''}`}>Conductor Mode</p>
-                  <p className={`${isCM ? 'text-[12px]' : 'text-xs'} text-slate-500`}>Large high-contrast display</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={settings.conductorMode} onChange={() => toggle('conductorMode')} className="sr-only peer" />
-                <div className={`bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary transition-all ${isCM ? 'w-16 h-8 after:h-7 after:w-7 after:top-0.5 after:left-0.5' : 'w-11 h-6 after:h-5 after:w-5 after:top-[2px] after:left-[2px]'} after:content-[''] after:absolute after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-full`} />
-              </label>
-            </div>
-            <div className={`flex items-center justify-between transition-all ${isCM ? 'p-10' : 'p-5'}`}>
-              <div className="flex items-center gap-4">
-                <div className={`bg-primary/10 text-primary p-3 rounded-xl ${isCM ? 'scale-125' : ''}`}><span className="material-icons">dark_mode</span></div>
-                <div>
-                  <p className={`font-bold dark:text-white ${isCM ? 'text-2xl' : ''}`}>Night Shift</p>
-                  <p className={`${isCM ? 'text-[12px]' : 'text-xs'} text-slate-500`}>Dark background mode</p>
+                  <p className={`font-bold dark:text-white`}>Night Shift</p>
+                  <p className={`text-xs text-slate-500`}>Dark background mode</p>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" checked={settings.isNightMode} onChange={() => toggle('isNightMode')} className="sr-only peer" />
-                <div className={`bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary transition-all ${isCM ? 'w-16 h-8 after:h-7 after:w-7 after:top-0.5 after:left-0.5' : 'w-11 h-6 after:h-5 after:w-5 after:top-[2px] after:left-[2px]'} after:content-[''] after:absolute after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-full`} />
+                <div className={`bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary transition-all w-11 h-6 after:h-5 after:w-5 after:top-[2px] after:left-[2px] after:content-[''] after:absolute after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-full`} />
               </label>
             </div>
           </div>

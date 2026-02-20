@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PSNTI RouteCalc</string>
+    <string name="title_activity_main">PSNTI RouteCalc</string>
+    <string name="package_name">com.psnti.routecalc</string>
+    <string name="custom_url_scheme">com.psnti.routecalc</string>
+</resources>

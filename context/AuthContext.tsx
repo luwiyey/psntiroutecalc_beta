@@ -2,10 +2,10 @@
 import React, { createContext, useContext, useState } from 'react';
 
 interface AuthState {
-  employeeName: string;
-  employeeId: string;
+  employeeName: string | null;
+  employeeId: string | null;
   deviceId: string;
-  isLoggedIn: boolean;
+  isAuthenticated: boolean;
 }
 
 interface AuthContextType {
@@ -18,18 +18,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
-    employeeName: 'Mark Joseph M. Galvan',
-    employeeId: '03-4450',
+    employeeName: null,
+    employeeId: null,
     deviceId: 'PH-PSNTI-9092',
-    isLoggedIn: true
+    isAuthenticated: false
   });
 
   const login = (name: string, id: string) => {
-    setAuthState(prev => ({ ...prev, employeeName: name, employeeId: id, isLoggedIn: true }));
+    setAuthState(prev => ({ ...prev, employeeName: name, employeeId: id, isAuthenticated: true }));
   };
 
   const logout = () => {
-    setAuthState(prev => ({ ...prev, isLoggedIn: false }));
+    setAuthState(prev => ({ ...prev, employeeName: null, employeeId: null, isAuthenticated: false }));
   };
 
   return (

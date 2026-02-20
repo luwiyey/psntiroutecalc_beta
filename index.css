@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Tailwind v4 theme tokens */
+@theme {
+  --color-primary: #c91629;
+  --color-night-charcoal: #1C1C1E;
+  --color-neon-green: #39FF14;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+}

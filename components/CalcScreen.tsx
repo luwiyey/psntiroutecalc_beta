@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { STOPS, MIN_REGULAR_FARE, MIN_DISCOUNT_FARE } from '../constants';
@@ -96,7 +95,7 @@ const CalcScreen: React.FC = () => {
       <header className="bg-primary text-white px-6 py-4 flex items-center justify-between shadow-lg sticky top-0 z-40 h-[72px]">
         <div className="flex items-center gap-3">
           <span className="material-icons text-2xl">calculate</span>
-          <h1 className="text-xl font-800 tracking-tight">Fare Calculator</h1>
+          <h1 className="text-xl font-medium tracking-tight">Fare Calculator</h1>
         </div>
         <button 
           onClick={() => setIsConductorCalcOpen(true)}

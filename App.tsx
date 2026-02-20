@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import { LandingScreen } from './components/LandingScreen';
+import LoginScreen from './components/LoginScreen';
 import CalcScreen from './components/CalcScreen';
 import BetweenStopsScreen from './components/BetweenStopsScreen';
 import TallyScreen from './components/TallyScreen';
@@ -14,9 +15,14 @@ type Tab = 'calc' | 'between' | 'tally' | 'logs' | 'setup';
 const AppContent: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('calc');
+  const { authState } = useAuth();
 
   if (!hasStarted) {
     return <LandingScreen onFinish={() => setHasStarted(true)} />;
+  }
+
+  if (!authState.isAuthenticated) {
+    return <LoginScreen />;
   }
 
   const handleExit = () => setActiveTab('calc');
