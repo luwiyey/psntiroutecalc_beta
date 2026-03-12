@@ -1,6 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { MIN_DISCOUNT_FARE, MIN_REGULAR_FARE, STOPS } from '../constants';
 import { TallyTrip, TallySheet } from '../types';
+import { calculateFare } from '../utils/fare';
+import TallyCalcOverlay from './TallyCalcOverlay';
 
 type EditorMode = 'standard' | 'batch';
 
@@ -9,7 +12,7 @@ interface Props {
 }
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
-  const { sessions, setSessions, tallyNav, setTallyNav, showToast } = useApp();
+  const { sessions, setSessions, tallyNav, setTallyNav, showToast, settings } = useApp();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -28,13 +31,34 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [batchSearch, setBatchSearch] = useState('');
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [isFooterCollapsed, setIsFooterCollapsed] = useState(true);
+  const [isTallyCalcOpen, setIsTallyCalcOpen] = useState(false);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
   const [sheetCompleteAlert, setSheetCompleteAlert] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number } | null>(null);
 
-  const commonFares = [20, 25, 30, 35, 40, 50, 60, 75, 100, 120, 150, 200];
-  const allBatchFares = useMemo(() => Array.from({ length: 211 }, (_, i) => i + 16), []);
+  const routeDistanceRange = useMemo(() => {
+    const allKm = STOPS.map(stop => stop.km);
+    return Math.max(...allKm) - Math.min(...allKm);
+  }, []);
+  const commonFares = useMemo(
+    () => [MIN_DISCOUNT_FARE, MIN_REGULAR_FARE, 25, 30, 35, 40, 50, 60, 75, 100, 120, 150, 200],
+    []
+  );
+  const allBatchFares = useMemo(() => {
+    const maxFare = calculateFare(routeDistanceRange, settings).reg;
+    return Array.from({ length: maxFare - MIN_DISCOUNT_FARE + 1 }, (_, i) => i + MIN_DISCOUNT_FARE);
+  }, [routeDistanceRange, settings]);
+  const batchFilterPresets = useMemo(() => {
+    const highestFare = allBatchFares[allBatchFares.length - 1];
+    return [
+      { label: 'ALL', value: '' },
+      { label: `${MIN_DISCOUNT_FARE}-39`, value: `${MIN_DISCOUNT_FARE}-39` },
+      { label: '40-79', value: '40-79' },
+      { label: '80-149', value: '80-149' },
+      { label: '150+', value: `150-${highestFare}` }
+    ];
+  }, [allBatchFares]);
   
   const filteredBatchFares = useMemo(() => {
     let fares = allBatchFares;
@@ -72,6 +96,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }, [activeSheet]);
 
   const sheetTotal = useMemo(() => activeSheet.slots.reduce((a, b) => a + b, 0), [activeSheet]);
+  const sheetEntryCount = useMemo(() => activeSheet.slots.filter(v => v > 0).length, [activeSheet]);
 
   const batchTotalGross = useMemo(() => {
     return (Object.entries(batchCounts) as [string, string][]).reduce((sum: number, [fare, count]) => {
@@ -83,9 +108,53 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const stagedTotalGross = useMemo(() => stagedStandardEntries.reduce((a, b) => a + b, 0), [stagedStandardEntries]);
   const currentTypingValue = parseInt(editValue) || 0;
   const grandTotalInEditor = useMemo(() => stagedTotalGross + batchTotalGross + currentTypingValue, [stagedTotalGross, batchTotalGross, currentTypingValue]);
+  const pendingEntriesPreview = useMemo(() => {
+    const previewEntries = [...stagedStandardEntries];
+    if (currentTypingValue > 0) previewEntries.push(currentTypingValue);
+    (Object.entries(batchCounts) as [string, string][])
+      .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+      .forEach(([fare, count]) => {
+        const qty = parseInt(count) || 0;
+        for (let i = 0; i < qty; i++) previewEntries.push(parseInt(fare));
+      });
+    return previewEntries;
+  }, [batchCounts, currentTypingValue, stagedStandardEntries]);
+  const projectedSlots = useMemo(() => {
+    if (pendingEntriesPreview.length === 0) return activeSheet.slots;
+    return activeSheet.slots.map((slot, idx) => {
+      const offset = idx - selectedSlotIdx;
+      if (offset >= 0 && offset < pendingEntriesPreview.length) return pendingEntriesPreview[offset];
+      return slot;
+    });
+  }, [activeSheet.slots, pendingEntriesPreview, selectedSlotIdx]);
+  const projectedBlockTotals = useMemo(() => {
+    return [0, 1, 2, 3].map(blockIdx => {
+      const slice = projectedSlots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      return slice.reduce((sum, value) => sum + value, 0);
+    });
+  }, [projectedSlots]);
+  const projectedBlockCounts = useMemo(() => {
+    return [0, 1, 2, 3].map(blockIdx => {
+      const slice = projectedSlots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      return slice.filter(value => value > 0).length;
+    });
+  }, [projectedSlots]);
+  const projectedSheetTotal = useMemo(() => projectedSlots.reduce((sum, value) => sum + value, 0), [projectedSlots]);
+  const projectedSheetEntryCount = useMemo(() => projectedSlots.filter(value => value > 0).length, [projectedSlots]);
   
   const currentTargetSlot = selectedSlotIdx + stagedStandardEntries.length;
-  const currentBlockIdx = Math.floor(currentTargetSlot / 25);
+  const selectedSlotNumber = selectedSlotIdx + 1;
+  const currentSlotNumber = Math.min(currentTargetSlot + 1, 100);
+  const nextSlotNumber = currentSlotNumber >= 100 ? null : currentSlotNumber + 1;
+  const currentSlotBlock = Math.floor((currentSlotNumber - 1) / 25) + 1;
+  const nextSlotBlock = nextSlotNumber ? Math.floor((nextSlotNumber - 1) / 25) + 1 : null;
+  const auditBlockIdx = currentSlotBlock - 1;
+  const blockPendingTotal = projectedBlockTotals[auditBlockIdx] - blockTotals[auditBlockIdx];
+  const sheetPendingTotal = projectedSheetTotal - sheetTotal;
+  const blockSlotsLeft = Math.max(0, 25 - projectedBlockCounts[auditBlockIdx]);
+  const sheetSlotsLeft = Math.max(0, 100 - projectedSheetEntryCount);
+  const previewEntryCount = pendingEntriesPreview.length;
+  const previewEndSlotNumber = previewEntryCount > 0 ? Math.min(selectedSlotIdx + previewEntryCount, 100) : currentSlotNumber;
 
   const handleAddTrip = () => {
     const lastTrip = activeSession.trips[activeSession.trips.length - 1];
@@ -176,12 +245,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const handleConfirmAll = () => {
-    const finalEntries = [...stagedStandardEntries];
-    if (currentTypingValue > 0) finalEntries.push(currentTypingValue);
-    (Object.entries(batchCounts) as [string, string][]).sort((a, b) => parseInt(a[0]) - parseInt(b[0])).forEach(([fare, count]) => {
-      const qty = parseInt(count) || 0;
-      for (let i = 0; i < qty; i++) finalEntries.push(parseInt(fare));
-    });
+    const finalEntries = [...pendingEntriesPreview];
     if (finalEntries.length === 0) return;
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
@@ -228,6 +292,23 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setSheetCompleteAlert(false);
   };
 
+  const handleRemoveStagedEntry = (entryIdx: number) => {
+    setStagedStandardEntries(prev => prev.filter((_, idx) => idx !== entryIdx));
+    setIsFlashing(false);
+    setLastPunched(null);
+    setBlockAlert(null);
+    setSheetCompleteAlert(false);
+    inputRef.current?.focus();
+  };
+
+  const handleApplyCalcTotal = (value: number) => {
+    setEditorMode('standard');
+    setEditValue(Math.trunc(value).toString());
+    setIsFlashing(false);
+    setLastPunched(Math.trunc(value));
+    inputRef.current?.focus();
+  };
+
   return (
     <div className="flex flex-col min-h-full bg-slate-50 dark:bg-black transition-all overflow-hidden">
       <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40 h-[72px]">
@@ -235,12 +316,21 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
           <span className="material-icons text-white text-2xl">fact_check</span>
           <h1 className="text-xl font-medium text-white tracking-tight">Tally Sheet</h1>
         </div>
-        <button 
-          onClick={onExit}
-          className="bg-white/10 hover:bg-white/20 text-white w-12 h-12 rounded-2xl transition-colors flex items-center justify-center border border-white/10"
-        >
-          <span className="material-icons text-2xl leading-none">close</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsTallyCalcOpen(true)}
+            className="bg-white/10 hover:bg-white/20 text-white w-12 h-12 rounded-2xl transition-colors flex items-center justify-center border border-white/10"
+            title="Open tally calculator"
+          >
+            <span className="material-icons text-2xl leading-none">calculate</span>
+          </button>
+          <button 
+            onClick={onExit}
+            className="bg-white/10 hover:bg-white/20 text-white w-12 h-12 rounded-2xl transition-colors flex items-center justify-center border border-white/10"
+          >
+            <span className="material-icons text-2xl leading-none">close</span>
+          </button>
+        </div>
       </header>
 
       {/* Waybill Main Tally Grid Headers */}
@@ -334,7 +424,15 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
             {/* MODAL HEADER */}
             <div className="shrink-0 flex items-center justify-between px-8 pt-8 pb-4">
                <h1 className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Waybill Entry</h1>
-               <button onClick={() => setIsEditorOpen(false)} className="bg-slate-100 dark:bg-white/10 p-2 rounded-full"><span className="material-icons text-slate-600 dark:text-white text-lg">close</span></button>
+               <div className="flex items-center gap-2">
+                 <button
+                   onClick={() => setIsTallyCalcOpen(true)}
+                   className="px-3 py-2 rounded-full bg-primary/10 text-primary text-[9px] font-black uppercase tracking-widest active:scale-95"
+                 >
+                   Calc
+                 </button>
+                 <button onClick={() => setIsEditorOpen(false)} className="bg-slate-100 dark:bg-white/10 p-2 rounded-full"><span className="material-icons text-slate-600 dark:text-white text-lg">close</span></button>
+               </div>
             </div>
 
             {/* SUMMARY STATS & PUNCH DISPLAY (FIXED) */}
@@ -342,13 +440,102 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               <div className="flex gap-2 mb-4">
                 <div className="flex-1 bg-slate-50 dark:bg-black/30 p-3 rounded-2xl border border-slate-100 dark:border-white/5">
                   <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{activeTrip.direction === 'north' ? 'BAGUIO' : 'BAYAMBANG'} {activeTrip.name.toUpperCase()}</p>
-                  <h2 className="text-[11px] font-900 text-slate-800 dark:text-white uppercase leading-none">S{tallyNav.sheetIdx + 1} B{currentBlockIdx + 1} SLOT {currentTargetSlot + 1}</h2>
+                  <h2 className="text-[11px] font-900 text-slate-800 dark:text-white uppercase leading-none">Sheet {tallyNav.sheetIdx + 1} • Block {currentSlotBlock}</h2>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-2">
+                    Start Slot {selectedSlotNumber} {stagedStandardEntries.length > 0 ? `• ${stagedStandardEntries.length} staged` : '• ready'}
+                  </p>
                 </div>
                 <div className="flex-1 bg-zinc-900 dark:bg-black p-3 rounded-2xl border-b-[2px] border-black/50 shadow-lg">
                   <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Gross</p>
                   <p className="text-lg font-900 text-white leading-none">₱{grandTotalInEditor}</p>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 mt-2">Current Block B{currentSlotBlock}</p>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3">
+                  <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
+                  <p className="text-base font-900 text-primary leading-none mt-2">B{currentSlotBlock} • Slot {currentSlotNumber}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-4 py-3">
+                  <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
+                  <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">
+                    {nextSlotNumber ? `B${nextSlotBlock} • Slot ${nextSlotNumber}` : 'Sheet Full'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block 25 Audit</p>
+                      <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">Block {currentSlotBlock}</p>
+                    </div>
+                    <span className={`text-[8px] font-black uppercase tracking-widest ${blockSlotsLeft === 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                      {blockSlotsLeft === 0 ? 'Ready' : `${blockSlotsLeft} left`}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Filled</span>
+                      <span className="text-slate-700 dark:text-slate-200">{blockCounts[auditBlockIdx]} to {projectedBlockCounts[auditBlockIdx]}/25</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Total Now</span>
+                      <span className="text-slate-700 dark:text-slate-200">₱{blockTotals[auditBlockIdx]}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>After Save</span>
+                      <span className="text-primary">₱{projectedBlockTotals[auditBlockIdx]}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Delta</span>
+                      <span className={blockPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                        {blockPendingTotal >= 0 ? '+' : '-'}₱{Math.abs(blockPendingTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet 100 Audit</p>
+                      <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">Sheet {tallyNav.sheetIdx + 1}</p>
+                    </div>
+                    <span className={`text-[8px] font-black uppercase tracking-widest ${sheetSlotsLeft === 0 ? 'text-emerald-500' : 'text-primary/70'}`}>
+                      {sheetSlotsLeft === 0 ? 'Ready' : `${sheetSlotsLeft} left`}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Filled</span>
+                      <span className="text-slate-700 dark:text-slate-200">{sheetEntryCount} to {projectedSheetEntryCount}/100</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Total Now</span>
+                      <span className="text-slate-700 dark:text-slate-200">₱{sheetTotal}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>After Save</span>
+                      <span className="text-primary">₱{projectedSheetTotal}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      <span>Delta</span>
+                      <span className={sheetPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                        {sheetPendingTotal >= 0 ? '+' : '-'}₱{Math.abs(sheetPendingTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-4">
+                {previewEntryCount > 0
+                  ? `Queue covers slots ${selectedSlotNumber} to ${previewEndSlotNumber}`
+                  : `Next punch goes to slot ${currentSlotNumber}`}
+              </p>
 
               <button 
                 onClick={() => inputRef.current?.focus()} 
@@ -379,10 +566,20 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                         <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Entry Tape</p>
                         <button onClick={() => setStagedStandardEntries([])} className="text-[7px] font-black uppercase text-primary">Clear</button>
                       </div>
-                      <div className="grid grid-cols-5 gap-1.5 max-h-[80px] overflow-y-auto visible-scrollbar">
+                      <div className="grid grid-cols-3 gap-2 max-h-[164px] overflow-y-auto visible-scrollbar">
                         {stagedStandardEntries.map((fare, i) => (
-                          <div key={i} className={`h-8 rounded-lg flex flex-col items-center justify-center border text-[9px] font-black shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
-                            ₱{fare}
+                          <div key={`${fare}-${i}`} className={`relative min-h-[52px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
+                            <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
+                            <button
+                              onClick={() => handleRemoveStagedEntry(i)}
+                              className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-white/80 dark:bg-black/50 flex items-center justify-center text-slate-500 active:scale-90"
+                              title={`Delete slot ${selectedSlotIdx + i + 1}`}
+                            >
+                              <span className="material-icons text-[11px] leading-none">close</span>
+                            </button>
+                            <div className="flex h-full items-center justify-center pt-2">
+                              <span className="text-[11px] font-black">₱{fare}</span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -433,10 +630,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     </div>
 
                     <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-                      {['ALL', '16-39', '40-79', '80-149', '150+'].map(label => {
-                        const val = label === 'ALL' ? '' : (label === '150+' ? '150-226' : label);
+                      {batchFilterPresets.map(({ label, value }) => {
                         return (
-                          <button key={label} onClick={() => setBatchSearch(val)} className={`px-3 py-1.5 rounded-full font-black text-[7px] uppercase tracking-widest border whitespace-nowrap ${batchSearch === val ? 'bg-primary border-primary text-white' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/5 text-slate-400'}`}>
+                          <button key={label} onClick={() => setBatchSearch(value)} className={`px-3 py-1.5 rounded-full font-black text-[7px] uppercase tracking-widest border whitespace-nowrap ${batchSearch === value ? 'bg-primary border-primary text-white' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/5 text-slate-400'}`}>
                             {label}
                           </button>
                         );
@@ -495,6 +691,20 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                    <div className="flex items-center justify-between mb-4">
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Final Audit Review</p>
                      <button onClick={() => setIsFooterCollapsed(true)} className="p-1"><span className="material-icons text-slate-400">expand_more</span></button>
+                   </div>
+                   <div className="grid grid-cols-3 gap-2 mb-4">
+                     <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 px-3 py-3">
+                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Pending</p>
+                       <p className="text-sm font-900 text-primary mt-2">₱{grandTotalInEditor}</p>
+                     </div>
+                     <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 px-3 py-3">
+                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block Total</p>
+                       <p className="text-sm font-900 text-slate-800 dark:text-white mt-2">₱{projectedBlockTotals[auditBlockIdx]}</p>
+                     </div>
+                     <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-3 py-3">
+                       <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet Total</p>
+                       <p className="text-sm font-900 text-primary mt-2">₱{projectedSheetTotal}</p>
+                     </div>
                    </div>
                    <button 
                      onClick={handleConfirmAll} 
@@ -563,6 +773,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
            </div>
         </div>
       )}
+
+      <TallyCalcOverlay
+        isOpen={isTallyCalcOpen}
+        onClose={() => setIsTallyCalcOpen(false)}
+        initialInput={parseInt(editValue, 10) || 0}
+        onApplyTotal={isEditorOpen ? handleApplyCalcTotal : undefined}
+      />
     </div>
   );
 };

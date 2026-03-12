@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { STOPS, MIN_REGULAR_FARE, MIN_DISCOUNT_FARE } from '../constants';
+import { STOPS } from '../constants';
 import StopPickerOverlay from './StopPickerOverlay';
+import { calculateFare } from '../utils/fare';
 
 interface Props {
   onExit?: () => void;
@@ -29,19 +30,10 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
 
   const totalDist = Math.abs(estimatedKM - originStop.km);
   
-  const fares = useMemo(() => {
-    if (totalDist === 0) return { reg: 0, disc: 0 };
-    let regBase = totalDist * settings.regularRate;
-    let discBase = totalDist * settings.discountRate;
-    
-    const reg = Math.ceil(regBase - 0.5);
-    const disc = Math.ceil(discBase - 0.5);
-    
-    return { 
-      reg: Math.max(reg, MIN_REGULAR_FARE), 
-      disc: Math.max(disc, MIN_DISCOUNT_FARE) 
-    };
-  }, [totalDist, settings]);
+  const fares = useMemo(
+    () => calculateFare(totalDist, settings),
+    [settings.discountRate, settings.regularRate, totalDist]
+  );
 
   const handleSwap = (e: React.MouseEvent) => {
     e.stopPropagation();

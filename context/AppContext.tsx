@@ -5,10 +5,30 @@ import { STOPS, DEFAULT_SETTINGS } from '../constants';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const normalizeSettings = (savedSettings: Partial<AppSettings> | null): AppSettings => {
+  if (!savedSettings) {
+    return DEFAULT_SETTINGS;
+  }
+
+  const merged = { ...DEFAULT_SETTINGS, ...savedSettings };
+  const needsFareMigration = savedSettings.fareVersion !== DEFAULT_SETTINGS.fareVersion;
+
+  if (!needsFareMigration) {
+    return merged;
+  }
+
+  return {
+    ...merged,
+    fareVersion: DEFAULT_SETTINGS.fareVersion,
+    regularRate: DEFAULT_SETTINGS.regularRate,
+    discountRate: DEFAULT_SETTINGS.discountRate
+  };
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('psnti_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    return normalizeSettings(saved ? JSON.parse(saved) : null);
   });
 
   const [origin, setOrigin] = useState(STOPS[0].name);

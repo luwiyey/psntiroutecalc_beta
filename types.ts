@@ -41,6 +41,7 @@ export interface TallySession {
 }
 
 export interface AppSettings {
+  fareVersion: number;
   regularRate: number;
   discountRate: number;
   isNightMode: boolean;

@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { STOPS, MIN_REGULAR_FARE, MIN_DISCOUNT_FARE } from '../constants';
+import { STOPS } from '../constants';
 import StopPickerOverlay from './StopPickerOverlay';
 import ManualKMOverlay from './ManualKMOverlay';
 import ConductorCalcOverlay from './ConductorCalcOverlay';
+import { calculateFare, formatFareRate } from '../utils/fare';
 
 const CalcScreen: React.FC = () => {
   const { settings, origin, destination, setOrigin, setDestination, addRecord, setActiveFare, showToast } = useApp();
@@ -22,26 +23,10 @@ const CalcScreen: React.FC = () => {
     return destStop.km > originStop.km ? 'Northbound (Toward Baguio)' : 'Southbound (Toward Bayambang)';
   }, [originStop, destStop]);
 
-  const calculation = useMemo(() => {
-    if (distance === 0) return { reg: 0, disc: 0, isMinApplied: false, rawReg: 0, rawDisc: 0 };
-    
-    const rawReg = distance * settings.regularRate;
-    const rawDisc = distance * settings.discountRate;
-
-    const roundedReg = Math.ceil(rawReg - 0.5);
-    const roundedDisc = Math.ceil(rawDisc - 0.5);
-
-    const finalReg = Math.max(roundedReg, MIN_REGULAR_FARE);
-    const finalDisc = Math.max(roundedDisc, MIN_DISCOUNT_FARE);
-
-    return { 
-      reg: finalReg, 
-      disc: finalDisc,
-      isMinApplied: finalReg === MIN_REGULAR_FARE || finalDisc === MIN_DISCOUNT_FARE,
-      rawReg,
-      rawDisc
-    };
-  }, [distance, settings]);
+  const calculation = useMemo(
+    () => calculateFare(distance, settings),
+    [distance, settings.discountRate, settings.regularRate]
+  );
 
   useEffect(() => {
     setActiveFare(calculation.reg);
@@ -208,8 +193,8 @@ const CalcScreen: React.FC = () => {
                </button>
                {showBreakdown && (
                  <div className="space-y-1 animate-fade-in text-[10px] font-black text-slate-700/80 dark:text-slate-400/80 uppercase">
-                    <p>• {formatKM(distance)} km × ₱{settings.regularRate.toFixed(2)} = ₱{calculation.rawReg.toFixed(2)} (Reg)</p>
-                    <p>• {formatKM(distance)} km × ₱{settings.discountRate.toFixed(2)} = ₱{calculation.rawDisc.toFixed(2)} (Disc)</p>
+                    <p>• {formatKM(distance)} km × ₱{formatFareRate(settings.regularRate)} = ₱{calculation.rawReg.toFixed(2)} (Reg)</p>
+                    <p>• {formatKM(distance)} km × ₱{formatFareRate(settings.discountRate)} = ₱{calculation.rawDisc.toFixed(2)} (Disc)</p>
                     <p>• Final: Rounded to nearest Peso {calculation.isMinApplied && ' (Min. Applied)'}</p>
                  </div>
                )}

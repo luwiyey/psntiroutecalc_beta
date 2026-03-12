@@ -25,5 +25,21 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "App.tsx",
+    "index.tsx",
+    "components/**/*",
+    "context/**/*",
+    "utils/**/*",
+    "constants.ts",
+    "types.ts",
+    "vite.config.ts",
+    "capacitor.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "android"
+  ]
 }

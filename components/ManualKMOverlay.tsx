@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { MIN_REGULAR_FARE, MIN_DISCOUNT_FARE } from '../constants';
+import { STOPS } from '../constants';
+import { calculateFare } from '../utils/fare';
 
 interface Props {
   isOpen: boolean;
@@ -26,31 +27,38 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  const routeMinKm = useMemo(() => Math.min(...STOPS.map(stop => stop.km)), []);
+  const routeMaxKm = useMemo(() => Math.max(...STOPS.map(stop => stop.km)), []);
+  const parsedPickup = useMemo(() => parseFloat(pickup), [pickup]);
+  const parsedDest = useMemo(() => parseFloat(dest), [dest]);
+  const isInputNumeric = !isNaN(parsedPickup) && !isNaN(parsedDest);
+  const isWithinRouteRange = useMemo(() => {
+    if (!isInputNumeric) return false;
+    return (
+      parsedPickup >= routeMinKm &&
+      parsedPickup <= routeMaxKm &&
+      parsedDest >= routeMinKm &&
+      parsedDest <= routeMaxKm
+    );
+  }, [isInputNumeric, parsedPickup, parsedDest, routeMinKm, routeMaxKm]);
+
   const distance = useMemo(() => {
-    const p = parseFloat(pickup);
-    const d = parseFloat(dest);
-    if (isNaN(p) || isNaN(d)) return 0;
-    return Math.abs(d - p);
-  }, [pickup, dest]);
+    if (!isInputNumeric) return 0;
+    return Math.abs(parsedDest - parsedPickup);
+  }, [isInputNumeric, parsedDest, parsedPickup]);
 
-  const calculation = useMemo(() => {
-    if (distance === 0) return { reg: 0, disc: 0, isMin: false };
-    
-    const rawReg = distance * settings.regularRate;
-    const rawDisc = distance * settings.discountRate;
-    
-    const roundedReg = Math.ceil(rawReg - 0.5);
-    const roundedDisc = Math.ceil(rawDisc - 0.5);
+  const canSubmit = distance > 0 && isWithinRouteRange;
 
-    const finalReg = Math.max(roundedReg, MIN_REGULAR_FARE);
-    const finalDisc = Math.max(roundedDisc, MIN_DISCOUNT_FARE);
+  const sanitizeKmInput = (value: string) =>
+    value
+      .replace(/[^\d.]/g, '')
+      .replace(/(\..*)\./g, '$1')
+      .slice(0, 6);
 
-    return {
-      reg: finalReg,
-      disc: finalDisc,
-      isMin: finalReg === MIN_REGULAR_FARE || finalDisc === MIN_DISCOUNT_FARE
-    };
-  }, [distance, settings]);
+  const calculation = useMemo(
+    () => calculateFare(distance, settings),
+    [distance, settings.discountRate, settings.regularRate]
+  );
 
   const handleKeypadPress = (key: string) => {
     const isPickup = activeInput === 'pickup';
@@ -60,7 +68,7 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     if (key === 'DEL') {
       setter(current.slice(0, -1));
     } else if (key === '.') {
-      if (!current.includes('.') && current.length < 3) setter(current + '.');
+      if (!current.includes('.') && current.length < 6) setter(current + '.');
     } else if (key === 'CLR') {
       setter('');
     } else if (key === 'NEXT') {
@@ -68,12 +76,12 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         setActiveInput('dest');
         destRef.current?.focus();
       }
-    } else if (current.length < 3) {
+    } else if (current.length < 6) {
       const newVal = current + key;
-      const finalVal = newVal.slice(0, 3);
+      const finalVal = sanitizeKmInput(newVal);
       setter(finalVal);
 
-      if (isPickup && finalVal.length === 3) {
+      if (isPickup && finalVal.length >= 3) {
         setTimeout(() => {
           setActiveInput('dest');
           destRef.current?.focus();
@@ -83,7 +91,7 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const handleLog = () => {
-    if (distance <= 0) return;
+    if (!canSubmit) return;
     addRecord({
       origin: `KM ${pickup}`,
       destination: `KM ${dest}`,
@@ -134,10 +142,10 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="flex items-center justify-between">
               <input
                 ref={pickupRef}
-                type="number"
+                type="text"
                 inputMode={useCustomKeypad ? "none" : "decimal"}
                 placeholder="---"
-                maxLength={3}
+                maxLength={6}
                 className="w-full bg-transparent border-none p-0 text-3xl font-black focus:ring-0 placeholder-slate-300 dark:placeholder-slate-700"
                 value={pickup}
                 onFocus={() => {
@@ -146,9 +154,9 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 }}
                 onBlur={() => setIsKeyboardVisible(false)}
                 onChange={(e) => {
-                  const val = e.target.value.slice(0, 3);
+                  const val = sanitizeKmInput(e.target.value);
                   setPickup(val);
-                  if (val.length === 3) {
+                  if (val.length >= 3) {
                     setActiveInput('dest');
                     destRef.current?.focus();
                   }
@@ -168,10 +176,10 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="flex items-center justify-between">
               <input
                 ref={destRef}
-                type="number"
+                type="text"
                 inputMode={useCustomKeypad ? "none" : "decimal"}
                 placeholder="---"
-                maxLength={3}
+                maxLength={6}
                 className="w-full bg-transparent border-none p-0 text-3xl font-black focus:ring-0 placeholder-slate-300 dark:placeholder-slate-700"
                 value={dest}
                 onFocus={() => {
@@ -179,7 +187,7 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                   if (!useCustomKeypad) setIsKeyboardVisible(true);
                 }}
                 onBlur={() => setIsKeyboardVisible(false)}
-                onChange={(e) => setDest(e.target.value.slice(0, 3))}
+                onChange={(e) => setDest(sanitizeKmInput(e.target.value))}
               />
               {dest && (
                 <button onClick={(e) => { e.stopPropagation(); setDest(''); }} className="material-icons text-slate-400 text-lg">cancel</button>
@@ -229,10 +237,20 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="w-12 h-7 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full" />
           </label>
         </div>
+        {!isInputNumeric && (pickup !== '' || dest !== '') && (
+          <p className="text-center text-[10px] font-black uppercase tracking-wide text-red-500">
+            Enter valid numeric KM values
+          </p>
+        )}
+        {isInputNumeric && !isWithinRouteRange && (
+          <p className="text-center text-[10px] font-black uppercase tracking-wide text-red-500">
+            KM must be within route range ({routeMinKm} to {routeMaxKm})
+          </p>
+        )}
 
         <button 
           onClick={handleLog}
-          disabled={distance <= 0}
+          disabled={!canSubmit}
           className="w-full bg-primary disabled:bg-slate-300 dark:disabled:bg-white/10 text-white py-6 rounded-3xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all text-sm mb-4"
         >
           {isFavorite ? 'Confirm & Save Favorite' : 'Record Distance Entry'}

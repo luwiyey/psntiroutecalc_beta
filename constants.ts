@@ -1,8 +1,11 @@
 
-import { Stop } from './types';
+import type { AppSettings, Stop } from './types';
 
-export const MIN_REGULAR_FARE = 20;
-export const MIN_DISCOUNT_FARE = 16;
+export const FARE_SETTINGS_VERSION = 3;
+export const ORDINARY_FARE_PER_KM = 2.19;
+export const DISCOUNT_RATE_MULTIPLIER = 0.8;
+export const MIN_REGULAR_FARE = 22;
+export const MIN_DISCOUNT_FARE = 18;
 
 export const STOPS: Stop[] = [
   { name: 'Bayambang', km: 152, isTerminal: true },
@@ -44,9 +47,10 @@ export const STOPS: Stop[] = [
   { name: 'Baguio', km: 271, isTerminal: true }
 ];
 
-export const DEFAULT_SETTINGS = {
-  regularRate: 1.90,
-  discountRate: 1.52,
+export const DEFAULT_SETTINGS: AppSettings = {
+  fareVersion: FARE_SETTINGS_VERSION,
+  regularRate: ORDINARY_FARE_PER_KM,
+  discountRate: Number((ORDINARY_FARE_PER_KM * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
   isNightMode: false,
   conductorMode: true
 };
