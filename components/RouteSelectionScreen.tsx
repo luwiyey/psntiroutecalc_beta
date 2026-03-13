@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   AIRCON_BAYAMBANG_ROUTE_ID,
   CABANATUAN_ROUTE_ID,
+  CABANATUAN_VIA_SAN_JOSE_ROUTE_ID,
   ORDINARY_BAYAMBANG_ROUTE_ID,
   TARLAC_ROUTE_ID
 } from '../constants';
@@ -33,6 +34,10 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     () => routes.find(route => route.id === CABANATUAN_ROUTE_ID),
     [routes]
   );
+  const cabanatuanViaSanJoseRoute = useMemo(
+    () => routes.find(route => route.id === CABANATUAN_VIA_SAN_JOSE_ROUTE_ID),
+    [routes]
+  );
 
   const handleSelectRoute = (routeId: string) => {
     selectRoute(routeId);
@@ -48,32 +53,33 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     {
       id: 'tarlac',
       label: 'Tarlac ↔ Baguio',
-      description: 'Aircon fares ready',
       badge: 'Use Route',
       status: tarlacRoute?.status ?? 'locked',
-      lockedReason: tarlacRoute?.lockedReason,
       onSelect: () => tarlacRoute && handleSelectRoute(tarlacRoute.id)
     },
     {
       id: 'bayambang',
       label: 'Bayambang ↔ Baguio',
-      description: 'Choose ordinary or aircon after tap',
       badge: 'Choose Type',
       status:
         bayambangRoutes.length === 2 &&
         bayambangRoutes.every(route => route.status === 'ready')
           ? 'ready'
           : 'locked',
-      lockedReason: 'Service data is not ready yet',
       onSelect: () => setIsBayambangPickerOpen(true)
     },
     {
       id: 'cabanatuan',
-      label: 'Cabanatuan via San Jose ↔ Baguio',
-      description: cabanatuanRoute?.lockedReason ?? 'Waiting for route data',
+      label: 'Cabanatuan ↔ Baguio',
       badge: 'Data Pending',
       status: cabanatuanRoute?.status ?? 'locked',
-      lockedReason: cabanatuanRoute?.lockedReason,
+      onSelect: () => undefined
+    },
+    {
+      id: 'cabanatuan-via-san-jose',
+      label: 'Cabanatuan via San Jose ↔ Baguio',
+      badge: 'Data Pending',
+      status: cabanatuanViaSanJoseRoute?.status ?? 'locked',
       onSelect: () => undefined
     }
   ] as const;
@@ -115,9 +121,6 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
                       {isLocked ? 'Locked Route' : 'Ready To Use'}
                     </p>
                     <h2 className="mt-3 text-xl font-black leading-tight">{card.label}</h2>
-                    <p className={`mt-2 text-sm font-bold ${isLocked ? 'text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {isLocked ? card.lockedReason ?? card.description : card.description}
-                    </p>
                   </div>
                   <div
                     className={`shrink-0 rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
@@ -147,9 +150,6 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Bayambang ↔ Baguio</p>
                 <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Choose Service</h2>
-                <p className="mt-2 text-sm font-bold text-slate-500 dark:text-slate-400">
-                  Select whether you are handling ordinary or aircon for this corridor.
-                </p>
               </div>
               <button
                 onClick={() => setIsBayambangPickerOpen(false)}
@@ -172,11 +172,6 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
                         {route.id === ORDINARY_BAYAMBANG_ROUTE_ID ? 'Ordinary' : 'Aircon'}
                       </p>
                       <h3 className="mt-2 text-lg font-black text-slate-900 dark:text-white">{route.label}</h3>
-                      <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                        {route.id === ORDINARY_BAYAMBANG_ROUTE_ID
-                          ? 'Legacy ordinary computation'
-                          : 'Same computation and minimum as Tarlac'}
-                      </p>
                     </div>
                     <div className="rounded-2xl bg-primary/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary">
                       Choose

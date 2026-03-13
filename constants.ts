@@ -5,7 +5,8 @@ export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 
 export const ORDINARY_BAYAMBANG_ROUTE_ID = 'ordinary-bayambang-baguio';
 export const TARLAC_ROUTE_ID = 'tarlac-baguio';
-export const CABANATUAN_ROUTE_ID = 'cabanatuan-via-san-jose-baguio';
+export const CABANATUAN_ROUTE_ID = 'cabanatuan-baguio';
+export const CABANATUAN_VIA_SAN_JOSE_ROUTE_ID = 'cabanatuan-via-san-jose-baguio';
 export const AIRCON_BAYAMBANG_ROUTE_ID = 'aircon-bayambang-baguio';
 export const DEFAULT_ROUTE_ID = ORDINARY_BAYAMBANG_ROUTE_ID;
 
@@ -137,6 +138,20 @@ export const ROUTES: RouteProfile[] = [
   },
   {
     id: CABANATUAN_ROUTE_ID,
+    label: 'Cabanatuan ↔ Baguio',
+    shortLabel: 'Cabanatuan',
+    status: 'locked',
+    lockedReason: 'Waiting for route data',
+    stops: [],
+    fare: {
+      regularRate: 0,
+      discountRate: 0,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56
+    }
+  },
+  {
+    id: CABANATUAN_VIA_SAN_JOSE_ROUTE_ID,
     label: 'Cabanatuan via San Jose ↔ Baguio',
     shortLabel: 'Cabanatuan via San Jose',
     status: 'locked',
