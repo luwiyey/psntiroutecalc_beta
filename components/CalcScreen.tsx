@@ -55,49 +55,73 @@ const CalcScreen: React.FC = () => {
     setNearestStopMatch(findNearestMappedStop(activeRoute.stops, currentLocation));
   }, [activeRoute.stops, currentLocation]);
 
-  const fareGuideLines = useMemo(() => {
+  const fareGuide = useMemo(() => {
     const previousFare = activeRoute.fare.previousFare;
-    const roundingLine =
-      activeRoute.fare.roundingMode === 'standard'
-        ? 'Final fare uses standard rounding to the nearest peso.'
-        : 'Final fare uses the legacy route rounding before minimum fare.';
+    const sections: { title: string; rows: { label: string; value: string }[] }[] = [];
+    const minimumRows =
+      typeof activeRoute.fare.minimumRegularFare === 'number' &&
+      typeof activeRoute.fare.minimumDiscountFare === 'number'
+        ? [
+            { label: 'Regular', value: `${activeRoute.fare.minimumRegularFare.toFixed(0)}` },
+            { label: 'Discounted', value: `${activeRoute.fare.minimumDiscountFare.toFixed(0)}` }
+          ]
+        : [];
 
     if (previousFare) {
       const regularIncrease = activeRoute.fare.regularRate - previousFare.regularRate;
       const discountedIncrease = activeRoute.fare.discountRate - previousFare.discountRate;
-      const minimumRegularIncrease =
-        typeof activeRoute.fare.minimumRegularFare === 'number' &&
-        typeof previousFare.minimumRegularFare === 'number'
-          ? activeRoute.fare.minimumRegularFare - previousFare.minimumRegularFare
-          : null;
-      const minimumDiscountIncrease =
-        typeof activeRoute.fare.minimumDiscountFare === 'number' &&
-        typeof previousFare.minimumDiscountFare === 'number'
-          ? activeRoute.fare.minimumDiscountFare - previousFare.minimumDiscountFare
-          : null;
 
-      return [
-        minimumRegularIncrease !== null && minimumDiscountIncrease !== null
-          ? `Minimum: +${minimumRegularIncrease.toFixed(0)} pesos regular / +${minimumDiscountIncrease.toFixed(0)} pesos discounted.`
-          : 'Minimum fare follows the current route setup.',
-        `Beyond minimum: +${regularIncrease.toFixed(2)}/km regular, +${discountedIncrease.toFixed(2)}/km discounted.`,
-        `Current rate: ${formatFareRate(activeRoute.fare.regularRate)}/km regular, ${formatFareRate(activeRoute.fare.discountRate)}/km discounted.`,
-        roundingLine
-      ];
+      if (minimumRows.length > 0) {
+        sections.push({
+          title: 'Minimum Fare',
+          rows: minimumRows
+        });
+      }
+
+      sections.push({
+        title: 'Rate Beyond Minimum',
+        rows: [
+          { label: 'Regular', value: `+${regularIncrease.toFixed(2)} per km` },
+          { label: 'Discounted', value: `+${discountedIncrease.toFixed(2)} per km` }
+        ]
+      });
+
+      sections.push({
+        title: 'Current Rate',
+        rows: [
+          { label: 'Regular', value: `${formatFareRate(activeRoute.fare.regularRate)} per km` },
+          { label: 'Discounted', value: `${formatFareRate(activeRoute.fare.discountRate)} per km` }
+        ]
+      });
+
+      return {
+        sections,
+        note: 'Final: rounded to nearest peso.'
+      };
     }
 
-    const minimumLine =
+    if (
       typeof activeRoute.fare.minimumRegularFare === 'number' &&
       typeof activeRoute.fare.minimumDiscountFare === 'number'
-        ? `Minimum fares: ${activeRoute.fare.minimumRegularFare} regular / ${activeRoute.fare.minimumDiscountFare} discounted.`
-        : 'No minimum fare configured for this route.';
+    ) {
+      sections.push({
+        title: 'Minimum Fare',
+        rows: minimumRows
+      });
+    }
 
-    return [
-      `Formula: KM difference x ${formatFareRate(activeRoute.fare.regularRate)} regular.`,
-      `Discounted: ${formatFareRate(activeRoute.fare.discountRate)}/km.`,
-      roundingLine,
-      minimumLine
-    ];
+    sections.push({
+      title: 'Current Rate',
+      rows: [
+        { label: 'Regular', value: `${formatFareRate(activeRoute.fare.regularRate)} per km` },
+        { label: 'Discounted', value: `${formatFareRate(activeRoute.fare.discountRate)} per km` }
+      ]
+    });
+
+    return {
+      sections,
+      note: 'Final: rounded to nearest peso.'
+    };
   }, [activeRoute]);
 
   const formatKM = (km: number) => {
@@ -330,10 +354,10 @@ const CalcScreen: React.FC = () => {
                 {showBreakdown ? 'Hide Breakdown' : 'Show Breakdown'}
               </button>
               {showBreakdown && (
-                <div className="space-y-1 animate-fade-in text-[10px] font-black text-slate-700/80 dark:text-slate-400/80 uppercase">
+                <div className="space-y-1 animate-fade-in text-[10px] font-black text-slate-700/80 dark:text-slate-400/80">
                   <p>- {formatKM(distance)} km x {peso}{formatFareRate(activeRoute.fare.regularRate)} = {peso}{calculation.rawReg.toFixed(2)} (Reg)</p>
                   <p>- {formatKM(distance)} km x {peso}{formatFareRate(activeRoute.fare.discountRate)} = {peso}{calculation.rawDisc.toFixed(2)} (Disc)</p>
-                  <p>- Final: {activeRoute.fare.roundingMode === 'standard' ? 'Standard rounding' : 'Legacy route rounding'} {calculation.isMinApplied && '(Min. Applied)'}</p>
+                  <p>- Final: rounded to nearest peso {calculation.isMinApplied ? '(minimum fare applied)' : ''}</p>
                 </div>
               )}
             </div>
@@ -342,14 +366,29 @@ const CalcScreen: React.FC = () => {
       </div>
 
       <div className="px-5 mb-8">
-        <div className="bg-white dark:bg-night-charcoal rounded-[2rem] border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm">
-          <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-2">Fare Guide</p>
-          <div className="space-y-1">
-            {fareGuideLines.map(line => (
-              <p key={line} className="text-xs font-black text-slate-700 dark:text-slate-300 leading-relaxed uppercase">
-                {line}
-              </p>
+        <div className="rounded-[2rem] border border-slate-200 bg-[#F5F6F7] px-5 py-5 shadow-sm dark:border-white/10 dark:bg-[#161a1d]">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">Fare Guide</h2>
+          <div className="mt-4 space-y-4">
+            {fareGuide.sections.map((section, index) => (
+              <div
+                key={section.title}
+                className={index === 0 ? '' : 'border-t border-slate-200 pt-4 dark:border-white/10'}
+              >
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{section.title}</p>
+                <div className="mt-2 space-y-2">
+                  {section.rows.map(row => (
+                    <div key={`${section.title}-${row.label}`} className="flex items-center justify-between gap-4">
+                      <p className="text-sm text-slate-600 dark:text-slate-400">{row.label}</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{row.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ))}
+          </div>
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-white/10">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Note</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{fareGuide.note}</p>
           </div>
         </div>
       </div>
