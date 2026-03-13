@@ -1,7 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { MIN_DISCOUNT_FARE, MIN_REGULAR_FARE, STOPS } from '../constants';
-import { TallyTrip, TallySheet } from '../types';
+import { TallyTrip, TallySheet, TallySession } from '../types';
 import { calculateFare } from '../utils/fare';
 import TallyCalcOverlay from './TallyCalcOverlay';
 
@@ -12,13 +11,33 @@ interface Props {
 }
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
-  const { sessions, setSessions, tallyNav, setTallyNav, showToast, settings } = useApp();
+  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, showToast } = useApp();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const activeSession = sessions.find(s => s.id === tallyNav.sessionId) || sessions[sessions.length - 1];
-  const activeTrip = activeSession.trips[tallyNav.tripIdx] || activeSession.trips[0];
-  const activeSheet = activeTrip.sheets[tallyNav.sheetIdx] || activeTrip.sheets[0];
+  const routeSessions = useMemo(
+    () => sessions.filter(session => session.routeId === activeRoute.id),
+    [activeRoute.id, sessions]
+  );
+  const fallbackSession = useMemo<TallySession>(() => ({
+    id: `pending-${activeRoute.id}`,
+    date: new Date().toISOString(),
+    status: 'open',
+    routeId: activeRoute.id,
+    routeLabel: activeRoute.label,
+    trips: [{
+      id: `pending-trip-${activeRoute.id}`,
+      name: 'Trip 1',
+      direction: 'north',
+      sheets: [{
+        id: `pending-sheet-${activeRoute.id}`,
+        slots: Array(100).fill(0),
+        status: 'in-progress',
+        lastUpdatedAt: Date.now()
+      }]
+    }]
+  }), [activeRoute.id, activeRoute.label]);
+  const activeSession = routeSessions.find(s => s.id === tallyNav.sessionId) || routeSessions[routeSessions.length - 1] || fallbackSession;
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<EditorMode>('standard');
@@ -36,29 +55,93 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
   const [sheetCompleteAlert, setSheetCompleteAlert] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number } | null>(null);
+  const northboundTerminal = activeRoute.stops[activeRoute.stops.length - 1]?.name ?? 'North';
+  const southboundTerminal = activeRoute.stops[0]?.name ?? 'South';
+  const routeKms = useMemo(
+    () => [...activeRoute.stops.map(stop => stop.km)].sort((a, b) => a - b),
+    [activeRoute.stops]
+  );
 
   const routeDistanceRange = useMemo(() => {
-    const allKm = STOPS.map(stop => stop.km);
-    return Math.max(...allKm) - Math.min(...allKm);
-  }, []);
-  const commonFares = useMemo(
-    () => [MIN_DISCOUNT_FARE, MIN_REGULAR_FARE, 25, 30, 35, 40, 50, 60, 75, 100, 120, 150, 200],
-    []
-  );
+    return routeKms[routeKms.length - 1] - routeKms[0];
+  }, [routeKms]);
+  const minimumSegmentDistance = useMemo(() => {
+    return routeKms.slice(1).reduce((smallest, km, index) => {
+      const gap = km - routeKms[index];
+      if (gap <= 0) return smallest;
+      return Math.min(smallest, gap);
+    }, Number.POSITIVE_INFINITY);
+  }, [routeKms]);
+  const fareBounds = useMemo(() => {
+    const baseDistance = Number.isFinite(minimumSegmentDistance) ? minimumSegmentDistance : 1;
+    const minimumFareCalc = calculateFare(baseDistance, activeRoute.fare);
+    const minimumFare = Math.min(minimumFareCalc.reg, minimumFareCalc.disc);
+    const maximumFare = calculateFare(routeDistanceRange, activeRoute.fare).reg;
+
+    return {
+      minimumFare,
+      minimumRegularFare: minimumFareCalc.reg,
+      minimumDiscountFare: minimumFareCalc.disc,
+      maximumFare
+    };
+  }, [activeRoute.fare, minimumSegmentDistance, routeDistanceRange]);
+  const commonFares = useMemo(() => {
+    return Array.from(
+      new Set([
+        fareBounds.minimumFare,
+        fareBounds.minimumDiscountFare,
+        fareBounds.minimumRegularFare,
+        10,
+        15,
+        20,
+        25,
+        30,
+        35,
+        40,
+        50,
+        60,
+        75,
+        100,
+        120,
+        150,
+        200
+      ])
+    )
+      .filter(fare => fare >= fareBounds.minimumFare && fare <= fareBounds.maximumFare)
+      .sort((a, b) => a - b);
+  }, [fareBounds]);
   const allBatchFares = useMemo(() => {
-    const maxFare = calculateFare(routeDistanceRange, settings).reg;
-    return Array.from({ length: maxFare - MIN_DISCOUNT_FARE + 1 }, (_, i) => i + MIN_DISCOUNT_FARE);
-  }, [routeDistanceRange, settings]);
+    return Array.from(
+      { length: fareBounds.maximumFare - fareBounds.minimumFare + 1 },
+      (_, i) => i + fareBounds.minimumFare
+    );
+  }, [fareBounds.maximumFare, fareBounds.minimumFare]);
   const batchFilterPresets = useMemo(() => {
     const highestFare = allBatchFares[allBatchFares.length - 1];
     return [
       { label: 'ALL', value: '' },
-      { label: `${MIN_DISCOUNT_FARE}-39`, value: `${MIN_DISCOUNT_FARE}-39` },
+      { label: `${fareBounds.minimumFare}-39`, value: `${fareBounds.minimumFare}-39` },
       { label: '40-79', value: '40-79' },
       { label: '80-149', value: '80-149' },
       { label: '150+', value: `150-${highestFare}` }
     ];
-  }, [allBatchFares]);
+  }, [allBatchFares, fareBounds.minimumFare]);
+
+  useEffect(() => {
+    if (routeSessions.length === 0) return;
+
+    if (tallyNav.sessionId !== activeSession.id) {
+      setTallyNav({
+        sessionId: activeSession.id,
+        tripIdx: 0,
+        sheetIdx: 0,
+        blockIdx: 0
+      });
+    }
+  }, [activeSession.id, routeSessions.length, setTallyNav, tallyNav.sessionId]);
+
+  const activeTrip = activeSession.trips[tallyNav.tripIdx] || activeSession.trips[0];
+  const activeSheet = activeTrip.sheets[tallyNav.sheetIdx] || activeTrip.sheets[0];
   
   const filteredBatchFares = useMemo(() => {
     let fares = allBatchFares;
@@ -169,7 +252,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, trips: [...s.trips, newTrip] } : s));
     setTallyNav(n => ({ ...n, tripIdx: activeSession.trips.length, sheetIdx: 0, blockIdx: 0 }));
     setPendingAction(null);
-    showToast(`Trip ${nextTripNum} set to ${nextDir === 'north' ? 'Baguio' : 'Bayambang'}`);
+    showToast(`Trip ${nextTripNum} set to ${nextDir === 'north' ? northboundTerminal : southboundTerminal}`);
   };
 
   const handleAddSheet = () => {
@@ -193,7 +276,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? { ...t, direction: nextDir } : t)
     } : s));
     setPendingAction(null);
-    showToast(`Heading to ${nextDir === 'north' ? 'Baguio' : 'Bayambang'}`, 'info');
+    showToast(`Heading to ${nextDir === 'north' ? northboundTerminal : southboundTerminal}`, 'info');
   };
 
   const handleResetBlock = (bIdx: number) => {
@@ -314,7 +397,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40 h-[72px]">
         <div className="flex items-center gap-3">
           <span className="material-icons text-white text-2xl">fact_check</span>
-          <h1 className="text-xl font-medium text-white tracking-tight">Tally Sheet</h1>
+          <div>
+            <h1 className="text-xl font-medium text-white tracking-tight">Tally Sheet</h1>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">{activeRoute.shortLabel}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -368,7 +454,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </div>
               <div className="text-left">
                 <p className="text-[6px] font-black uppercase text-slate-400 leading-none mb-0.5">Heading</p>
-                <span className="font-black uppercase text-[10px] tracking-tight text-slate-900 dark:text-white leading-none">{activeTrip.direction === 'north' ? 'Baguio' : 'Bayambang'}</span>
+                <span className="font-black uppercase text-[10px] tracking-tight text-slate-900 dark:text-white leading-none">{activeTrip.direction === 'north' ? northboundTerminal : southboundTerminal}</span>
               </div>
            </button>
            <div className="text-right">

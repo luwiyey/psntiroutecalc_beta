@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { STOPS } from '../constants';
+import React, { useEffect, useState } from 'react';
+import { useApp } from '../context/AppContext';
 
 interface Props {
   isOpen: boolean;
@@ -11,10 +11,17 @@ interface Props {
 
 const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }) => {
   const [search, setSearch] = useState('');
+  const { activeRoute } = useApp();
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearch('');
+    }
+  }, [activeRoute.id, isOpen]);
 
   if (!isOpen) return null;
 
-  const filteredStops = STOPS.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredStops = activeRoute.stops.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
 
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toString() : km.toFixed(1);
@@ -47,7 +54,7 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
 
         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Quick Access Terminals</p>
         <div className="grid grid-cols-3 gap-2">
-          {STOPS.filter(s => s.isTerminal).map(terminal => (
+          {activeRoute.stops.filter(s => s.isTerminal).map(terminal => (
             <button 
               key={terminal.name}
               onClick={() => onSelect(terminal.name)}

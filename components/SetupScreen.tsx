@@ -8,8 +8,8 @@ interface Props {
 }
 
 const SetupScreen: React.FC<Props> = ({ onExit }) => {
-  const { settings, setSettings, history, sessions } = useApp();
-  const { authState } = useAuth();
+  const { activeRoute, settings, setSettings, history, sessions } = useApp();
+  const { authState, logout } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
@@ -81,8 +81,30 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <p className="text-[10px] font-black text-primary uppercase tracking-widest">Active Conductor</p>
             <p className={`font-black leading-tight dark:text-white text-lg`}>{authState.employeeName}</p>
             <p className={`text-[10px] font-bold text-slate-400 mt-1`}>ID: {authState.employeeId}</p>
+            <p className={`text-[10px] font-bold text-slate-400 mt-1`}>Device: {authState.deviceId}</p>
           </div>
         </div>
+
+        <section className="space-y-3">
+          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Assigned Route</h2>
+          <div className="rounded-3xl border border-primary bg-primary p-5 text-white shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">Current Route</p>
+                <h3 className="mt-2 text-lg font-900 leading-tight">{activeRoute.label}</h3>
+                <p className="mt-2 text-xs font-bold text-white/80">
+                  {activeRoute.stops[0]?.name ?? 'Start'} ↔ {activeRoute.stops[activeRoute.stops.length - 1]?.name ?? 'End'}
+                </p>
+                <p className="mt-4 text-xs font-bold text-white/70">
+                  Route is assigned after login. Logout if you need to sign in with another conductor or choose a different route.
+                </p>
+              </div>
+              <div className="shrink-0 rounded-2xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary">
+                Live
+              </div>
+            </div>
+          </div>
+        </section>
 
         <section className="space-y-3">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Live Audit</h2>
@@ -151,6 +173,38 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 <div className={`bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary transition-all w-11 h-6 after:h-5 after:w-5 after:top-[2px] after:left-[2px] after:content-[''] after:absolute after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-full`} />
               </label>
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Session</h2>
+          <div className="bg-white dark:bg-night-charcoal rounded-2xl border border-primary/5 shadow-sm">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-white/5">
+              <div>
+                <p className="font-bold dark:text-white">Remember Login</p>
+                <p className="text-xs text-slate-500">This browser and phone will keep this conductor signed in until logout.</p>
+              </div>
+              <span className="px-3 py-2 rounded-2xl bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-widest dark:bg-emerald-500/10 dark:text-emerald-300">
+                Saved
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                logout();
+              }}
+              className="w-full flex items-center justify-between transition-all p-5 active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 text-primary p-3 rounded-xl">
+                  <span className="material-icons">logout</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold dark:text-white">Logout</p>
+                  <p className="text-xs text-slate-500">Switch to another conductor account on this phone</p>
+                </div>
+              </div>
+              <span className="material-icons text-slate-400">chevron_right</span>
+            </button>
           </div>
         </section>
       </div>

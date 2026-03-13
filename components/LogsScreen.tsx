@@ -69,6 +69,11 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
                   <span className={`font-black bg-slate-100 dark:bg-white/10 dark:text-slate-300 px-2 py-1 rounded ${isCM ? 'text-[12px]' : 'text-[10px]'}`}>
                     {new Date(record.timestamp).toLocaleDateString()} {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
+                  {record.routeLabel && (
+                    <span className={`font-black bg-primary/10 text-primary px-2 py-1 rounded ${isCM ? 'text-[12px]' : 'text-[10px]'}`}>
+                      {record.routeLabel}
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => toggleFavorite(record.id)}>
                   <span className={`material-icons ${isCM ? 'text-3xl' : 'text-2xl'} ${record.isFavorite ? 'text-primary' : 'text-slate-200 dark:text-white/10'}`}>star</span>

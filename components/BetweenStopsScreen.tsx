@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { STOPS } from '../constants';
 import StopPickerOverlay from './StopPickerOverlay';
 import { calculateFare } from '../utils/fare';
 
@@ -9,13 +8,13 @@ interface Props {
 }
 
 const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
-  const { settings, origin, destination, setOrigin, setDestination, addRecord, showToast } = useApp();
+  const { activeRoute, settings, origin, destination, setOrigin, setDestination, addRecord, showToast } = useApp();
   const [precision, setPrecision] = useState(50);
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestPickerOpen, setIsDestPickerOpen] = useState(false);
 
-  const originStop = STOPS.find(s => s.name === origin) || STOPS[0];
-  const destStop = STOPS.find(s => s.name === destination) || STOPS[STOPS.length - 1];
+  const originStop = activeRoute.stops.find(s => s.name === origin) || activeRoute.stops[0];
+  const destStop = activeRoute.stops.find(s => s.name === destination) || activeRoute.stops[activeRoute.stops.length - 1];
 
   const estimatedKM = useMemo(() => {
     const range = destStop.km - originStop.km;
@@ -23,16 +22,16 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
   }, [originStop, destStop, precision]);
 
   const nearestStop = useMemo(() => {
-    return STOPS.reduce((prev, curr) => {
+    return activeRoute.stops.reduce((prev, curr) => {
       return (Math.abs(curr.km - estimatedKM) < Math.abs(prev.km - estimatedKM) ? curr : prev);
     });
-  }, [estimatedKM]);
+  }, [activeRoute.stops, estimatedKM]);
 
   const totalDist = Math.abs(estimatedKM - originStop.km);
   
   const fares = useMemo(
-    () => calculateFare(totalDist, settings),
-    [settings.discountRate, settings.regularRate, totalDist]
+    () => calculateFare(totalDist, activeRoute.fare),
+    [activeRoute.fare, totalDist]
   );
 
   const handleSwap = (e: React.MouseEvent) => {

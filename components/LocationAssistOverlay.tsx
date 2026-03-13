@@ -1,0 +1,153 @@
+import React from 'react';
+import type { Stop } from '../types';
+import type { CurrentLocationSnapshot, StopMatch } from '../utils/location';
+import { formatMeters } from '../utils/location';
+
+interface Props {
+  isOpen: boolean;
+  isLoading: boolean;
+  routeLabel: string;
+  location: CurrentLocationSnapshot | null;
+  nearestMatch: StopMatch | null;
+  hasMappedStops: boolean;
+  error: string | null;
+  onClose: () => void;
+  onRetry: () => void;
+  onUseStop: (stop: Stop) => void;
+}
+
+const formatCoordinate = (value: number) => value.toFixed(6);
+
+const LocationAssistOverlay: React.FC<Props> = ({
+  isOpen,
+  isLoading,
+  routeLabel,
+  location,
+  nearestMatch,
+  hasMappedStops,
+  error,
+  onClose,
+  onRetry,
+  onUseStop
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-2xl animate-fade-in sm:h-auto sm:max-h-[92vh] sm:rounded-[2.5rem] dark:bg-night-charcoal">
+        <div
+          className="shrink-0 flex items-center justify-between px-5 pb-3"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-white shadow-md">
+              <span className="material-icons text-lg">my_location</span>
+            </div>
+            <div>
+              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">GPS Pickup Assist</h2>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{routeLabel}</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+          >
+            <span className="material-icons text-base">close</span>
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 visible-scrollbar">
+          <div className="space-y-4">
+            <div className="rounded-[2rem] bg-[#0f172a] p-5 text-white shadow-inner dark:bg-black">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current Location</p>
+              {isLoading ? (
+                <div className="py-8 text-center">
+                  <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-white" />
+                  <p className="text-sm font-black uppercase tracking-widest text-white/80">Reading GPS...</p>
+                </div>
+              ) : location ? (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl bg-white/5 px-4 py-3">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Latitude</p>
+                    <p className="mt-2 text-xl font-900">{formatCoordinate(location.latitude)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 px-4 py-3">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Longitude</p>
+                    <p className="mt-2 text-xl font-900">{formatCoordinate(location.longitude)}</p>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Accuracy</p>
+                      <p className="mt-2 text-xl font-900">{formatMeters(location.accuracy)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Updated</p>
+                      <p className="mt-2 text-xs font-black text-white/80">
+                        {new Date(location.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm font-black uppercase tracking-widest text-white/70">Tap retry to request location.</p>
+              )}
+            </div>
+
+            {error && (
+              <div className="rounded-[2rem] border border-red-200 bg-red-50 px-5 py-4 dark:border-red-500/20 dark:bg-red-500/10">
+                <p className="text-[9px] font-black uppercase tracking-widest text-red-500">Location Error</p>
+                <p className="mt-2 text-sm font-bold text-red-600 dark:text-red-300">{error}</p>
+              </div>
+            )}
+
+            {!isLoading && !error && location && nearestMatch && (
+              <div className="rounded-[2rem] border border-primary/10 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary">Nearest Mapped Stop</p>
+                <h3 className="mt-2 text-2xl font-900 text-slate-900 dark:text-white">{nearestMatch.stop.name}</h3>
+                <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
+                  KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onUseStop(nearestMatch.stop)}
+                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                  >
+                    Use Stop
+                  </button>
+                  <button
+                    onClick={onRetry}
+                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && !error && location && !nearestMatch && (
+              <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary">Stop Match</p>
+                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">
+                  {hasMappedStops
+                    ? 'No mapped stop was close enough to use safely. You can retry or choose the pickup manually.'
+                    : 'This route does not have GPS stop coordinates yet, so the app cannot auto-pick a stop safely. Manual stop selection stays available.'}
+                </p>
+                <button
+                  onClick={onRetry}
+                  className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                >
+                  Retry Location
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LocationAssistOverlay;

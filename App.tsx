@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 import { LandingScreen } from './components/LandingScreen';
 import LoginScreen from './components/LoginScreen';
 import CalcScreen from './components/CalcScreen';
@@ -9,20 +9,30 @@ import BetweenStopsScreen from './components/BetweenStopsScreen';
 import TallyScreen from './components/TallyScreen';
 import LogsScreen from './components/LogsScreen';
 import SetupScreen from './components/SetupScreen';
+import RouteSelectionScreen from './components/RouteSelectionScreen';
 
 type Tab = 'calc' | 'between' | 'tally' | 'logs' | 'setup';
+const STARTED_STORAGE_KEY = 'psnti_started';
 
 const AppContent: React.FC = () => {
-  const [hasStarted, setHasStarted] = useState(false);
+  const [hasStarted, setHasStarted] = useState(() => localStorage.getItem(STARTED_STORAGE_KEY) === 'true');
   const [activeTab, setActiveTab] = useState<Tab>('calc');
   const { authState } = useAuth();
+  const { settings } = useApp();
 
   if (!hasStarted) {
-    return <LandingScreen onFinish={() => setHasStarted(true)} />;
+    return <LandingScreen onFinish={() => {
+      localStorage.setItem(STARTED_STORAGE_KEY, 'true');
+      setHasStarted(true);
+    }} />;
   }
 
   if (!authState.isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  if (authState.pendingRouteSelection || !settings.hasAssignedRoute) {
+    return <RouteSelectionScreen onComplete={() => setActiveTab('calc')} />;
   }
 
   const handleExit = () => setActiveTab('calc');

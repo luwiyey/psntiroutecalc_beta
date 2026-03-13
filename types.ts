@@ -5,6 +5,34 @@ export interface Stop {
   name: string;
   km: number;
   isTerminal?: boolean;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface RouteFareBaseline {
+  regularRate: number;
+  discountRate: number;
+  minimumRegularFare: number | null;
+  minimumDiscountFare: number | null;
+}
+
+export interface RouteFareRules {
+  regularRate: number;
+  discountRate: number;
+  minimumRegularFare: number | null;
+  minimumDiscountFare: number | null;
+  roundingMode?: 'legacy' | 'standard';
+  previousFare?: RouteFareBaseline;
+}
+
+export interface RouteProfile {
+  id: string;
+  label: string;
+  shortLabel: string;
+  status: 'ready' | 'locked';
+  lockedReason?: string;
+  stops: Stop[];
+  fare: RouteFareRules;
 }
 
 export interface FareRecord {
@@ -17,6 +45,8 @@ export interface FareRecord {
   discountedFare: number;
   isFavorite: boolean;
   type?: 'calc' | 'tally';
+  routeId?: string;
+  routeLabel?: string;
 }
 
 export interface TallySheet {
@@ -37,11 +67,15 @@ export interface TallySession {
   id: string;
   date: string;
   status: 'open' | 'closed';
+  routeId: string;
+  routeLabel: string;
   trips: TallyTrip[];
 }
 
 export interface AppSettings {
   fareVersion: number;
+  activeRouteId: string;
+  hasAssignedRoute: boolean;
   regularRate: number;
   discountRate: number;
   isNightMode: boolean;
@@ -49,6 +83,9 @@ export interface AppSettings {
 }
 
 export interface AppContextType {
+  routes: RouteProfile[];
+  activeRoute: RouteProfile;
+  selectRoute: (routeId: string) => void;
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   origin: string;

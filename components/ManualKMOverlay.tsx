@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { STOPS } from '../constants';
 import { calculateFare } from '../utils/fare';
 
 interface Props {
@@ -10,7 +9,7 @@ interface Props {
 }
 
 const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { settings, addRecord, showToast } = useApp();
+  const { activeRoute, addRecord, showToast } = useApp();
   const [pickup, setPickup] = useState('');
   const [dest, setDest] = useState('');
   const [activeInput, setActiveInput] = useState<'pickup' | 'dest'>('pickup');
@@ -27,8 +26,8 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-  const routeMinKm = useMemo(() => Math.min(...STOPS.map(stop => stop.km)), []);
-  const routeMaxKm = useMemo(() => Math.max(...STOPS.map(stop => stop.km)), []);
+  const routeMinKm = useMemo(() => Math.min(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
+  const routeMaxKm = useMemo(() => Math.max(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
   const parsedPickup = useMemo(() => parseFloat(pickup), [pickup]);
   const parsedDest = useMemo(() => parseFloat(dest), [dest]);
   const isInputNumeric = !isNaN(parsedPickup) && !isNaN(parsedDest);
@@ -56,8 +55,8 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       .slice(0, 6);
 
   const calculation = useMemo(
-    () => calculateFare(distance, settings),
-    [distance, settings.discountRate, settings.regularRate]
+    () => calculateFare(distance, activeRoute.fare),
+    [activeRoute.fare, distance]
   );
 
   const handleKeypadPress = (key: string) => {
