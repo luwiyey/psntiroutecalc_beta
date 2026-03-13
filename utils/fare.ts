@@ -10,7 +10,10 @@ export interface FareCalculation {
 }
 
 export const roundToNearestPeso = (value: number) => Math.ceil(value - 0.5);
-export const formatFareRate = (value: number) => value.toFixed(3).replace(/\.?0+$/, '');
+export const formatFareRate = (value: number) => {
+  const fixedToThree = value.toFixed(3);
+  return fixedToThree.endsWith('0') ? value.toFixed(2) : fixedToThree;
+};
 
 export const calculateFare = (
   distance: number,

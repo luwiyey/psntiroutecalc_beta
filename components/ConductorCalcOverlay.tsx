@@ -1,20 +1,32 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   initialValue: number;
+  title?: string;
+  showQuickBills?: boolean;
 }
 
 const ConductorCalcOverlay: React.FC<Props> = ({
   isOpen,
   onClose,
   initialValue,
+  title = "Conductor Calc",
+  showQuickBills = true,
 }) => {
   const [display, setDisplay] = useState(initialValue.toString());
   const [expression, setExpression] = useState("");
   const [lastOp, setLastOp] = useState("");
   const [typedFirst, setTypedFirst] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setDisplay(initialValue.toString());
+    setExpression("");
+    setLastOp("");
+    setTypedFirst(false);
+  }, [initialValue, isOpen]);
 
   if (!isOpen) return null;
 
@@ -199,7 +211,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
               <span className="material-icons text-sm">calculate</span>
             </div>
             <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-              Conductor Calc
+              {title}
             </h2>
           </div>
 
@@ -228,25 +240,26 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
         {/* Body */}
         <div className="flex flex-col flex-1 min-h-0">
-          {/* Quick Bills */}
-          <div className="px-6 mb-3 shrink-0">
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
-              Quick Bills (₱)
-            </p>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-              {quickBills.map((bill) => (
-                <button
-                  key={bill}
-                  onClick={() => handleQuickBill(bill)}
-                  className="flex-shrink-0 min-w-[60px] py-2 bg-white dark:bg-white/5 border border-slate-100 dark:border-white/10 rounded-2xl shadow-sm active:bg-slate-50 transition-all"
-                >
-                  <span className="text-base font-900 text-primary">
-                    ₱{bill}
-                  </span>
-                </button>
-              ))}
+          {showQuickBills && (
+            <div className="px-6 mb-3 shrink-0">
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
+                Quick Bills (₱)
+              </p>
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                {quickBills.map((bill) => (
+                  <button
+                    key={bill}
+                    onClick={() => handleQuickBill(bill)}
+                    className="flex-shrink-0 min-w-[60px] py-2 bg-white dark:bg-white/5 border border-slate-100 dark:border-white/10 rounded-2xl shadow-sm active:bg-slate-50 transition-all"
+                  >
+                    <span className="text-base font-900 text-primary">
+                      ₱{bill}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Keypad */}
           <div className="px-6 pb-4 grid grid-cols-4 gap-2 flex-1 auto-rows-fr">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import NormalCalcOverlay from './NormalCalcOverlay';
 
 interface Props {
   onExit?: () => void;
@@ -10,6 +11,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const { settings, setSettings, history, sessions } = useApp();
   const { authState } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -21,8 +23,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     };
   }, []);
 
-  const toggle = (key: keyof typeof settings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleNightMode = () => {
+    setSettings(prev => ({ ...prev, isNightMode: !prev.isNightMode }));
   };
 
   const totalTripLogs = history.reduce((a, b) => a + b.regularFare, 0);
@@ -113,6 +115,27 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </section>
 
         <section className="space-y-3">
+          <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tools</h2>
+          <div className="bg-white dark:bg-night-charcoal rounded-2xl border border-primary/5 shadow-sm">
+            <button
+              onClick={() => setIsCalculatorOpen(true)}
+              className="w-full flex items-center justify-between transition-all p-5 active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 text-primary p-3 rounded-xl">
+                  <span className="material-icons">calculate</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold dark:text-white">Calculator</p>
+                  <p className="text-xs text-slate-500">Open a standard calculator</p>
+                </div>
+              </div>
+              <span className="material-icons text-slate-400">chevron_right</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
           <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Preferences</h2>
           <div className="bg-white dark:bg-night-charcoal rounded-2xl border border-primary/5 divide-y dark:divide-white/5 shadow-sm">
             <div className={`flex items-center justify-between transition-all p-5`}>
@@ -124,13 +147,18 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={settings.isNightMode} onChange={() => toggle('isNightMode')} className="sr-only peer" />
+                <input type="checkbox" checked={settings.isNightMode} onChange={toggleNightMode} className="sr-only peer" />
                 <div className={`bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:bg-primary transition-all w-11 h-6 after:h-5 after:w-5 after:top-[2px] after:left-[2px] after:content-[''] after:absolute after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-full`} />
               </label>
             </div>
           </div>
         </section>
       </div>
+
+      <NormalCalcOverlay
+        isOpen={isCalculatorOpen}
+        onClose={() => setIsCalculatorOpen(false)}
+      />
     </div>
   );
 };

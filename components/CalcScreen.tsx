@@ -1,6 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { STOPS } from '../constants';
+import {
+  DISCOUNT_RATE_MULTIPLIER,
+  MIN_DISCOUNT_FARE,
+  MIN_REGULAR_FARE,
+  PREVIOUS_MIN_REGULAR_FARE,
+  PREVIOUS_ORDINARY_FARE_PER_KM,
+  STOPS
+} from '../constants';
 import StopPickerOverlay from './StopPickerOverlay';
 import ManualKMOverlay from './ManualKMOverlay';
 import ConductorCalcOverlay from './ConductorCalcOverlay';
@@ -31,6 +38,25 @@ const CalcScreen: React.FC = () => {
   useEffect(() => {
     setActiveFare(calculation.reg);
   }, [calculation.reg, setActiveFare]);
+
+  const regularIncreasePerKm = useMemo(
+    () => (settings.regularRate - PREVIOUS_ORDINARY_FARE_PER_KM).toFixed(2),
+    [settings.regularRate]
+  );
+  const previousDiscountRate = PREVIOUS_ORDINARY_FARE_PER_KM * DISCOUNT_RATE_MULTIPLIER;
+  const discountedIncreasePerKm = useMemo(
+    () => (settings.discountRate - previousDiscountRate).toFixed(2),
+    [previousDiscountRate, settings.discountRate]
+  );
+  const previousDiscountMinimum = PREVIOUS_MIN_REGULAR_FARE * DISCOUNT_RATE_MULTIPLIER;
+  const minimumIncrease = useMemo(
+    () => MIN_REGULAR_FARE - PREVIOUS_MIN_REGULAR_FARE,
+    []
+  );
+  const discountedMinimumIncrease = useMemo(
+    () => MIN_DISCOUNT_FARE - previousDiscountMinimum,
+    [previousDiscountMinimum]
+  );
 
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toFixed(0) : km.toFixed(1);
@@ -200,6 +226,16 @@ const CalcScreen: React.FC = () => {
                )}
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="px-5 mb-8">
+        <div className="bg-white dark:bg-night-charcoal rounded-[2rem] border border-slate-200 dark:border-white/10 px-5 py-4 shadow-sm">
+          <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-2">Fare Guide</p>
+          <p className="text-xs font-black text-slate-700 dark:text-slate-300 leading-relaxed uppercase">
+            Minimum: +{minimumIncrease.toFixed(0)} pesos regular / +{discountedMinimumIncrease.toFixed(0)} pesos discounted.
+            Beyond minimum: +{regularIncreasePerKm}/km regular, +{discountedIncreasePerKm}/km discounted.
+          </p>
         </div>
       </div>
 
