@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   AIRCON_BAYAMBANG_ROUTE_ID,
-  CABANATUAN_ROUTE_ID,
   CABANATUAN_VIA_SAN_JOSE_ROUTE_ID,
   CABANATUAN_VIA_TARLAC_ROUTE_ID,
   ORDINARY_BAYAMBANG_ROUTE_ID,
@@ -29,7 +28,6 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     () => routes.find(route => route.id === AIRCON_BAYAMBANG_ROUTE_ID),
     [routes]
   );
-  const cabanatuanRoute = useMemo(() => routes.find(route => route.id === CABANATUAN_ROUTE_ID), [routes]);
   const cabanatuanViaSanJoseRoute = useMemo(
     () => routes.find(route => route.id === CABANATUAN_VIA_SAN_JOSE_ROUTE_ID),
     [routes]
@@ -81,15 +79,8 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
       badge: 'Use Route',
       status: cabanatuanViaSanJoseRoute?.status ?? 'locked',
       onSelect: () => cabanatuanViaSanJoseRoute && handleSelectRoute(cabanatuanViaSanJoseRoute.id)
-    },
-    {
-      id: 'cabanatuan',
-      label: `Cabanatuan ${VICE_VERSA} Baguio`,
-      badge: 'Data Pending',
-      status: cabanatuanRoute?.status ?? 'locked',
-      onSelect: () => undefined
     }
-  ] as const;
+  ].sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <div className="min-h-screen bg-[#f8f6f6] px-4 py-6 dark:bg-black">
