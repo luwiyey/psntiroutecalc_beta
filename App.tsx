@@ -57,12 +57,12 @@ const AppContent: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8f6f6] dark:bg-black transition-colors flex flex-col max-w-lg mx-auto border-x dark:border-white/5 relative">
+    <div className="min-h-screen bg-[#f8f6f6] dark:bg-black transition-colors flex flex-col max-w-lg mx-auto relative shadow-[0_12px_36px_rgba(15,23,42,0.08)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.35)]">
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         {renderContent()}
       </main>
 
-      <nav className="sticky bottom-0 left-0 right-0 z-50 bg-white dark:bg-night-charcoal border-t dark:border-white/10 flex items-center justify-around px-2 py-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shadow-[0_-1px_10px_rgba(0,0,0,0.05)]">
+      <nav className="sticky bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-night-charcoal/95 flex items-center justify-around px-2 py-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
         {navItems.map(item => (
           <button 
             key={item.id}

@@ -3,8 +3,10 @@ import {
   AIRCON_BAYAMBANG_ROUTE_ID,
   CABANATUAN_ROUTE_ID,
   CABANATUAN_VIA_SAN_JOSE_ROUTE_ID,
+  CABANATUAN_VIA_TARLAC_ROUTE_ID,
   ORDINARY_BAYAMBANG_ROUTE_ID,
-  TARLAC_ROUTE_ID
+  TARLAC_ROUTE_ID,
+  VICE_VERSA
 } from '../constants';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -18,10 +20,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
   const { authState, completeRouteSelection, logout } = useAuth();
   const [isBayambangPickerOpen, setIsBayambangPickerOpen] = useState(false);
 
-  const tarlacRoute = useMemo(
-    () => routes.find(route => route.id === TARLAC_ROUTE_ID),
-    [routes]
-  );
+  const tarlacRoute = useMemo(() => routes.find(route => route.id === TARLAC_ROUTE_ID), [routes]);
   const ordinaryBayambangRoute = useMemo(
     () => routes.find(route => route.id === ORDINARY_BAYAMBANG_ROUTE_ID),
     [routes]
@@ -30,12 +29,13 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     () => routes.find(route => route.id === AIRCON_BAYAMBANG_ROUTE_ID),
     [routes]
   );
-  const cabanatuanRoute = useMemo(
-    () => routes.find(route => route.id === CABANATUAN_ROUTE_ID),
-    [routes]
-  );
+  const cabanatuanRoute = useMemo(() => routes.find(route => route.id === CABANATUAN_ROUTE_ID), [routes]);
   const cabanatuanViaSanJoseRoute = useMemo(
     () => routes.find(route => route.id === CABANATUAN_VIA_SAN_JOSE_ROUTE_ID),
+    [routes]
+  );
+  const cabanatuanViaTarlacRoute = useMemo(
+    () => routes.find(route => route.id === CABANATUAN_VIA_TARLAC_ROUTE_ID),
     [routes]
   );
 
@@ -52,14 +52,14 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
   const cards = [
     {
       id: 'tarlac',
-      label: 'Tarlac ↔ Baguio',
+      label: `Tarlac ${VICE_VERSA} Baguio`,
       badge: 'Use Route',
       status: tarlacRoute?.status ?? 'locked',
       onSelect: () => tarlacRoute && handleSelectRoute(tarlacRoute.id)
     },
     {
       id: 'bayambang',
-      label: 'Bayambang ↔ Baguio',
+      label: `Bayambang ${VICE_VERSA} Baguio`,
       badge: 'Choose Type',
       status:
         bayambangRoutes.length === 2 &&
@@ -69,17 +69,24 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
       onSelect: () => setIsBayambangPickerOpen(true)
     },
     {
-      id: 'cabanatuan',
-      label: 'Cabanatuan ↔ Baguio',
-      badge: 'Data Pending',
-      status: cabanatuanRoute?.status ?? 'locked',
-      onSelect: () => undefined
+      id: 'cabanatuan-via-tarlac',
+      label: `Cabanatuan via Tarlac ${VICE_VERSA} Baguio`,
+      badge: 'Use Route',
+      status: cabanatuanViaTarlacRoute?.status ?? 'locked',
+      onSelect: () => cabanatuanViaTarlacRoute && handleSelectRoute(cabanatuanViaTarlacRoute.id)
     },
     {
       id: 'cabanatuan-via-san-jose',
-      label: 'Cabanatuan via San Jose ↔ Baguio',
-      badge: 'Data Pending',
+      label: `Cabanatuan via San Jose ${VICE_VERSA} Baguio`,
+      badge: 'Use Route',
       status: cabanatuanViaSanJoseRoute?.status ?? 'locked',
+      onSelect: () => cabanatuanViaSanJoseRoute && handleSelectRoute(cabanatuanViaSanJoseRoute.id)
+    },
+    {
+      id: 'cabanatuan',
+      label: `Cabanatuan ${VICE_VERSA} Baguio`,
+      badge: 'Data Pending',
+      status: cabanatuanRoute?.status ?? 'locked',
       onSelect: () => undefined
     }
   ] as const;
@@ -91,7 +98,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
           <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">Assigned Route</p>
           <h1 className="mt-3 text-3xl font-black leading-tight">Choose Your Route</h1>
           <p className="mt-3 max-w-md text-sm text-white/80">
-            Pick the corridor you are handling today. This sets your active calculator, tally sheet, and logs.
+            Pick the corridor you are handling today. This sets your calculator, tally sheet, and logs.
           </p>
           <div className="mt-5 rounded-3xl bg-white/10 px-4 py-4">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/60">Signed In</p>
@@ -109,10 +116,10 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
                 key={card.id}
                 onClick={() => !isLocked && card.onSelect()}
                 disabled={isLocked}
-                className={`w-full rounded-[2rem] border p-5 text-left shadow-sm transition-all ${
+                className={`w-full rounded-[2rem] p-5 text-left shadow-md transition-all ${
                   isLocked
-                    ? 'border-slate-200 bg-white/70 text-slate-400 dark:border-white/10 dark:bg-white/5'
-                    : 'border-primary/10 bg-white text-slate-800 active:scale-[0.99] dark:border-white/10 dark:bg-night-charcoal dark:text-white'
+                    ? 'bg-white/70 text-slate-400 dark:bg-white/5'
+                    : 'bg-white text-slate-800 active:scale-[0.99] dark:bg-night-charcoal dark:text-white'
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -137,7 +144,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
 
         <button
           onClick={logout}
-          className="mt-5 rounded-[1.75rem] border border-slate-200 bg-white px-5 py-4 text-sm font-black uppercase tracking-[0.2em] text-slate-600 shadow-sm transition-all active:scale-[0.99] dark:border-white/10 dark:bg-night-charcoal dark:text-slate-300"
+          className="mt-5 rounded-[1.75rem] bg-white px-5 py-4 text-sm font-black uppercase tracking-[0.2em] text-slate-600 shadow-md transition-all active:scale-[0.99] dark:bg-night-charcoal dark:text-slate-300"
         >
           Logout
         </button>
@@ -148,7 +155,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
           <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Bayambang ↔ Baguio</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">{`Bayambang ${VICE_VERSA} Baguio`}</p>
                 <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Choose Service</h2>
               </div>
               <button
@@ -164,7 +171,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
                 <button
                   key={route.id}
                   onClick={() => handleSelectRoute(route.id)}
-                  className="w-full rounded-[1.5rem] border border-primary/10 bg-slate-50 p-4 text-left transition-all active:scale-[0.99] dark:border-white/10 dark:bg-white/5"
+                  className="w-full rounded-[1.5rem] bg-slate-50 p-4 text-left shadow-sm transition-all active:scale-[0.99] dark:bg-white/5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>

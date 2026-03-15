@@ -43,6 +43,7 @@ export interface FareRecord {
   distance: number;
   regularFare: number;
   discountedFare: number;
+  punchedFareType?: 'regular' | 'discounted';
   isFavorite: boolean;
   type?: 'calc' | 'tally';
   routeId?: string;

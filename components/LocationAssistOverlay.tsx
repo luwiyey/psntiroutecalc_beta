@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Stop } from '../types';
-import type { CurrentLocationSnapshot, StopMatch } from '../utils/location';
+import type { CurrentLocationSnapshot, SegmentMatch, StopMatch } from '../utils/location';
 import { formatMeters } from '../utils/location';
 
 interface Props {
@@ -9,14 +9,17 @@ interface Props {
   routeLabel: string;
   location: CurrentLocationSnapshot | null;
   nearestMatch: StopMatch | null;
+  segmentMatch: SegmentMatch | null;
   hasMappedStops: boolean;
   error: string | null;
   onClose: () => void;
   onRetry: () => void;
   onUseStop: (stop: Stop) => void;
+  onUseManualKm: (pickupKm: number) => void;
 }
 
 const formatCoordinate = (value: number) => value.toFixed(6);
+const formatKm = (value: number) => value.toFixed(2).replace(/\.?0+$/, '');
 
 const LocationAssistOverlay: React.FC<Props> = ({
   isOpen,
@@ -24,13 +27,25 @@ const LocationAssistOverlay: React.FC<Props> = ({
   routeLabel,
   location,
   nearestMatch,
+  segmentMatch,
   hasMappedStops,
   error,
   onClose,
   onRetry,
-  onUseStop
+  onUseStop,
+  onUseManualKm
 }) => {
   if (!isOpen) return null;
+
+  const shouldOfferManualKm = Boolean(
+    segmentMatch &&
+      (
+        nearestMatch === null ||
+        (segmentMatch.progressRatio > 0.08 && segmentMatch.progressRatio < 0.92) ||
+        Math.abs(segmentMatch.estimatedKm - nearestMatch.stop.km) >= 0.1 ||
+        nearestMatch.distanceMeters > 200
+      )
+  );
 
   return (
     <div className="fixed inset-0 z-[150] flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -110,6 +125,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
                   KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
                 </p>
+
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
                     onClick={() => onUseStop(nearestMatch.stop)}
@@ -124,10 +140,56 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     Retry
                   </button>
                 </div>
+
+                {shouldOfferManualKm && segmentMatch && (
+                  <div className="mt-4 rounded-[1.5rem] bg-slate-50 px-4 py-4 dark:bg-white/5">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Between Stops</p>
+                    <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                      GPS looks near KM {formatKm(segmentMatch.estimatedKm)}, between {segmentMatch.startStop.name} and{' '}
+                      {segmentMatch.endStop.name}.
+                    </p>
+                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                      Use Manual KM if the pickup was not at an exact tariff stop.
+                    </p>
+                    <button
+                      onClick={() => onUseManualKm(segmentMatch.estimatedKm)}
+                      className="mt-4 w-full rounded-[1.5rem] bg-slate-900 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 dark:bg-white dark:text-slate-900"
+                    >
+                      Use Manual KM
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
-            {!isLoading && !error && location && !nearestMatch && (
+            {!isLoading && !error && location && !nearestMatch && segmentMatch && (
+              <div className="rounded-[2rem] border border-primary/10 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary">Between Stops</p>
+                <h3 className="mt-2 text-2xl font-900 text-slate-900 dark:text-white">KM {formatKm(segmentMatch.estimatedKm)}</h3>
+                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Between {segmentMatch.startStop.name} and {segmentMatch.endStop.name}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  Stop picker only supports exact tariff stops. Manual KM is better for this pickup.
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onUseManualKm(segmentMatch.estimatedKm)}
+                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                  >
+                    Use Manual KM
+                  </button>
+                  <button
+                    onClick={onRetry}
+                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && !error && location && !nearestMatch && !segmentMatch && (
               <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Stop Match</p>
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">

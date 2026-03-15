@@ -5,8 +5,14 @@ import ManualKMOverlay from './ManualKMOverlay';
 import ConductorCalcOverlay from './ConductorCalcOverlay';
 import LocationAssistOverlay from './LocationAssistOverlay';
 import { calculateFare, formatFareRate } from '../utils/fare';
-import type { CurrentLocationSnapshot, StopMatch } from '../utils/location';
-import { findNearestMappedStop, hasRouteCoordinates } from '../utils/location';
+import type { CurrentLocationSnapshot, SegmentMatch, StopMatch } from '../utils/location';
+import {
+  findNearestMappedSegment,
+  findNearestMappedStop,
+  getLocationErrorMessage,
+  hasRouteCoordinates,
+  requestBestCurrentLocation
+} from '../utils/location';
 
 const peso = '\u20B1';
 
@@ -21,6 +27,8 @@ const CalcScreen: React.FC = () => {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<CurrentLocationSnapshot | null>(null);
   const [nearestStopMatch, setNearestStopMatch] = useState<StopMatch | null>(null);
+  const [nearestSegmentMatch, setNearestSegmentMatch] = useState<SegmentMatch | null>(null);
+  const [manualPrefill, setManualPrefill] = useState<{ pickupKm?: number; destKm?: number } | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const routeStart = activeRoute.stops[0];
@@ -49,10 +57,12 @@ const CalcScreen: React.FC = () => {
   useEffect(() => {
     if (!currentLocation) {
       setNearestStopMatch(null);
+      setNearestSegmentMatch(null);
       return;
     }
 
     setNearestStopMatch(findNearestMappedStop(activeRoute.stops, currentLocation));
+    setNearestSegmentMatch(findNearestMappedSegment(activeRoute.stops, currentLocation));
   }, [activeRoute.stops, currentLocation]);
 
   const fareGuide = useMemo(() => {
@@ -96,7 +106,7 @@ const CalcScreen: React.FC = () => {
 
       return {
         sections,
-        note: 'Final: rounded to nearest peso.'
+        note: 'Final: Rounded to peso.'
       };
     }
 
@@ -120,8 +130,8 @@ const CalcScreen: React.FC = () => {
 
     return {
       sections,
-      note: 'Final: rounded to nearest peso.'
-    };
+      note: 'Final: Rounded to peso.'
+  };
   }, [activeRoute]);
 
   const formatKM = (km: number) => {
@@ -166,7 +176,7 @@ const CalcScreen: React.FC = () => {
     showToast(`Reset to ${activeRoute.shortLabel}`);
   };
 
-  const requestCurrentLocation = () => {
+  const requestCurrentLocation = async () => {
     setIsLocationAssistOpen(true);
     setIsLocating(true);
     setLocationError(null);
@@ -175,51 +185,30 @@ const CalcScreen: React.FC = () => {
       setIsLocating(false);
       setCurrentLocation(null);
       setNearestStopMatch(null);
+      setNearestSegmentMatch(null);
       setLocationError('This device or browser does not support GPS location.');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        const nextLocation: CurrentLocationSnapshot = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: position.timestamp
-        };
-
-        setCurrentLocation(nextLocation);
-        setNearestStopMatch(findNearestMappedStop(activeRoute.stops, nextLocation));
-        setIsLocating(false);
-      },
-      error => {
-        setCurrentLocation(null);
-        setNearestStopMatch(null);
-        setIsLocating(false);
-
-        if (error.code === error.PERMISSION_DENIED) {
-          setLocationError('Location permission was denied. You can still choose the pickup stop manually.');
-          return;
-        }
-
-        if (error.code === error.POSITION_UNAVAILABLE) {
-          setLocationError('Current location could not be determined. Move to an open area and try again.');
-          return;
-        }
-
-        if (error.code === error.TIMEOUT) {
-          setLocationError('Location request timed out. Try again once GPS is stable.');
-          return;
-        }
-
-        setLocationError('Unable to read your current location right now.');
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0
-      }
-    );
+    try {
+      const nextLocation: CurrentLocationSnapshot = await requestBestCurrentLocation();
+      setCurrentLocation(nextLocation);
+      setNearestStopMatch(findNearestMappedStop(activeRoute.stops, nextLocation));
+      setNearestSegmentMatch(findNearestMappedSegment(activeRoute.stops, nextLocation));
+    } catch (error) {
+      setCurrentLocation(null);
+      setNearestStopMatch(null);
+      setNearestSegmentMatch(null);
+      setLocationError(
+        getLocationErrorMessage(
+          error instanceof Error || (typeof error === 'object' && error !== null && 'code' in error)
+            ? (error as GeolocationPositionError | Error)
+            : new Error('Location error')
+        )
+      );
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const handleUseDetectedStop = (stopName: string) => {
@@ -228,12 +217,27 @@ const CalcScreen: React.FC = () => {
     showToast(`Pickup set to ${stopName}`);
   };
 
+  const handleUseManualKmFromLocation = (pickupKm: number) => {
+    setIsLocationAssistOpen(false);
+    setManualPrefill({
+      pickupKm,
+      destKm: destStop.km
+    });
+    setIsManualOpen(true);
+    showToast(`Manual KM opened at KM ${pickupKm.toFixed(2).replace(/\.?0+$/, '')}`);
+  };
+
   return (
-    <div className="flex flex-col min-h-full animate-fade-in pb-24 bg-[#f8f6f6] dark:bg-black">
-      <header className="bg-primary text-white px-6 py-4 flex items-center justify-between shadow-lg sticky top-0 z-40 h-[72px]">
+    <div className="flex flex-col min-h-full animate-fade-in bg-[#f8f6f6] dark:bg-black">
+      <header className="sticky top-0 z-40 flex items-center justify-between bg-primary px-6 py-4 text-white shadow-lg">
         <div className="flex items-center gap-3">
           <span className="material-icons text-2xl">calculate</span>
-          <h1 className="text-xl font-medium tracking-tight">Fare Calculator</h1>
+          <div>
+            <h1 className="text-xl font-medium tracking-tight">Fare Calculator</h1>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/75">
+              {activeRoute.label}
+            </p>
+          </div>
         </div>
         <button
           onClick={() => setIsConductorCalcOpen(true)}
@@ -245,9 +249,6 @@ const CalcScreen: React.FC = () => {
       </header>
 
       <div className="flex flex-col items-center mt-6 mb-4 gap-2 px-5">
-        <span className="bg-white dark:bg-night-charcoal border border-primary/10 text-primary px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm text-center">
-          {activeRoute.label}
-        </span>
         <button
           onClick={requestCurrentLocation}
           className="bg-white dark:bg-night-charcoal px-5 py-2 rounded-full border border-primary/10 shadow-sm active:scale-95 transition-all flex items-center gap-2"
@@ -278,16 +279,18 @@ const CalcScreen: React.FC = () => {
         )}
       </div>
 
-      <div className="px-5 space-y-2 relative mb-8">
+      <div className="px-5 space-y-2 relative mb-6">
         <button
           onClick={() => setIsOriginPickerOpen(true)}
-          className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex justify-between items-center shadow-sm active:bg-slate-50 transition-colors"
+          className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-1">Pickup Point</p>
-            <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight">KM {formatKM(originStop.km)} - {origin}</h2>
+            <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight whitespace-normal break-words">
+              KM {formatKM(originStop.km)} - {origin}
+            </h2>
           </div>
-          <span className="material-icons text-slate-300">chevron_right</span>
+          <span className="material-icons text-slate-300 mt-2 shrink-0">chevron_right</span>
         </button>
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
@@ -301,17 +304,19 @@ const CalcScreen: React.FC = () => {
 
         <button
           onClick={() => setIsDestPickerOpen(true)}
-          className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex justify-between items-center shadow-sm active:bg-slate-50 transition-colors"
+          className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-1">Destination</p>
-            <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight">KM {formatKM(destStop.km)} - {destination}</h2>
+            <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight whitespace-normal break-words">
+              KM {formatKM(destStop.km)} - {destination}
+            </h2>
           </div>
-          <span className="material-icons text-slate-300">chevron_right</span>
+          <span className="material-icons text-slate-300 mt-2 shrink-0">chevron_right</span>
         </button>
       </div>
 
-      <div className="px-5 mb-8">
+      <div className="px-5 mb-6">
         <div className="bg-[#fbbf24] dark:bg-night-charcoal rounded-[2.5rem] p-8 shadow-2xl border-b-8 border-black/10 relative overflow-hidden">
           <div className="flex justify-between items-start mb-4 gap-4">
             <div>
@@ -357,7 +362,7 @@ const CalcScreen: React.FC = () => {
                 <div className="space-y-1 animate-fade-in text-[10px] font-black text-slate-700/80 dark:text-slate-400/80">
                   <p>- {formatKM(distance)} km x {peso}{formatFareRate(activeRoute.fare.regularRate)} = {peso}{calculation.rawReg.toFixed(2)} (Reg)</p>
                   <p>- {formatKM(distance)} km x {peso}{formatFareRate(activeRoute.fare.discountRate)} = {peso}{calculation.rawDisc.toFixed(2)} (Disc)</p>
-                  <p>- Final: rounded to nearest peso {calculation.isMinApplied ? '(minimum fare applied)' : ''}</p>
+                  <p>- Final: Rounded to peso. {calculation.isMinApplied ? '(minimum fare applied)' : ''}</p>
                 </div>
               )}
             </div>
@@ -365,7 +370,7 @@ const CalcScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="px-5 mb-8">
+      <div className="px-5 mb-6">
         <div className="rounded-[2rem] border border-slate-200 bg-[#F5F6F7] px-5 py-5 shadow-sm dark:border-white/10 dark:bg-[#161a1d]">
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">Fare Guide</h2>
           <div className="mt-4 space-y-4">
@@ -393,7 +398,7 @@ const CalcScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="px-5 space-y-4 pb-10">
+      <div className="px-5 space-y-4 pb-8">
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={handleSave}
@@ -414,7 +419,10 @@ const CalcScreen: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsManualOpen(true)}
+          onClick={() => {
+            setManualPrefill(null);
+            setIsManualOpen(true);
+          }}
           className="w-full bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-4"
         >
           <span className="material-icons text-primary text-2xl">keyboard</span>
@@ -432,7 +440,15 @@ const CalcScreen: React.FC = () => {
 
       <StopPickerOverlay isOpen={isOriginPickerOpen} onClose={() => setIsOriginPickerOpen(false)} onSelect={(name) => { setOrigin(name); setIsOriginPickerOpen(false); }} title="Pickup" />
       <StopPickerOverlay isOpen={isDestPickerOpen} onClose={() => setIsDestPickerOpen(false)} onSelect={(name) => { setDestination(name); setIsDestPickerOpen(false); }} title="Destination" />
-      <ManualKMOverlay isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} />
+      <ManualKMOverlay
+        isOpen={isManualOpen}
+        onClose={() => {
+          setIsManualOpen(false);
+          setManualPrefill(null);
+        }}
+        initialPickupKm={manualPrefill?.pickupKm ?? null}
+        initialDestKm={manualPrefill?.destKm ?? null}
+      />
       <ConductorCalcOverlay isOpen={isConductorCalcOpen} onClose={() => setIsConductorCalcOpen(false)} initialValue={calculation.reg} />
       <LocationAssistOverlay
         isOpen={isLocationAssistOpen}
@@ -440,11 +456,13 @@ const CalcScreen: React.FC = () => {
         routeLabel={activeRoute.label}
         location={currentLocation}
         nearestMatch={nearestStopMatch}
+        segmentMatch={nearestSegmentMatch}
         hasMappedStops={routeHasMappedStops}
         error={locationError}
         onClose={() => setIsLocationAssistOpen(false)}
         onRetry={requestCurrentLocation}
         onUseStop={(stop) => handleUseDetectedStop(stop.name)}
+        onUseManualKm={handleUseManualKmFromLocation}
       />
     </div>
   );

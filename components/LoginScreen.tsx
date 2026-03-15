@@ -53,7 +53,7 @@ const LoginScreen: React.FC = () => {
               value={employeeName}
               onChange={(e) => setEmployeeName(e.target.value)}
               placeholder="e.g., Mark Joseph M. Galvan"
-              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -64,7 +64,7 @@ const LoginScreen: React.FC = () => {
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               placeholder="e.g., 03-1123"
-              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -74,7 +74,7 @@ const LoginScreen: React.FC = () => {
               type="file"
               accept="image/*"
               onChange={(e) => e.target.files && setIdPhoto(e.target.files[0])}
-              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+              className="block w-full text-sm text-slate-500 dark:text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
             />
           </div>
 

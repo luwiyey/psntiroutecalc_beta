@@ -10,8 +10,10 @@ interface Props {
   onExit?: () => void;
 }
 
+const peso = '\u20B1';
+
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
-  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, showToast } = useApp();
+  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, showToast } = useApp();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -51,6 +53,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [isFooterCollapsed, setIsFooterCollapsed] = useState(true);
   const [isTallyCalcOpen, setIsTallyCalcOpen] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
   const [sheetCompleteAlert, setSheetCompleteAlert] = useState(false);
@@ -85,31 +88,63 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       maximumFare
     };
   }, [activeRoute.fare, minimumSegmentDistance, routeDistanceRange]);
-  const commonFares = useMemo(() => {
-    return Array.from(
-      new Set([
-        fareBounds.minimumFare,
-        fareBounds.minimumDiscountFare,
-        fareBounds.minimumRegularFare,
-        10,
-        15,
-        20,
-        25,
-        30,
-        35,
-        40,
-        50,
-        60,
-        75,
-        100,
-        120,
-        150,
-        200
-      ])
-    )
-      .filter(fare => fare >= fareBounds.minimumFare && fare <= fareBounds.maximumFare)
-      .sort((a, b) => a - b);
-  }, [fareBounds]);
+  const learnedFareCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+
+    sessions
+      .filter(session => session.routeId === activeRoute.id)
+      .forEach(session => {
+        session.trips.forEach(trip => {
+          trip.sheets.forEach(sheet => {
+            sheet.slots.forEach(slot => {
+              if (slot > 0) counts.set(slot, (counts.get(slot) ?? 0) + 1);
+            });
+          });
+        });
+      });
+
+    history
+      .filter(record => record.routeId === activeRoute.id)
+      .forEach(record => {
+        if (record.regularFare > 0) counts.set(record.regularFare, (counts.get(record.regularFare) ?? 0) + 1);
+        if (record.discountedFare > 0) counts.set(record.discountedFare, (counts.get(record.discountedFare) ?? 0) + 1);
+      });
+
+    return counts;
+  }, [activeRoute.id, history, sessions]);
+  const smartQuickFares = useMemo(() => {
+    const pinned = Array.from(
+      new Set(
+        [fareBounds.minimumDiscountFare, fareBounds.minimumRegularFare].filter(
+          (fare): fare is number => typeof fare === 'number' && fare > 0
+        )
+      )
+    ).sort((a, b) => a - b);
+    const midStart = pinned[pinned.length - 1] ?? fareBounds.minimumFare;
+    const fallbackMiddle = Array.from({ length: 5 }, (_, index) => midStart + (index + 1) * 2);
+    const fallbackTop = [
+      Math.max(fareBounds.minimumFare, fareBounds.maximumFare - 1),
+      fareBounds.maximumFare
+    ];
+    const learned = [...learnedFareCounts.entries()]
+      .filter(([fare]) => fare >= fareBounds.minimumFare && fare <= fareBounds.maximumFare && !pinned.includes(fare))
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .map(([fare]) => fare);
+    const result: number[] = [];
+
+    [...pinned, ...learned, ...fallbackMiddle, ...fallbackTop].forEach(fare => {
+      if (
+        fare >= fareBounds.minimumFare &&
+        fare <= fareBounds.maximumFare &&
+        !result.includes(fare) &&
+        result.length < 9
+      ) {
+        result.push(fare);
+      }
+    });
+
+    return result;
+  }, [fareBounds.maximumFare, fareBounds.minimumFare, fareBounds.minimumDiscountFare, fareBounds.minimumRegularFare, learnedFareCounts]);
   const allBatchFares = useMemo(() => {
     return Array.from(
       { length: fareBounds.maximumFare - fareBounds.minimumFare + 1 },
@@ -139,6 +174,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       });
     }
   }, [activeSession.id, routeSessions.length, setTallyNav, tallyNav.sessionId]);
+
+  useEffect(() => {
+    if (editorMode !== 'batch') return;
+    setEditValue('');
+    inputRef.current?.blur();
+  }, [editorMode]);
 
   const activeTrip = activeSession.trips[tallyNav.tripIdx] || activeSession.trips[0];
   const activeSheet = activeTrip.sheets[tallyNav.sheetIdx] || activeTrip.sheets[0];
@@ -189,7 +230,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }, [batchCounts]);
 
   const stagedTotalGross = useMemo(() => stagedStandardEntries.reduce((a, b) => a + b, 0), [stagedStandardEntries]);
-  const currentTypingValue = parseInt(editValue) || 0;
+  const currentTypingValue = editorMode === 'standard' ? parseInt(editValue) || 0 : 0;
   const grandTotalInEditor = useMemo(() => stagedTotalGross + batchTotalGross + currentTypingValue, [stagedTotalGross, batchTotalGross, currentTypingValue]);
   const pendingEntriesPreview = useMemo(() => {
     const previewEntries = [...stagedStandardEntries];
@@ -305,6 +346,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setBlockAlert(null);
     setSheetCompleteAlert(false);
     setIsFooterCollapsed(true);
+    setShowDetails(false);
   };
 
   const commitStandardEntry = (val: number, isTileClick = false) => {
@@ -392,14 +434,67 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     inputRef.current?.focus();
   };
 
+  const handleApplyCalcEntries = (values: number[]) => {
+    if (values.length === 0) return;
+
+    const remainingSlots = 100 - selectedSlotIdx - stagedStandardEntries.length;
+    const acceptedValues = values.slice(0, Math.max(0, remainingSlots));
+
+    if (acceptedValues.length === 0) {
+      showToast('No empty boxes left for these entries');
+      return;
+    }
+
+    setEditorMode('standard');
+    setStagedStandardEntries(prev => [...prev, ...acceptedValues]);
+    setEditValue('');
+    setIsFlashing(false);
+    setLastPunched(acceptedValues[acceptedValues.length - 1] ?? null);
+
+    if (acceptedValues.length < values.length) {
+      showToast(`Only ${acceptedValues.length} entries fit in the remaining boxes`);
+    } else {
+      showToast(`${acceptedValues.length} entries added from calculator`);
+    }
+  };
+
+  const handleClearSavedSlot = (slotIdx: number) => {
+    setSessions(prev =>
+      prev.map(session =>
+        session.id === activeSession.id
+          ? {
+              ...session,
+              trips: session.trips.map((trip, tripIdx) =>
+                tripIdx === tallyNav.tripIdx
+                  ? {
+                      ...trip,
+                      sheets: trip.sheets.map((sheet, sheetIdx) =>
+                        sheetIdx === tallyNav.sheetIdx
+                          ? {
+                              ...sheet,
+                              slots: sheet.slots.map((slot, index) => (index === slotIdx ? 0 : slot)),
+                              lastUpdatedAt: Date.now()
+                            }
+                          : sheet
+                      )
+                    }
+                  : trip
+              )
+            }
+          : session
+      )
+    );
+    showToast(`Box ${slotIdx + 1} cleared`);
+  };
+
   return (
     <div className="flex flex-col min-h-full bg-slate-50 dark:bg-black transition-all overflow-hidden">
-      <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40 h-[72px]">
+      <header className="shrink-0 bg-primary flex items-center justify-between px-6 py-4 shadow-md sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <span className="material-icons text-white text-2xl">fact_check</span>
           <div>
             <h1 className="text-xl font-medium text-white tracking-tight">Tally Sheet</h1>
-            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">{activeRoute.shortLabel}</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">{activeRoute.label}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -459,7 +554,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
            </button>
            <div className="text-right">
              <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Sheet Total</p>
-             <p className="text-xl font-900 text-primary leading-none">₱{sheetTotal}</p>
+             <p className="text-xl font-900 text-primary leading-none">{peso}{sheetTotal}</p>
           </div>
         </div>
         <div className="flex p-2 gap-2 bg-slate-100 dark:bg-black/20 h-auto border-t border-slate-200 dark:border-white/10">
@@ -468,7 +563,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                <button onClick={() => setTallyNav(n => ({ ...n, blockIdx: b }))}
                  className={`w-full py-2 rounded-xl font-black border flex flex-col items-center justify-center transition-all ${tallyNav.blockIdx === b ? 'bg-white dark:bg-night-charcoal border-primary/20 text-primary shadow-sm' : 'bg-transparent border-transparent text-slate-400'}`}>
                  <span className="text-[8px] opacity-60 uppercase tracking-tighter">Block {b + 1} ({blockCounts[b]}/25)</span>
-                 <span className="text-[9px]">₱{blockTotals[b]}</span>
+                 <span className="text-[9px]">{peso}{blockTotals[b]}</span>
                </button>
                 <button onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="flex items-center justify-center gap-1 text-slate-400 hover:text-red-500 mt-1 transition-colors">
                   <span className="material-icons text-xs">refresh</span>
@@ -479,15 +574,38 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         </div>
       </div>
 
-      <div className="p-4 grid grid-cols-5 gap-3.5 flex-1 overflow-y-auto pb-24">
+      <div className="p-4 grid grid-cols-5 gap-3.5 flex-1 overflow-y-auto pb-8">
         {activeSheet.slots.slice(tallyNav.blockIdx * 25, (tallyNav.blockIdx + 1) * 25).map((val, i) => {
           const idx = tallyNav.blockIdx * 25 + i;
           return (
-            <button key={idx} onClick={() => handleSlotClick(idx)}
-              className={`aspect-square rounded-[1.25rem] border flex flex-col items-center justify-center relative transition-all ${val > 0 ? 'bg-primary border-primary text-white shadow-md' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/10 text-slate-300 hover:border-primary/40'}`}>
+            <div
+              key={idx}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleSlotClick(idx)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleSlotClick(idx);
+                }
+              }}
+              className={`aspect-square rounded-[1.25rem] border flex flex-col items-center justify-center relative transition-all cursor-pointer ${val > 0 ? 'bg-primary border-primary text-white shadow-md' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/10 text-slate-300 hover:border-primary/40'}`}
+            >
               <span className="font-black opacity-30 absolute top-2 left-2 text-[7px]">{idx + 1}</span>
+              {val > 0 && (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClearSavedSlot(idx);
+                  }}
+                  className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-slate-500 active:scale-90 dark:bg-black/50"
+                  title={`Clear box ${idx + 1}`}
+                >
+                  <span className="material-icons text-[11px] leading-none">close</span>
+                </button>
+              )}
               <span className="font-900 text-lg leading-none">{val || '—'}</span>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -521,107 +639,132 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                </div>
             </div>
 
-            {/* SUMMARY STATS & PUNCH DISPLAY (FIXED) */}
             <div className="shrink-0 px-8 pb-4">
-              <div className="flex gap-2 mb-4">
-                <div className="flex-1 bg-slate-50 dark:bg-black/30 p-3 rounded-2xl border border-slate-100 dark:border-white/5">
-                  <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{activeTrip.direction === 'north' ? 'BAGUIO' : 'BAYAMBANG'} {activeTrip.name.toUpperCase()}</p>
-                  <h2 className="text-[11px] font-900 text-slate-800 dark:text-white uppercase leading-none">Sheet {tallyNav.sheetIdx + 1} • Block {currentSlotBlock}</h2>
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-2">
+              <div className="mb-4 flex gap-2">
+                <div className="flex-1 rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-white/5 dark:bg-black/30">
+                  <p className="mb-0.5 text-[6px] font-black uppercase tracking-widest text-slate-400">
+                    {activeTrip.direction === 'north' ? 'BAGUIO' : (activeRoute.stops[0]?.name ?? 'ROUTE').toUpperCase()} {activeTrip.name.toUpperCase()}
+                  </p>
+                  <h2 className="text-[11px] font-900 uppercase leading-none text-slate-800 dark:text-white">Sheet {tallyNav.sheetIdx + 1} • Block {currentSlotBlock}</h2>
+                  <p className="mt-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
                     Start Slot {selectedSlotNumber} {stagedStandardEntries.length > 0 ? `• ${stagedStandardEntries.length} staged` : '• ready'}
                   </p>
                 </div>
-                <div className="flex-1 bg-zinc-900 dark:bg-black p-3 rounded-2xl border-b-[2px] border-black/50 shadow-lg">
-                  <p className="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Gross</p>
-                  <p className="text-lg font-900 text-white leading-none">₱{grandTotalInEditor}</p>
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-500 mt-2">Current Block B{currentSlotBlock}</p>
+                <div className="flex-1 rounded-2xl border-b-[2px] border-black/50 bg-zinc-900 p-3 shadow-lg dark:bg-black">
+                  <p className="mb-0.5 text-[6px] font-black uppercase tracking-widest text-slate-400">Gross</p>
+                  <p className="text-lg font-900 leading-none text-white">{peso}{grandTotalInEditor}</p>
+                  <p className="mt-2 text-[8px] font-black uppercase tracking-widest text-slate-500">Current Block B{currentSlotBlock}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3">
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 px-4 py-3 shadow-sm">
                   <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
-                  <p className="text-base font-900 text-primary leading-none mt-2">B{currentSlotBlock} • Slot {currentSlotNumber}</p>
+                  <p className="mt-2 text-base font-900 leading-none text-primary">B{currentSlotBlock} • Slot {currentSlotNumber}</p>
                 </div>
-                <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-4 py-3">
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/30">
                   <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
-                  <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">
+                  <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">
                     {nextSlotNumber ? `B${nextSlotBlock} • Slot ${nextSlotNumber}` : 'Sheet Full'}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/30 px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block 25 Audit</p>
-                      <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">Block {currentSlotBlock}</p>
-                    </div>
-                    <span className={`text-[8px] font-black uppercase tracking-widest ${blockSlotsLeft === 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                      {blockSlotsLeft === 0 ? 'Ready' : `${blockSlotsLeft} left`}
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-1.5">
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Filled</span>
-                      <span className="text-slate-700 dark:text-slate-200">{blockCounts[auditBlockIdx]} to {projectedBlockCounts[auditBlockIdx]}/25</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Total Now</span>
-                      <span className="text-slate-700 dark:text-slate-200">₱{blockTotals[auditBlockIdx]}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>After Save</span>
-                      <span className="text-primary">₱{projectedBlockTotals[auditBlockIdx]}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Delta</span>
-                      <span className={blockPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-                        {blockPendingTotal >= 0 ? '+' : '-'}₱{Math.abs(blockPendingTotal)}
+              <button
+                onClick={() => setShowDetails(prev => !prev)}
+                className="mb-3 flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition-all dark:border-white/10 dark:bg-black/30"
+              >
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Details</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {previewEntryCount > 0
+                      ? `Tap Finalize Session to see ${previewEntryCount === 1 ? `box ${selectedSlotNumber}` : `boxes ${selectedSlotNumber} to ${previewEndSlotNumber}`}`
+                      : `Tap Finalize Session to see box ${currentSlotNumber}`}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {blockSlotsLeft} Block Left • {peso}{projectedBlockTotals[auditBlockIdx]}
+                  </p>
+                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-primary/80">
+                    {sheetSlotsLeft} Sheet Left • {peso}{projectedSheetTotal}
+                  </p>
+                </div>
+              </button>
+
+              {showDetails && (
+                <div className="mb-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/30">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block 25 Audit</p>
+                        <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">Block {currentSlotBlock}</p>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase tracking-widest ${blockSlotsLeft === 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                        {blockSlotsLeft === 0 ? 'Ready' : `${blockSlotsLeft} left`}
                       </span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedBlockCounts[auditBlockIdx] / 25) * 100)}%` }} />
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Filled After Clicking Finalize</span>
+                        <span className="text-slate-700 dark:text-slate-200">{projectedBlockCounts[auditBlockIdx]}/25</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Saved Money Now</span>
+                        <span className="text-slate-700 dark:text-slate-200">{peso}{blockTotals[auditBlockIdx]}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Money After Finalizing</span>
+                        <span className="text-primary">{peso}{projectedBlockTotals[auditBlockIdx]}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Added Money Now</span>
+                        <span className={blockPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                          {blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet 100 Audit</p>
+                        <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">Sheet {tallyNav.sheetIdx + 1}</p>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase tracking-widest ${sheetSlotsLeft === 0 ? 'text-emerald-500' : 'text-primary/70'}`}>
+                        {sheetSlotsLeft === 0 ? 'Ready' : `${sheetSlotsLeft} left`}
+                      </span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/10 dark:bg-white/5">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedSheetEntryCount / 100) * 100)}%` }} />
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Filled After Clicking Finalize</span>
+                        <span className="text-slate-700 dark:text-slate-200">{projectedSheetEntryCount}/100</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Saved Money Now</span>
+                        <span className="text-slate-700 dark:text-slate-200">{peso}{sheetTotal}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Money After Finalizing</span>
+                        <span className="text-primary">{peso}{projectedSheetTotal}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+                        <span>Added Money Now</span>
+                        <span className={sheetPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                          {sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet 100 Audit</p>
-                      <p className="text-base font-900 text-slate-800 dark:text-white leading-none mt-2">Sheet {tallyNav.sheetIdx + 1}</p>
-                    </div>
-                    <span className={`text-[8px] font-black uppercase tracking-widest ${sheetSlotsLeft === 0 ? 'text-emerald-500' : 'text-primary/70'}`}>
-                      {sheetSlotsLeft === 0 ? 'Ready' : `${sheetSlotsLeft} left`}
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-1.5">
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Filled</span>
-                      <span className="text-slate-700 dark:text-slate-200">{sheetEntryCount} to {projectedSheetEntryCount}/100</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Total Now</span>
-                      <span className="text-slate-700 dark:text-slate-200">₱{sheetTotal}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>After Save</span>
-                      <span className="text-primary">₱{projectedSheetTotal}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      <span>Delta</span>
-                      <span className={sheetPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-                        {sheetPendingTotal >= 0 ? '+' : '-'}₱{Math.abs(sheetPendingTotal)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-4">
-                {previewEntryCount > 0
-                  ? `Queue covers slots ${selectedSlotNumber} to ${previewEndSlotNumber}`
-                  : `Next punch goes to slot ${currentSlotNumber}`}
-              </p>
+              )}
 
               <button 
                 onClick={() => inputRef.current?.focus()} 
@@ -629,7 +772,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               >
                 <p className="text-[7px] font-black uppercase tracking-widest mb-1 text-slate-400">{editorMode === 'batch' ? 'Batch Mode Total' : 'Punch Amount'}</p>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-900 text-slate-400 leading-none">₱</span>
+                  <span className="text-lg font-900 text-slate-400 leading-none">{peso}</span>
                   <h3 className={`text-3xl font-900 leading-none transition-colors ${isFlashing ? 'text-neon-green' : (editValue ? 'text-primary' : 'text-slate-900 dark:text-white')}`}>
                     {editorMode === 'batch' ? batchTotalGross : (isFlashing ? lastPunched : (editValue || '0'))}
                   </h3>
@@ -664,7 +807,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                               <span className="material-icons text-[11px] leading-none">close</span>
                             </button>
                             <div className="flex h-full items-center justify-center pt-2">
-                              <span className="text-[11px] font-black">₱{fare}</span>
+                              <span className="text-[11px] font-black">{peso}{fare}</span>
                             </div>
                           </div>
                         ))}
@@ -672,7 +815,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     </div>
                   )}
                   <div className="grid grid-cols-3 gap-2.5">
-                    {commonFares.map(f => (
+                    {smartQuickFares.map(f => (
                       <button key={f} onClick={() => commitStandardEntry(f, true)} className="aspect-square bg-primary text-white rounded-[1.5rem] font-black text-2xl shadow-md active:scale-90 transition-transform">
                         {f}
                       </button>
@@ -733,7 +876,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                         filteredBatchFares.map(f => (
                           <div key={f} className={`flex items-center justify-between py-2.5 transition-colors ${batchCounts[f] ? 'bg-primary/5 -mx-1 px-1 rounded-xl' : ''}`}>
                             <div className="flex items-center gap-2">
-                              <p className={`font-900 ${batchCounts[f] ? 'text-primary text-lg' : 'text-sm text-slate-800 dark:text-white'}`}>₱{f}</p>
+                              <p className={`font-900 ${batchCounts[f] ? 'text-primary text-lg' : 'text-sm text-slate-800 dark:text-white'}`}>{peso}{f}</p>
                               {batchCounts[f] && <span className="w-1 h-1 rounded-full bg-neon-green shadow-sm animate-pulse"></span>}
                             </div>
                             <div className="flex items-center gap-2">
@@ -768,28 +911,28 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Finalize Session</p>
                    </div>
                    <div className="flex items-center gap-4">
-                     <p className="text-xl font-900 text-primary">₱{grandTotalInEditor}</p>
+                     <p className="text-xl font-900 text-primary">{peso}{grandTotalInEditor}</p>
                      <span className="material-icons text-slate-400">expand_less</span>
                    </div>
                  </div>
                ) : (
                  <div className="px-8 pt-4 pb-10">
                    <div className="flex items-center justify-between mb-4">
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Final Audit Review</p>
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Final Review</p>
                      <button onClick={() => setIsFooterCollapsed(true)} className="p-1"><span className="material-icons text-slate-400">expand_more</span></button>
                    </div>
                    <div className="grid grid-cols-3 gap-2 mb-4">
                      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 px-3 py-3">
-                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Pending</p>
-                       <p className="text-sm font-900 text-primary mt-2">₱{grandTotalInEditor}</p>
+                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Added Money Now</p>
+                       <p className="text-sm font-900 text-primary mt-2">{peso}{grandTotalInEditor}</p>
                      </div>
                      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/30 px-3 py-3">
-                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block Total</p>
-                       <p className="text-sm font-900 text-slate-800 dark:text-white mt-2">₱{projectedBlockTotals[auditBlockIdx]}</p>
+                       <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block After Finalizing</p>
+                       <p className="text-sm font-900 text-slate-800 dark:text-white mt-2">{peso}{projectedBlockTotals[auditBlockIdx]}</p>
                      </div>
                      <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-3 py-3">
-                       <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet Total</p>
-                       <p className="text-sm font-900 text-primary mt-2">₱{projectedSheetTotal}</p>
+                       <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet After Finalizing</p>
+                       <p className="text-sm font-900 text-primary mt-2">{peso}{projectedSheetTotal}</p>
                      </div>
                    </div>
                    <button 
@@ -797,7 +940,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                      disabled={grandTotalInEditor === 0} 
                      className="w-full bg-primary text-white py-4 rounded-[1.5rem] font-black uppercase text-[10px] shadow-lg active:scale-95 border-b-[4px] border-black/20 flex items-center justify-center gap-2"
                    >
-                     Finalize Waybill ₱{grandTotalInEditor}
+                     Finalize Session {peso}{grandTotalInEditor}
                      <span className="material-icons text-sm">check_circle</span>
                    </button>
                  </div>
@@ -865,6 +1008,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         onClose={() => setIsTallyCalcOpen(false)}
         initialInput={parseInt(editValue, 10) || 0}
         onApplyTotal={isEditorOpen ? handleApplyCalcTotal : undefined}
+        onApplyEntries={isEditorOpen ? handleApplyCalcEntries : undefined}
       />
     </div>
   );

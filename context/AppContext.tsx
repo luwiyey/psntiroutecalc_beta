@@ -125,6 +125,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeFare, setActiveFare] = useState(0);
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
   const activeRoute = useMemo(
     () => getReadyRouteById(settings.activeRouteId) ?? DEFAULT_ROUTE,
     [settings.activeRouteId]
@@ -211,9 +212,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const showToast = (msg: string) => {
-    // Simple mock toast - in real app we might use a context state
-    console.log("Toast:", msg);
+  useEffect(() => {
+    if (!toast) return;
+    const timeoutId = window.setTimeout(() => setToast(null), 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
+  const showToast = (msg: string, type: 'info' | 'success' = 'success') => {
+    setToast({ message: msg, type });
   };
 
   const selectRoute = (routeId: string) => {
@@ -250,6 +256,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast
     }}>
       {children}
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+80px)] z-[200] flex justify-center px-4">
+          <div
+            className={`rounded-2xl px-4 py-3 text-sm font-black shadow-2xl ${
+              toast.type === 'info'
+                ? 'bg-zinc-900 text-white'
+                : 'bg-emerald-500 text-white'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
     </AppContext.Provider>
   );
 };

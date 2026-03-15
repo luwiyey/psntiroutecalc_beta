@@ -2,13 +2,96 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFare } from '../utils/fare';
+import type { Stop } from '../types';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  initialPickupKm?: number | null;
+  initialDestKm?: number | null;
 }
 
-const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
+interface KmPlaceHint {
+  tone: 'default' | 'exact' | 'warning';
+  title: string;
+  detail?: string;
+}
+
+const resolveKmHint = (
+  rawValue: string,
+  stops: Stop[],
+  minKm: number,
+  maxKm: number
+): KmPlaceHint | null => {
+  if (!rawValue.trim()) return null;
+
+  const parsedKm = parseFloat(rawValue);
+  if (Number.isNaN(parsedKm)) {
+    return {
+      tone: 'warning',
+      title: 'Enter numbers only'
+    };
+  }
+
+  if (parsedKm < minKm || parsedKm > maxKm) {
+    return {
+      tone: 'warning',
+      title: 'Outside route range',
+      detail: `Route only covers KM ${minKm} to ${maxKm}`
+    };
+  }
+
+  const sortedStops = [...stops].sort((left, right) => left.km - right.km);
+  const exactStop = sortedStops.find(stop => stop.km === parsedKm);
+
+  if (exactStop) {
+    return {
+      tone: 'exact',
+      title: exactStop.name,
+      detail: `Exact stop at KM ${exactStop.km}`
+    };
+  }
+
+  let previousStop = sortedStops[0];
+  let nextStop = sortedStops[sortedStops.length - 1];
+
+  for (let index = 0; index < sortedStops.length; index += 1) {
+    const stop = sortedStops[index];
+    if (stop.km < parsedKm) {
+      previousStop = stop;
+      continue;
+    }
+
+    nextStop = stop;
+    break;
+  }
+
+  const nearestStop =
+    Math.abs(parsedKm - previousStop.km) <= Math.abs(nextStop.km - parsedKm)
+      ? previousStop
+      : nextStop;
+
+  if (previousStop.km === nextStop.km) {
+    return {
+      tone: 'default',
+      title: `Near ${nearestStop.name}`,
+      detail: `Closest recorded stop at KM ${nearestStop.km}`
+    };
+  }
+
+  return {
+    tone: 'default',
+    title: `Near ${nearestStop.name}`,
+    detail: `Between ${previousStop.name} (KM ${previousStop.km}) and ${nextStop.name} (KM ${nextStop.km})`
+  };
+};
+
+const formatEditableKm = (km: number) => {
+  if (Number.isInteger(km)) return km.toFixed(0);
+  return km.toFixed(2).replace(/\.?0+$/, '');
+};
+
+const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose, initialPickupKm = null, initialDestKm = null }) => {
   const { activeRoute, addRecord, showToast } = useApp();
   const [pickup, setPickup] = useState('');
   const [dest, setDest] = useState('');
@@ -16,15 +99,25 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [useCustomKeypad, setUseCustomKeypad] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isPunchTypeOpen, setIsPunchTypeOpen] = useState(false);
 
   const pickupRef = useRef<HTMLInputElement>(null);
   const destRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
+      if (typeof initialPickupKm === 'number') {
+        setPickup(formatEditableKm(initialPickupKm));
+      }
+      if (typeof initialDestKm === 'number') {
+        setDest(formatEditableKm(initialDestKm));
+      }
+      setActiveInput('pickup');
       setTimeout(() => pickupRef.current?.focus(), 300);
+    } else {
+      setIsPunchTypeOpen(false);
     }
-  }, [isOpen]);
+  }, [initialDestKm, initialPickupKm, isOpen]);
 
   const routeMinKm = useMemo(() => Math.min(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
   const routeMaxKm = useMemo(() => Math.max(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
@@ -45,6 +138,10 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!isInputNumeric) return 0;
     return Math.abs(parsedDest - parsedPickup);
   }, [isInputNumeric, parsedDest, parsedPickup]);
+  const formattedDistance = useMemo(() => {
+    if (Number.isInteger(distance)) return distance.toString();
+    return distance.toFixed(2).replace(/\.?0+$/, '');
+  }, [distance]);
 
   const canSubmit = distance > 0 && isWithinRouteRange;
 
@@ -57,6 +154,14 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const calculation = useMemo(
     () => calculateFare(distance, activeRoute.fare),
     [activeRoute.fare, distance]
+  );
+  const pickupHint = useMemo(
+    () => resolveKmHint(pickup, activeRoute.stops, routeMinKm, routeMaxKm),
+    [activeRoute.stops, pickup, routeMaxKm, routeMinKm]
+  );
+  const destHint = useMemo(
+    () => resolveKmHint(dest, activeRoute.stops, routeMinKm, routeMaxKm),
+    [activeRoute.stops, dest, routeMaxKm, routeMinKm]
   );
 
   const handleKeypadPress = (key: string) => {
@@ -89,7 +194,7 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleLog = () => {
+  const handleLog = (punchedFareType: 'regular' | 'discounted') => {
     if (!canSubmit) return;
     addRecord({
       origin: `KM ${pickup}`,
@@ -97,9 +202,11 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       distance,
       regularFare: calculation.reg,
       discountedFare: calculation.disc,
+      punchedFareType,
       isFavorite: isFavorite
     });
-    showToast('Manual entry recorded');
+    showToast(`${punchedFareType === 'discounted' ? 'Discounted' : 'Regular'} entry recorded`);
+    setIsPunchTypeOpen(false);
     onClose();
   };
 
@@ -117,11 +224,14 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         </button>
         <h1 className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Manual KM Entry</h1>
         <button 
-          onClick={() => setUseCustomKeypad(!useCustomKeypad)}
+          onClick={() => {
+            setUseCustomKeypad(!useCustomKeypad);
+            setIsKeyboardVisible(false);
+          }}
           className={`px-3 py-1.5 rounded-full flex items-center gap-1 transition-all ${useCustomKeypad ? 'bg-primary text-white shadow-md' : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300'}`}
         >
           <span className="material-icons text-sm">{useCustomKeypad ? 'apps' : 'keyboard_hide'}</span>
-          <span className="text-[10px] font-black uppercase">{useCustomKeypad ? 'Pad ON' : 'Use Pad'}</span>
+          <span className="text-[10px] font-black uppercase">{useCustomKeypad ? 'Pad ON' : 'Pad OFF'}</span>
         </button>
       </header>
 
@@ -165,6 +275,22 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 <button onClick={(e) => { e.stopPropagation(); setPickup(''); }} className="material-icons text-slate-400 text-lg">cancel</button>
               )}
             </div>
+            {pickupHint && (
+              <div
+                className={`mt-3 rounded-xl px-3 py-2 ${
+                  pickupHint.tone === 'exact'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : pickupHint.tone === 'warning'
+                      ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-200'
+                      : 'bg-slate-50 text-slate-600 dark:bg-white/5 dark:text-slate-200'
+                }`}
+              >
+                <p className="text-[10px] font-black uppercase tracking-wide">{pickupHint.title}</p>
+                {pickupHint.detail && (
+                  <p className="mt-1 text-[10px] font-semibold leading-snug opacity-80">{pickupHint.detail}</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div 
@@ -192,6 +318,22 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 <button onClick={(e) => { e.stopPropagation(); setDest(''); }} className="material-icons text-slate-400 text-lg">cancel</button>
               )}
             </div>
+            {destHint && (
+              <div
+                className={`mt-3 rounded-xl px-3 py-2 ${
+                  destHint.tone === 'exact'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : destHint.tone === 'warning'
+                      ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-200'
+                      : 'bg-slate-50 text-slate-600 dark:bg-white/5 dark:text-slate-200'
+                }`}
+              >
+                <p className="text-[10px] font-black uppercase tracking-wide">{destHint.title}</p>
+                {destHint.detail && (
+                  <p className="mt-1 text-[10px] font-semibold leading-snug opacity-80">{destHint.detail}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -204,7 +346,7 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
           <div className="flex justify-between items-end mb-8">
             <div>
-               <p className="text-4xl font-900 leading-none">{distance.toFixed(2)}</p>
+               <p className="text-4xl font-900 leading-none">{formattedDistance} km</p>
                <p className="text-[10px] font-black uppercase text-white/60 mt-2">Total Kilometers</p>
             </div>
             <button 
@@ -248,13 +390,53 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         )}
 
         <button 
-          onClick={handleLog}
+          onClick={() => setIsPunchTypeOpen(true)}
           disabled={!canSubmit}
           className="w-full bg-primary disabled:bg-slate-300 dark:disabled:bg-white/10 text-white py-6 rounded-3xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all text-sm mb-4"
         >
           {isFavorite ? 'Confirm & Save Favorite' : 'Record Distance Entry'}
         </button>
       </main>
+
+      {isPunchTypeOpen && (
+        <div className="absolute inset-0 z-10 flex items-end bg-black/45 p-4 backdrop-blur-sm" onClick={() => setIsPunchTypeOpen(false)}>
+          <div
+            className="w-full rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Punched Fare</p>
+            <h3 className="mt-2 text-xl font-900 text-slate-900 dark:text-white">Which fare was punched?</h3>
+            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-300">
+              The selected fare will be shown as the main amount in History Logs.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleLog('regular')}
+                className="rounded-[1.5rem] border border-primary/15 bg-primary/5 px-4 py-4 text-left transition-all active:scale-[0.98]"
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">Regular</p>
+                <p className="mt-2 text-3xl font-900 text-primary">₱{calculation.reg}</p>
+              </button>
+
+              <button
+                onClick={() => handleLog('discounted')}
+                className="rounded-[1.5rem] border border-emerald-500/15 bg-emerald-500/5 px-4 py-4 text-left transition-all active:scale-[0.98]"
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-300">Discounted</p>
+                <p className="mt-2 text-3xl font-900 text-emerald-600 dark:text-emerald-300">₱{calculation.disc}</p>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsPunchTypeOpen(false)}
+              className="mt-4 w-full rounded-[1.25rem] bg-slate-100 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] dark:bg-white/10 dark:text-slate-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {useCustomKeypad && !isKeyboardVisible && (
         <div className="bg-white dark:bg-night-charcoal border-t border-slate-200 dark:border-white/10 p-3 grid grid-cols-4 gap-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_rgba(0,0,0,0.1)] shrink-0">

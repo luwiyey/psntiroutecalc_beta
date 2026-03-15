@@ -19,8 +19,12 @@ const precedence: Record<Operator, number> = {
   '+': 1,
   '-': 1,
   '*': 2,
-  '/': 2,
+  '/': 2
 };
+
+const MULTIPLY = '\u00D7';
+const DIVIDE = '\u00F7';
+const BACKSPACE = '\u232B';
 
 const isOperator = (value: string): value is Operator => ['+', '-', '*', '/'].includes(value);
 const isNumericChar = (value: string) => /[\d.]/.test(value);
@@ -28,14 +32,12 @@ const isNumericChar = (value: string) => /[\d.]/.test(value);
 const normalizeExpression = (value: string) =>
   value
     .replace(/\s+/g, '')
-    .replace(/×/g, '*')
-    .replace(/÷/g, '/')
+    .replace(new RegExp(MULTIPLY, 'g'), '*')
+    .replace(new RegExp(DIVIDE, 'g'), '/')
     .replace(/[^0-9.+\-*/]/g, '');
 
 const displayExpression = (value: string) =>
-  value
-    .replace(/\*/g, '×')
-    .replace(/\//g, '÷');
+  value.replace(/\*/g, MULTIPLY).replace(/\//g, DIVIDE);
 
 const formatNumber = (value: number) => {
   if (!Number.isFinite(value)) return 'Error';
@@ -159,8 +161,7 @@ const stringifyAst = (node: AstNode): string => {
 
     const parentPrec = precedence[node.op];
     const childPrec = precedence[child.op];
-    const needsWrap =
-      childPrec !== parentPrec || (childIsRight && (node.op === '-' || node.op === '/'));
+    const needsWrap = childPrec !== parentPrec || (childIsRight && (node.op === '-' || node.op === '/'));
 
     return needsWrap ? `(${childText})` : childText;
   };
@@ -179,7 +180,7 @@ const findEvaluableExpression = (expression: string) => {
         try {
           return {
             result: evaluateAst(ast),
-            pretty: stringifyAst(ast),
+            pretty: stringifyAst(ast)
           };
         } catch {
           return null;
@@ -223,7 +224,7 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const getSelection = () => ({
     start: inputRef.current?.selectionStart ?? caretPos,
-    end: inputRef.current?.selectionEnd ?? caretPos,
+    end: inputRef.current?.selectionEnd ?? caretPos
   });
 
   const updateExpression = (nextValue: string, nextCaret: number, preserveFormula = false) => {
@@ -239,15 +240,6 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setCaretPos(nextPos);
   };
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const normalized = normalizeExpression(event.target.value);
-    const nextPos = Math.min(event.target.selectionStart ?? normalized.length, normalized.length);
-    setExpression(normalized);
-    setCaretPos(nextPos);
-    setHasEvaluated(false);
-    setLastFormula('');
-  };
-
   const insertValue = (value: string, clearOnEvaluated = false) => {
     const base = clearOnEvaluated && hasEvaluated ? '' : expression;
     const { start, end } = getSelection();
@@ -255,15 +247,14 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     updateExpression(nextValue, start + value.length);
   };
 
-  const handleDigit = (digit: string) => {
-    insertValue(digit, true);
-  };
+  const handleDigit = (digit: string) => insertValue(digit, true);
 
   const handleOperator = (operator: Operator) => {
     if (hasEvaluated) {
       updateExpression(previewResult + operator, previewResult.length + 1, true);
       return;
     }
+
     insertValue(operator);
   };
 
@@ -323,7 +314,7 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative flex h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-2xl animate-fade-in sm:h-auto sm:max-h-[92vh] sm:rounded-[2.5rem] dark:bg-night-charcoal">
-        <div className="shrink-0 flex items-center justify-between px-5 pb-3 pt-5">
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-md">
               <span className="material-icons text-base">calculate</span>
@@ -349,16 +340,16 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               <input
                 ref={inputRef}
                 type="text"
-                inputMode="decimal"
+                inputMode="none"
+                readOnly
                 value={displayExpression(expression)}
-                onChange={handleInputChange}
                 onClick={handleSelect}
                 onKeyUp={handleSelect}
                 onSelect={handleSelect}
                 placeholder="0"
                 className="w-full bg-transparent text-lg font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white"
               />
-              <p className="mt-2 overflow-x-auto whitespace-nowrap text-[10px] font-black tracking-widest text-slate-400 scrollbar-hide min-h-[16px]">
+              <p className="mt-2 min-h-[16px] overflow-x-auto whitespace-nowrap text-[10px] font-black tracking-widest text-slate-400 scrollbar-hide">
                 {formulaLine}
               </p>
             </div>
@@ -388,7 +379,7 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               onClick={handleBackspace}
               className="h-12 rounded-2xl bg-slate-100 text-xl font-black text-slate-500 active:scale-95 dark:bg-white/10"
             >
-              ⌫
+              {BACKSPACE}
             </button>
             <button
               onClick={handleEqual}

@@ -5,10 +5,11 @@ interface Props {
   onClose: () => void;
   initialInput?: number;
   onApplyTotal?: (value: number) => void;
+  onApplyEntries?: (values: number[]) => void;
 }
 
 const peso = '\u20B1';
-const MAX_DIGITS = 5;
+const BACKSPACE = '\u232B';
 
 interface ExpressionSnapshot {
   expression: string;
@@ -43,7 +44,8 @@ const TallyCalcOverlay: React.FC<Props> = ({
   isOpen,
   onClose,
   initialInput = 0,
-  onApplyTotal
+  onApplyTotal,
+  onApplyEntries
 }) => {
   const expressionRef = useRef<HTMLInputElement>(null);
   const [expression, setExpression] = useState('');
@@ -69,14 +71,8 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
   const entries = useMemo(() => parseEntries(expression), [expression]);
   const runningTotal = useMemo(() => entries.reduce((sum, value) => sum + value, 0), [entries]);
-  const blockStart = useMemo(() => {
-    if (entries.length === 0) return 0;
-    return Math.floor((entries.length - 1) / 25) * 25;
-  }, [entries.length]);
-  const sheetStart = useMemo(() => {
-    if (entries.length === 0) return 0;
-    return Math.floor((entries.length - 1) / 100) * 100;
-  }, [entries.length]);
+  const blockStart = useMemo(() => (entries.length === 0 ? 0 : Math.floor((entries.length - 1) / 25) * 25), [entries.length]);
+  const sheetStart = useMemo(() => (entries.length === 0 ? 0 : Math.floor((entries.length - 1) / 100) * 100), [entries.length]);
   const blockEntries = useMemo(() => entries.slice(blockStart), [blockStart, entries]);
   const sheetEntries = useMemo(() => entries.slice(sheetStart), [entries, sheetStart]);
   const blockTotal = useMemo(() => blockEntries.reduce((sum, value) => sum + value, 0), [blockEntries]);
@@ -96,19 +92,13 @@ const TallyCalcOverlay: React.FC<Props> = ({
   };
 
   const applyExpression = (nextExpression: string, nextCaret: number) => {
-    setExpression(nextExpression);
-    setCaretPos(Math.max(0, Math.min(nextCaret, nextExpression.length)));
+    const sanitized = sanitizeExpression(nextExpression);
+    setExpression(sanitized);
+    setCaretPos(Math.max(0, Math.min(nextCaret, sanitized.length)));
   };
 
   const handleSelect = () => {
     const nextPos = expressionRef.current?.selectionStart ?? expression.length;
-    setCaretPos(nextPos);
-  };
-
-  const handleExpressionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const sanitized = sanitizeExpression(event.target.value);
-    const nextPos = Math.min(event.target.selectionStart ?? sanitized.length, sanitized.length);
-    setExpression(sanitized);
     setCaretPos(nextPos);
   };
 
@@ -163,9 +153,15 @@ const TallyCalcOverlay: React.FC<Props> = ({
     });
   };
 
-  const handleApply = () => {
+  const handleApplyTotal = () => {
     if (!onApplyTotal || runningTotal <= 0) return;
     onApplyTotal(runningTotal);
+    onClose();
+  };
+
+  const handleApplyEntries = () => {
+    if (!onApplyEntries || entries.length === 0) return;
+    onApplyEntries(entries);
     onClose();
   };
 
@@ -175,7 +171,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
       <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-2xl animate-fade-in sm:h-auto sm:max-h-[92vh] sm:rounded-[2.5rem] dark:bg-night-charcoal">
         <div
-          className="shrink-0 flex items-center justify-between px-4 pb-2 sm:px-5 sm:pb-3"
+          className="flex shrink-0 items-center justify-between px-4 pb-2 sm:px-5 sm:pb-3"
           style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}
         >
           <div className="flex items-center gap-3">
@@ -196,7 +192,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 visible-scrollbar sm:px-5">
+        <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
           <div className="space-y-2">
             <div className="rounded-[1.75rem] bg-[#0f172a] p-3.5 shadow-inner dark:bg-black sm:rounded-[2rem] sm:p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current Number</p>
@@ -208,9 +204,9 @@ const TallyCalcOverlay: React.FC<Props> = ({
                 <input
                   ref={expressionRef}
                   type="text"
-                  inputMode="numeric"
+                  inputMode="none"
+                  readOnly
                   value={expression}
-                  onChange={handleExpressionChange}
                   onClick={handleSelect}
                   onKeyUp={handleSelect}
                   onSelect={handleSelect}
@@ -248,10 +244,16 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
             <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={handleAdd}
-                className="h-10 rounded-[1.25rem] bg-primary text-[10px] font-black uppercase tracking-widest text-white shadow-lg active:scale-95"
+                onClick={handleBackspace}
+                className="flex h-10 items-center justify-center rounded-[1.25rem] bg-slate-100 text-slate-500 active:scale-95 dark:bg-white/10"
               >
-                Add
+                <span className="text-lg leading-none">{BACKSPACE}</span>
+              </button>
+              <button
+                onClick={handleAdd}
+                className="h-10 rounded-[1.25rem] bg-primary text-lg font-black text-white shadow-lg active:scale-95"
+              >
+                +
               </button>
               <button
                 onClick={handleUndo}
@@ -259,16 +261,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
               >
                 Undo
               </button>
-              <button
-                onClick={handleBackspace}
-                className="flex h-10 items-center justify-center rounded-[1.25rem] bg-slate-100 text-slate-500 active:scale-95 dark:bg-white/10"
-              >
-                <span className="material-icons text-lg leading-none">backspace</span>
-              </button>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {['7', '8', '9', '4', '5', '6', '1', '2', '3', '00', '0'].map(key => (
+              {['7', '8', '9', '4', '5', '6', '1', '2', '3', '00', '0', '000'].map(key => (
                 <button
                   key={key}
                   onClick={() => handleDigit(key)}
@@ -281,18 +277,31 @@ const TallyCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
 
-        {onApplyTotal && (
+        {(onApplyTotal || onApplyEntries) && (
           <div
             className="shrink-0 border-t border-slate-100 bg-white/95 px-4 pt-2 backdrop-blur dark:border-white/5 dark:bg-night-charcoal/95 sm:px-5"
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}
           >
-            <button
-              onClick={handleApply}
-              disabled={runningTotal <= 0}
-              className="w-full rounded-[1.25rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
-            >
-              {`Use Total ${peso}${runningTotal}`}
-            </button>
+            <div className="space-y-2">
+              {onApplyEntries && (
+                <button
+                  onClick={handleApplyEntries}
+                  disabled={entries.length === 0}
+                  className="w-full rounded-[1.25rem] bg-[#0f172a] py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
+                >
+                  Add To Tally Sheet
+                </button>
+              )}
+              {onApplyTotal && (
+                <button
+                  onClick={handleApplyTotal}
+                  disabled={runningTotal <= 0}
+                  className="w-full rounded-[1.25rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
+                >
+                  {`Use Total ${peso}${runningTotal}`}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
