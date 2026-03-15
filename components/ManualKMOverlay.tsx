@@ -407,9 +407,9 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose, initialPickupKm = n
       </main>
 
       {isPunchTypeOpen && (
-        <div className="absolute inset-0 z-10 flex items-end bg-black/45 p-4 backdrop-blur-sm" onClick={() => setIsPunchTypeOpen(false)}>
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => setIsPunchTypeOpen(false)}>
           <div
-            className="w-full rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal"
+            className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal"
             onClick={(event) => event.stopPropagation()}
           >
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Punched Fare</p>

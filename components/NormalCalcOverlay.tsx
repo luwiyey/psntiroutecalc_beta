@@ -310,10 +310,10 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative flex h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-2xl animate-fade-in sm:h-auto sm:max-h-[92vh] sm:rounded-[2.5rem] dark:bg-night-charcoal">
+      <div className="relative flex max-h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-md">

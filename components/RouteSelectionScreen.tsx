@@ -142,7 +142,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
       </div>
 
       {isBayambangPickerOpen && (
-        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 px-4 pb-4 pt-10 backdrop-blur-sm sm:items-center">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-4">
               <div>

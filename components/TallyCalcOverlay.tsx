@@ -166,10 +166,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-2xl animate-fade-in sm:h-auto sm:max-h-[92vh] sm:rounded-[2.5rem] dark:bg-night-charcoal">
+      <div className="relative flex max-h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
         <div
           className="flex shrink-0 items-center justify-between px-4 pb-2 sm:px-5 sm:pb-3"
           style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}

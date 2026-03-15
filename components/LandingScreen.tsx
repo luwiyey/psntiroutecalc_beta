@@ -39,10 +39,10 @@ export const LandingScreen: React.FC<{ onFinish: () => void }> = ({ onFinish }) 
           <span className="material-icons text-xl">play_arrow</span>
         </button>
 
-        <div className="w-full space-y-4 text-center opacity-80">
+        <div className="flex w-full flex-col items-center space-y-4 text-center opacity-80">
           <button
             onClick={() => setIsSupportOpen(true)}
-            className="flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/75 transition-all active:scale-95"
+            className="mx-auto flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/75 transition-all active:scale-95"
           >
             <span>Developed by Zia Louise Mariano</span>
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">

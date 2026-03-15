@@ -197,13 +197,13 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   /* ---------------- UI ---------------- */
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-md bg-white dark:bg-night-charcoal rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
         {/* Header */}
         <div className="px-6 pt-6 pb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">

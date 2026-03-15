@@ -189,9 +189,7 @@ const AppContent: React.FC = () => {
             onClick={() => setActiveTab(item.id as Tab)}
             className={`flex flex-col items-center gap-1 flex-1 py-2 transition-all group ${activeTab === item.id ? 'text-primary' : 'text-slate-400 dark:text-slate-600'}`}
           >
-            <div className={`p-1.5 rounded-2xl transition-all ${activeTab === item.id ? 'bg-primary/10' : ''}`}>
-              <span className={`material-icons ${activeTab === item.id ? 'text-2xl' : 'text-2xl'}`}>{item.icon}</span>
-            </div>
+            <span className="material-icons text-2xl">{item.icon}</span>
             <span className="text-[10px] font-black tracking-widest">{item.label}</span>
           </button>
         ))}
