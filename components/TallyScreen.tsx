@@ -59,8 +59,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [showDetails, setShowDetails] = useState(false);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
-  const [sheetCompleteAlert, setSheetCompleteAlert] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'delete-sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number; sheetIdx?: number } | null>(null);
   const northboundTerminal = activeRoute.stops[activeRoute.stops.length - 1]?.name ?? 'North';
   const southboundTerminal = activeRoute.stops[0]?.name ?? 'South';
   const routeKms = useMemo(
@@ -314,6 +313,34 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     showToast(`Sheet ${newSheetIdx + 1} added`);
   };
 
+  const handleDeleteSheet = (sheetIdxToDelete: number) => {
+    if (activeTrip.sheets.length <= 1) {
+      showToast('At least one sheet must remain', 'info');
+      setPendingAction(null);
+      return;
+    }
+
+    const deletedSheetNumber = sheetIdxToDelete + 1;
+    const nextSheetCount = activeTrip.sheets.length - 1;
+    const nextActiveSheetIdx = Math.min(sheetIdxToDelete, nextSheetCount - 1);
+
+    setSessions(prev => prev.map(s => s.id === activeSession.id ? {
+      ...s,
+      trips: s.trips.map((t, ti) =>
+        ti === tallyNav.tripIdx
+          ? { ...t, sheets: t.sheets.filter((_, si) => si !== sheetIdxToDelete) }
+          : t
+      )
+    } : s));
+
+    setTallyNav(n => ({ ...n, sheetIdx: nextActiveSheetIdx, blockIdx: 0 }));
+    setSelectedSlotIdx(0);
+    resetEditorDraft();
+    setIsEditorOpen(false);
+    setPendingAction(null);
+    showToast(`Sheet ${deletedSheetNumber} deleted`);
+  };
+
   const handleFlipDirection = () => {
     const nextDir = activeTrip.direction === 'north' ? 'south' : 'north';
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
@@ -344,12 +371,28 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setIsFlashing(false);
     setLastPunched(null);
     setBlockAlert(null);
-    setSheetCompleteAlert(false);
     setIsFooterCollapsed(true);
     setShowDetails(false);
   };
 
   const openNextSheet = (savedSheetNumber: number) => {
+    const nextExistingSheetIdx = activeTrip.sheets.findIndex(
+      (sheet, idx) => idx > tallyNav.sheetIdx && sheet.slots.some(slot => slot === 0)
+    );
+
+    if (nextExistingSheetIdx !== -1) {
+      const nextExistingSheet = activeTrip.sheets[nextExistingSheetIdx];
+      const nextOpenSlotIdx = nextExistingSheet.slots.findIndex(slot => slot === 0);
+      const nextBlockIdx = Math.floor((nextOpenSlotIdx === -1 ? 0 : nextOpenSlotIdx) / 25);
+
+      setTallyNav(n => ({ ...n, sheetIdx: nextExistingSheetIdx, blockIdx: nextBlockIdx }));
+      setSelectedSlotIdx(nextOpenSlotIdx === -1 ? 0 : nextOpenSlotIdx);
+      resetEditorDraft();
+      setIsEditorOpen(true);
+      showToast(`Sheet ${savedSheetNumber} saved. Now on Sheet ${nextExistingSheetIdx + 1}`);
+      return;
+    }
+
     const newSheet: TallySheet = {
       id: `sheet-${Date.now()}`,
       slots: Array(100).fill(0),
@@ -497,16 +540,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     showToast('Batch entries cleared', 'info');
   };
 
-  const handleProceedToNextSheet = () => {
-    persistEntriesToSheet([...pendingEntriesPreview], { closeEditor: false, autoAdvanceWhenFull: true });
-  };
-
   const handleRemoveStagedEntry = (entryIdx: number) => {
     setStagedStandardEntries(prev => prev.filter((_, idx) => idx !== entryIdx));
     setIsFlashing(false);
     setLastPunched(null);
     setBlockAlert(null);
-    setSheetCompleteAlert(false);
     inputRef.current?.focus();
   };
 
@@ -650,6 +688,15 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </button>
             ))}
           </div>
+          {activeTrip.sheets.length > 1 && (
+            <button
+              onClick={() => setPendingAction({ type: 'delete-sheet', sheetIdx: tallyNav.sheetIdx })}
+              className="w-16 h-12 flex items-center justify-center text-slate-300 active:text-red-500 transition-colors"
+              title={`Delete Sheet ${tallyNav.sheetIdx + 1}`}
+            >
+              <span className="material-icons text-[22px]">delete</span>
+            </button>
+          )}
           <button onClick={() => setPendingAction({ type: 'sheet' })} className="w-16 h-12 flex items-center justify-center text-slate-300 active:text-primary transition-colors">
              <span className="material-icons text-2xl">add</span>
           </button>
@@ -1072,17 +1119,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </div>
             )}
 
-            {sheetCompleteAlert && (
-              <div className="absolute inset-0 z-[120] flex items-center justify-center p-8 bg-black/80 backdrop-blur-md">
-                <div className="bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center border-t-8 border-primary">
-                   <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-2 uppercase font-bold">SHEET COMPLETE</h3>
-                   <div className="space-y-2 mt-6">
-                      <button onClick={handleProceedToNextSheet} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase text-[10px]">Start Sheet {tallyNav.sheetIdx + 2}</button>
-                      <button onClick={() => { setSheetCompleteAlert(false); setIsEditorOpen(false); }} className="w-full py-3 bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 rounded-xl font-black uppercase text-[9px]">Finish & Close</button>
-                   </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -1093,11 +1129,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
            <div className="relative bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center">
               <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-6 uppercase">
                 {pendingAction.type === 'reset-batch' ? 'Clear Batch Entries?' :
+                 pendingAction.type === 'delete-sheet' ? `Delete Sheet ${(pendingAction.sheetIdx ?? 0) + 1}?` :
                  pendingAction.type === 'reset-block' ? `Reset Block ${pendingAction.blockIdx! + 1}?` :
                  'Confirm Action'}
               </h3>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-6 -mt-4">
                 {pendingAction.type === 'reset-batch' ? 'This will reset all current ticket counts to zero.' :
+                 pendingAction.type === 'delete-sheet' ? 'This removes the current sheet and keeps the remaining sheet numbers in order.' :
                  pendingAction.type === 'reset-block' ? 'All 25 slots in this block will be cleared. This action cannot be undone.' :
                  'Are you sure you want to proceed?'}
               </p>
@@ -1105,6 +1143,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                  <button onClick={() => {
                      if (pendingAction.type === 'trip') handleAddTrip();
                      else if (pendingAction.type === 'sheet') handleAddSheet();
+                     else if (pendingAction.type === 'delete-sheet') handleDeleteSheet(pendingAction.sheetIdx ?? tallyNav.sheetIdx);
                      else if (pendingAction.type === 'flip-direction') handleFlipDirection();
                      else if (pendingAction.type === 'reset-block') handleResetBlock(pendingAction.blockIdx!);
                      else if (pendingAction.type === 'reset-batch') confirmResetBatch();
