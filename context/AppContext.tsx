@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { AppContextType, AppSettings, FareRecord, TallySession } from '../types';
 import { DEFAULT_ROUTE, DEFAULT_SETTINGS, ROUTES, getReadyRouteById } from '../constants';
 import { useAuth } from './AuthContext';
+import { trackAnalyticsEvent } from '../utils/analytics';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 const SETTINGS_STORAGE_KEY = 'psnti_settings';
@@ -200,6 +201,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: Date.now()
     };
     setHistory(prev => [newRecord, ...prev]);
+    void trackAnalyticsEvent({
+      eventType: 'fare_recorded',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: newRecord.routeId ?? null,
+      routeLabel: newRecord.routeLabel ?? null,
+      appSurface: record.type === 'tally' ? 'between-stops' : 'fare',
+      metadata: {
+        origin: newRecord.origin,
+        destination: newRecord.destination,
+        distance: newRecord.distance,
+        regularFare: newRecord.regularFare,
+        discountedFare: newRecord.discountedFare,
+        punchedFareType: newRecord.punchedFareType ?? null,
+        isFavorite: newRecord.isFavorite,
+        recordType: newRecord.type ?? 'calc'
+      }
+    });
   };
 
   const toggleFavorite = (id: string) => {
@@ -239,6 +259,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
     setOrigin(route.stops[0]?.name ?? '');
     setDestination(route.stops[route.stops.length - 1]?.name ?? '');
+    void trackAnalyticsEvent({
+      eventType: 'route_selected',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: route.id,
+      routeLabel: route.label,
+      appSurface: 'route-selection',
+      metadata: {
+        shortLabel: route.shortLabel
+      }
+    });
   };
 
   return (

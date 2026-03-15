@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { trackAnalyticsEvent } from '../utils/analytics';
 
 interface AuthState {
   employeeName: string | null;
@@ -86,6 +87,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [authState.employeeId, authState.employeeName, authState.isAuthenticated, authState.pendingRouteSelection]);
 
   const login = (name: string, id: string) => {
+    void trackAnalyticsEvent({
+      eventType: 'login',
+      employeeId: id,
+      employeeName: name,
+      deviceId: authState.deviceId,
+      appSurface: 'login'
+    });
     setAuthState(prev => ({
       ...prev,
       employeeName: name,
@@ -100,6 +108,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    void trackAnalyticsEvent({
+      eventType: 'logout',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      appSurface: 'setup'
+    });
     setAuthState(prev => ({
       ...prev,
       employeeName: null,

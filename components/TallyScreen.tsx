@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { TallyTrip, TallySheet, TallySession } from '../types';
 import { calculateFare } from '../utils/fare';
 import TallyCalcOverlay from './TallyCalcOverlay';
+import { trackAnalyticsEvent } from '../utils/analytics';
 
 type EditorMode = 'standard' | 'batch';
 
@@ -14,6 +16,7 @@ const peso = '\u20B1';
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, showToast } = useApp();
+  const { authState } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -385,6 +388,25 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     } : s));
     setIsEditorOpen(false);
     showToast(`Waybill Updated: Recorded ${finalEntries.length} items`);
+    void trackAnalyticsEvent({
+      eventType: 'tally_saved',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'tally',
+      metadata: {
+        tripName: activeTrip.name,
+        direction: activeTrip.direction,
+        sheetNumber: tallyNav.sheetIdx + 1,
+        blockNumber: currentSlotBlock,
+        startBox: selectedSlotIdx + 1,
+        endBox: Math.min(selectedSlotIdx + finalEntries.length, 100),
+        entriesRecorded: finalEntries.length,
+        totalAdded: finalEntries.reduce((sum, value) => sum + value, 0)
+      }
+    });
   };
 
   const getTapeHighlight = (slotNum: number) => {
@@ -459,6 +481,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const handleClearSavedSlot = (slotIdx: number) => {
+    const previousValue = activeSheet.slots[slotIdx];
     setSessions(prev =>
       prev.map(session =>
         session.id === activeSession.id
@@ -485,6 +508,23 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       )
     );
     showToast(`Box ${slotIdx + 1} cleared`);
+    void trackAnalyticsEvent({
+      eventType: 'tally_box_cleared',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'tally',
+      metadata: {
+        tripName: activeTrip.name,
+        direction: activeTrip.direction,
+        sheetNumber: tallyNav.sheetIdx + 1,
+        blockNumber: Math.floor(slotIdx / 25) + 1,
+        boxNumber: slotIdx + 1,
+        clearedValue: previousValue
+      }
+    });
   };
 
   return (

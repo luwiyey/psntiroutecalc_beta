@@ -1,0 +1,23 @@
+{
+  "name": "PSNTI RouteCalc",
+  "short_name": "RouteCalc",
+  "description": "Fare, route, and tally calculator for PSNTI conductors.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f6f6",
+  "theme_color": "#c91629",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

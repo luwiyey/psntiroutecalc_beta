@@ -21,10 +21,24 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
 
   if (!isOpen) return null;
 
-  const filteredStops = activeRoute.stops.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const searchText = search.trim().toLowerCase();
+  const filteredStops = activeRoute.stops.filter(stop => {
+    if (!searchText) return true;
+
+    return (
+      stop.name.toLowerCase().includes(searchText) ||
+      stop.aliases?.some(alias => alias.toLowerCase().includes(searchText)) ||
+      `km ${stop.km}`.includes(searchText)
+    );
+  });
 
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toString() : km.toFixed(1);
+  };
+
+  const formatDistanceToBaguio = (distance?: number) => {
+    if (typeof distance !== 'number') return null;
+    return distance % 1 === 0 ? distance.toFixed(0) : distance.toFixed(1);
   };
 
   return (
@@ -56,7 +70,7 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
         <div className="grid grid-cols-3 gap-2">
           {activeRoute.stops.filter(s => s.isTerminal).map(terminal => (
             <button 
-              key={terminal.name}
+              key={`${terminal.km}-${terminal.name}`}
               onClick={() => onSelect(terminal.name)}
               className="bg-red-50 dark:bg-primary/20 border border-primary/20 text-primary p-3 rounded-xl flex flex-col items-center gap-1 active:bg-primary active:text-white transition-all shadow-sm"
             >
@@ -70,21 +84,39 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
       <div className="flex-1 overflow-y-auto px-4 divide-y dark:divide-white/5">
         <div className="flex justify-between items-center py-4 sticky top-0 bg-white dark:bg-black z-10">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Route Stops</span>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">KM Marker</span>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">KM / Baguio</span>
         </div>
         {filteredStops.map(stop => (
           <button 
-            key={stop.name}
+            key={`${stop.km}-${stop.name}`}
             onClick={() => onSelect(stop.name)}
             className="w-full flex justify-between items-center py-5 active:bg-slate-50 dark:active:bg-white/5 transition-colors text-left group"
           >
             <div className="flex items-center gap-4 flex-1 mr-4">
               <div className="w-1.5 h-1.5 rounded-full bg-primary group-active:scale-150 transition-transform shrink-0" />
-              <span className="text-xl font-800 text-slate-800 dark:text-white text-left leading-tight">{stop.name}</span>
+              <div className="min-w-0">
+                <span className="text-xl font-800 text-slate-800 dark:text-white text-left leading-tight block">{stop.name}</span>
+                {(stop.coverageRange || typeof stop.distanceToBaguio === 'number') && (
+                  <p className="mt-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                    {stop.coverageRange}
+                    {stop.coverageRange && typeof stop.distanceToBaguio === 'number' ? ' • ' : ''}
+                    {typeof stop.distanceToBaguio === 'number'
+                      ? `${formatDistanceToBaguio(stop.distanceToBaguio)} km to Baguio`
+                      : ''}
+                  </p>
+                )}
+              </div>
             </div>
-            <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/10 px-2 py-0.5 rounded-md shrink-0 uppercase tracking-tighter">
-              KM {formatKM(stop.km)}
-            </span>
+            <div className="shrink-0 text-right">
+              <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/10 px-2 py-0.5 rounded-md uppercase tracking-tighter inline-block">
+                KM {formatKM(stop.km)}
+              </span>
+              {typeof stop.distanceToBaguio === 'number' && (
+                <p className="mt-1 text-[10px] font-black text-slate-400 uppercase tracking-tight">
+                  {formatDistanceToBaguio(stop.distanceToBaguio)} km left
+                </p>
+              )}
+            </div>
           </button>
         ))}
         

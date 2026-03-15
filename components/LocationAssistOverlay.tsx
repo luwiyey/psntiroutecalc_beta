@@ -1,6 +1,11 @@
 import React from 'react';
 import type { Stop } from '../types';
-import type { CurrentLocationSnapshot, SegmentMatch, StopMatch } from '../utils/location';
+import type {
+  CurrentLocationSnapshot,
+  LocationPermissionState,
+  SegmentMatch,
+  StopMatch
+} from '../utils/location';
 import { formatMeters } from '../utils/location';
 
 interface Props {
@@ -11,15 +16,24 @@ interface Props {
   nearestMatch: StopMatch | null;
   segmentMatch: SegmentMatch | null;
   hasMappedStops: boolean;
+  permissionState: LocationPermissionState;
+  inAppBrowser: boolean;
   error: string | null;
   onClose: () => void;
+  onOpenInChrome: () => void;
   onRetry: () => void;
   onUseStop: (stop: Stop) => void;
   onUseManualKm: (pickupKm: number) => void;
 }
 
+const BAGUIO_KM = 271;
+
 const formatCoordinate = (value: number) => value.toFixed(6);
 const formatKm = (value: number) => value.toFixed(2).replace(/\.?0+$/, '');
+const formatRemainingDistance = (distance?: number) => {
+  if (typeof distance !== 'number') return null;
+  return distance % 1 === 0 ? distance.toFixed(0) : distance.toFixed(1);
+};
 
 const LocationAssistOverlay: React.FC<Props> = ({
   isOpen,
@@ -29,8 +43,11 @@ const LocationAssistOverlay: React.FC<Props> = ({
   nearestMatch,
   segmentMatch,
   hasMappedStops,
+  permissionState,
+  inAppBrowser,
   error,
   onClose,
+  onOpenInChrome,
   onRetry,
   onUseStop,
   onUseManualKm
@@ -46,6 +63,8 @@ const LocationAssistOverlay: React.FC<Props> = ({
         nearestMatch.distanceMeters > 200
       )
   );
+
+  const segmentDistanceToBaguio = segmentMatch ? Math.max(0, BAGUIO_KM - segmentMatch.estimatedKm) : null;
 
   return (
     <div className="fixed inset-0 z-[150] flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -118,6 +137,38 @@ const LocationAssistOverlay: React.FC<Props> = ({
               </div>
             )}
 
+            {(inAppBrowser || permissionState === 'denied' || permissionState === 'prompt') && (
+              <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary">Browser Check</p>
+                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {permissionState === 'denied'
+                    ? 'Location is blocked for this browser or site.'
+                    : permissionState === 'prompt'
+                      ? 'This browser should ask for location permission when GPS is requested.'
+                      : 'Some in-app browsers do not return GPS reliably even when phone location is on.'}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  {inAppBrowser
+                    ? 'If you opened this from Messenger or Facebook, use Open in Browser or Chrome for better GPS access.'
+                    : 'If no popup appears, check the browser app permission in your phone settings.'}
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onRetry}
+                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    Retry
+                  </button>
+                  <button
+                    onClick={onOpenInChrome}
+                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                  >
+                    Open in Chrome
+                  </button>
+                </div>
+              </div>
+            )}
+
             {!isLoading && !error && location && nearestMatch && (
               <div className="rounded-[2rem] border border-primary/10 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Nearest Mapped Stop</p>
@@ -125,6 +176,11 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
                   KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
                 </p>
+                {typeof nearestMatch.stop.distanceToBaguio === 'number' && (
+                  <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                    {formatRemainingDistance(nearestMatch.stop.distanceToBaguio)} km to Baguio
+                  </p>
+                )}
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
@@ -149,6 +205,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
                       {segmentMatch.endStop.name}.
                     </p>
                     <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                      {formatKm(segmentDistanceToBaguio ?? 0)} km to Baguio
+                    </p>
+                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                       Use Manual KM if the pickup was not at an exact tariff stop.
                     </p>
                     <button
@@ -168,6 +227,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <h3 className="mt-2 text-2xl font-900 text-slate-900 dark:text-white">KM {formatKm(segmentMatch.estimatedKm)}</h3>
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">
                   Between {segmentMatch.startStop.name} and {segmentMatch.endStop.name}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  {formatKm(segmentDistanceToBaguio ?? 0)} km to Baguio
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                   Stop picker only supports exact tariff stops. Manual KM is better for this pickup.

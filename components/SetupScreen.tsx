@@ -3,6 +3,8 @@ import { VICE_VERSA } from '../constants';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import NormalCalcOverlay from './NormalCalcOverlay';
+import SupportContactSheet from './SupportContactSheet';
+import { trackAnalyticsEvent } from '../utils/analytics';
 
 interface Props {
   onExit?: () => void;
@@ -16,6 +18,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const { authState, logout } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -71,16 +74,46 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     };
 
     await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    void trackAnalyticsEvent({
+      eventType: 'audit_exported',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'setup',
+      metadata: {
+        historyGross: totalTripLogs,
+        tallyGross: totalTallyGross,
+        combinedGross: totalTripLogs + totalTallyGross,
+        historyCount: history.length,
+        sessionCount: sessions.length
+      }
+    });
     alert("Full audit report copied to clipboard. You can now paste it into your supervisor's message or email.");
   };
 
   const handleOpenPwdCheck = async () => {
+    if (!navigator.onLine) {
+      showToast('Internet is needed to open the official PWD checker.', 'info');
+      return;
+    }
+
     const openedWindow = window.open(PWD_VERIFICATION_URL, '_blank', 'noopener,noreferrer');
     if (!openedWindow) {
       window.location.href = PWD_VERIFICATION_URL;
     }
 
     showToast('Official PWD checker opened.', 'info');
+    void trackAnalyticsEvent({
+      eventType: 'pwd_checker_opened',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'setup'
+    });
   };
 
   return (
@@ -279,20 +312,19 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       </div>
 
       <footer className="px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
-        <a
-          href="https://www.facebook.com/suppsiang/"
-          target="_blank"
-          rel="noreferrer"
+        <button
+          onClick={() => setIsSupportOpen(true)}
           className="flex items-center justify-center gap-2 text-center text-[11px] font-semibold text-slate-400 transition-all active:scale-[0.99] dark:text-slate-500"
         >
           <span>Developed by Zia Louise Mariano</span>
           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-[#1877F2]" aria-hidden="true">
             <path d="M22 12.07C22 6.5 17.52 2 12 2S2 6.5 2 12.07c0 5.02 3.66 9.18 8.44 9.93v-7.03H7.9v-2.9h2.54V9.85c0-2.52 1.49-3.91 3.78-3.91 1.1 0 2.24.2 2.24.2v2.47H15.2c-1.24 0-1.63.78-1.63 1.58v1.89h2.77l-.44 2.9h-2.33V22c4.78-.75 8.43-4.91 8.43-9.93z"/>
           </svg>
-        </a>
+        </button>
       </footer>
 
       <NormalCalcOverlay isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+      <SupportContactSheet isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
     </div>
   );
 };

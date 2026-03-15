@@ -5,19 +5,30 @@ import ManualKMOverlay from './ManualKMOverlay';
 import ConductorCalcOverlay from './ConductorCalcOverlay';
 import LocationAssistOverlay from './LocationAssistOverlay';
 import { calculateFare, formatFareRate } from '../utils/fare';
-import type { CurrentLocationSnapshot, SegmentMatch, StopMatch } from '../utils/location';
+import { useAuth } from '../context/AuthContext';
+import type {
+  CurrentLocationSnapshot,
+  LocationPermissionState,
+  SegmentMatch,
+  StopMatch
+} from '../utils/location';
 import {
   findNearestMappedSegment,
   findNearestMappedStop,
   getLocationErrorMessage,
   hasRouteCoordinates,
+  isLikelyInAppBrowser,
+  openCurrentPageInChrome,
+  queryLocationPermissionState,
   requestBestCurrentLocation
 } from '../utils/location';
+import { trackAnalyticsEvent } from '../utils/analytics';
 
 const peso = '\u20B1';
 
 const CalcScreen: React.FC = () => {
   const { activeRoute, origin, destination, setOrigin, setDestination, addRecord, setActiveFare, showToast } = useApp();
+  const { authState } = useAuth();
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestPickerOpen, setIsDestPickerOpen] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
@@ -25,11 +36,13 @@ const CalcScreen: React.FC = () => {
   const [isLocationAssistOpen, setIsLocationAssistOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationPermission, setLocationPermission] = useState<LocationPermissionState>('unknown');
   const [currentLocation, setCurrentLocation] = useState<CurrentLocationSnapshot | null>(null);
   const [nearestStopMatch, setNearestStopMatch] = useState<StopMatch | null>(null);
   const [nearestSegmentMatch, setNearestSegmentMatch] = useState<SegmentMatch | null>(null);
   const [manualPrefill, setManualPrefill] = useState<{ pickupKm?: number; destKm?: number } | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const inAppBrowser = useMemo(() => isLikelyInAppBrowser(), []);
 
   const routeStart = activeRoute.stops[0];
   const routeEnd = activeRoute.stops[activeRoute.stops.length - 1];
@@ -180,6 +193,21 @@ const CalcScreen: React.FC = () => {
     setIsLocationAssistOpen(true);
     setIsLocating(true);
     setLocationError(null);
+    setLocationPermission(await queryLocationPermissionState());
+    void trackAnalyticsEvent({
+      eventType: 'gps_requested',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'fare',
+      metadata: {
+        origin,
+        destination,
+        inAppBrowser
+      }
+    });
 
     if (!navigator.geolocation) {
       setIsLocating(false);
@@ -187,15 +215,73 @@ const CalcScreen: React.FC = () => {
       setNearestStopMatch(null);
       setNearestSegmentMatch(null);
       setLocationError('This device or browser does not support GPS location.');
+      void trackAnalyticsEvent({
+        eventType: 'gps_failed',
+        employeeId: authState.employeeId,
+        employeeName: authState.employeeName,
+        deviceId: authState.deviceId,
+        routeId: activeRoute.id,
+        routeLabel: activeRoute.label,
+        appSurface: 'fare',
+        metadata: {
+          reason: 'geolocation_unsupported'
+        }
+      });
       return;
     }
 
     try {
+      const permissionState = await queryLocationPermissionState();
+      setLocationPermission(permissionState);
+
+      if (permissionState === 'denied') {
+        setCurrentLocation(null);
+        setNearestStopMatch(null);
+        setNearestSegmentMatch(null);
+        setLocationError(getLocationErrorMessage(new Error('Permission denied'), permissionState, inAppBrowser));
+        void trackAnalyticsEvent({
+          eventType: 'gps_failed',
+          employeeId: authState.employeeId,
+          employeeName: authState.employeeName,
+          deviceId: authState.deviceId,
+          routeId: activeRoute.id,
+          routeLabel: activeRoute.label,
+          appSurface: 'fare',
+          metadata: {
+            reason: 'permission_denied',
+            permissionState,
+            inAppBrowser
+          }
+        });
+        return;
+      }
+
       const nextLocation: CurrentLocationSnapshot = await requestBestCurrentLocation();
+      const nextNearestStop = findNearestMappedStop(activeRoute.stops, nextLocation);
+      const nextSegmentMatch = findNearestMappedSegment(activeRoute.stops, nextLocation);
       setCurrentLocation(nextLocation);
-      setNearestStopMatch(findNearestMappedStop(activeRoute.stops, nextLocation));
-      setNearestSegmentMatch(findNearestMappedSegment(activeRoute.stops, nextLocation));
+      setNearestStopMatch(nextNearestStop);
+      setNearestSegmentMatch(nextSegmentMatch);
+      void trackAnalyticsEvent({
+        eventType: 'gps_succeeded',
+        employeeId: authState.employeeId,
+        employeeName: authState.employeeName,
+        deviceId: authState.deviceId,
+        routeId: activeRoute.id,
+        routeLabel: activeRoute.label,
+        appSurface: 'fare',
+        metadata: {
+          accuracy: nextLocation.accuracy,
+          nearestStop: nextNearestStop?.stop.name ?? null,
+          nearestStopKm: nextNearestStop?.stop.km ?? null,
+          segmentStart: nextSegmentMatch?.startStop.name ?? null,
+          segmentEnd: nextSegmentMatch?.endStop.name ?? null,
+          estimatedKm: nextSegmentMatch?.estimatedKm ?? null
+        }
+      });
     } catch (error) {
+      const permissionState = await queryLocationPermissionState();
+      setLocationPermission(permissionState);
       setCurrentLocation(null);
       setNearestStopMatch(null);
       setNearestSegmentMatch(null);
@@ -203,9 +289,31 @@ const CalcScreen: React.FC = () => {
         getLocationErrorMessage(
           error instanceof Error || (typeof error === 'object' && error !== null && 'code' in error)
             ? (error as GeolocationPositionError | Error)
-            : new Error('Location error')
+            : new Error('Location error'),
+          permissionState,
+          inAppBrowser
         )
       );
+      void trackAnalyticsEvent({
+        eventType: 'gps_failed',
+        employeeId: authState.employeeId,
+        employeeName: authState.employeeName,
+        deviceId: authState.deviceId,
+        routeId: activeRoute.id,
+        routeLabel: activeRoute.label,
+        appSurface: 'fare',
+        metadata: {
+          reason: 'location_error',
+          permissionState,
+          inAppBrowser,
+          message:
+            error instanceof Error
+              ? error.message
+              : typeof error === 'object' && error !== null && 'message' in error
+                ? String((error as { message?: unknown }).message)
+                : 'Unknown error'
+        }
+      });
     } finally {
       setIsLocating(false);
     }
@@ -225,6 +333,23 @@ const CalcScreen: React.FC = () => {
     });
     setIsManualOpen(true);
     showToast(`Manual KM opened at KM ${pickupKm.toFixed(2).replace(/\.?0+$/, '')}`);
+  };
+
+  const handleOpenInChrome = () => {
+    showToast('Opening this page in Chrome...');
+    void trackAnalyticsEvent({
+      eventType: 'open_in_chrome',
+      employeeId: authState.employeeId,
+      employeeName: authState.employeeName,
+      deviceId: authState.deviceId,
+      routeId: activeRoute.id,
+      routeLabel: activeRoute.label,
+      appSurface: 'fare',
+      metadata: {
+        source: 'gps-assist'
+      }
+    });
+    openCurrentPageInChrome();
   };
 
   return (
@@ -458,8 +583,11 @@ const CalcScreen: React.FC = () => {
         nearestMatch={nearestStopMatch}
         segmentMatch={nearestSegmentMatch}
         hasMappedStops={routeHasMappedStops}
+        permissionState={locationPermission}
+        inAppBrowser={inAppBrowser}
         error={locationError}
         onClose={() => setIsLocationAssistOpen(false)}
+        onOpenInChrome={handleOpenInChrome}
         onRetry={requestCurrentLocation}
         onUseStop={(stop) => handleUseDetectedStop(stop.name)}
         onUseManualKm={handleUseManualKmFromLocation}

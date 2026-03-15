@@ -1,1 +1,12 @@
 .env.local
+.env
+node_modules/
+dist/
+android/.gradle/
+android/app/build/
+*.log
+hs_err_pid*
+replay_pid*
+.vscode/
+.idx/
+psntiroutecalc_beta/

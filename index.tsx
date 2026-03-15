@@ -16,3 +16,38 @@ root.render(
     <Analytics />
   </React.StrictMode>
 );
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(registration => {
+        const notifyUpdateReady = () => {
+          if (!registration.waiting) return;
+          window.dispatchEvent(new CustomEvent('psnti-sw-update', { detail: registration }));
+        };
+
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          notifyUpdateReady();
+        }
+
+        registration.addEventListener('updatefound', () => {
+          const nextWorker = registration.installing;
+          if (!nextWorker) return;
+
+          nextWorker.addEventListener('statechange', () => {
+            if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              notifyUpdateReady();
+            }
+          });
+        });
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          window.location.reload();
+        });
+      })
+      .catch(() => {
+        // Ignore registration errors and keep the app usable without offline cache.
+      });
+  });
+}

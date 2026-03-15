@@ -7,6 +7,9 @@ export interface Stop {
   isTerminal?: boolean;
   latitude?: number;
   longitude?: number;
+  coverageRange?: string;
+  distanceToBaguio?: number;
+  aliases?: string[];
 }
 
 export interface RouteFareBaseline {
