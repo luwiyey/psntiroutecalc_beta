@@ -335,9 +335,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     showToast(`Block B${bIdx + 1} cleared`);
   };
 
-  const handleSlotClick = (idx: number) => {
-    if (activeSheet.status === 'recorded' || activeSession.status === 'closed') return;
-    setSelectedSlotIdx(idx);
+  const resetEditorDraft = () => {
     setStagedStandardEntries([]);
     setEditValue('');
     setBatchCounts({});
@@ -345,36 +343,48 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setShowOnlySelected(false);
     setIsFlashing(false);
     setLastPunched(null);
-    setIsEditorOpen(true);
     setBlockAlert(null);
     setSheetCompleteAlert(false);
     setIsFooterCollapsed(true);
     setShowDetails(false);
   };
 
-  const commitStandardEntry = (val: number, isTileClick = false) => {
-    if (isNaN(val) || val <= 0) return;
-    const newTapeLength = stagedStandardEntries.length + 1;
-    const absoluteSlot = selectedSlotIdx + newTapeLength;
-    setLastPunched(val);
-    setIsFlashing(true);
-    setStagedStandardEntries(prev => [...prev, val]);
-    setEditValue('');
-    if (absoluteSlot === 100) setSheetCompleteAlert(true);
-    else if (absoluteSlot % 25 === 0) {
-      setBlockAlert({ completedBlock: Math.floor(absoluteSlot / 25), nextBlock: Math.floor(absoluteSlot / 25) + 1 });
-    }
-    setTimeout(() => setIsFlashing(false), 150);
-    if (isTileClick) {
-      inputRef.current?.blur();
-    } else {
-      inputRef.current?.focus();
-    }
+  const openNextSheet = (savedSheetNumber: number) => {
+    const newSheet: TallySheet = {
+      id: `sheet-${Date.now()}`,
+      slots: Array(100).fill(0),
+      status: 'in-progress',
+      lastUpdatedAt: Date.now()
+    };
+
+    setSessions(prev => prev.map(s => s.id === activeSession.id ? {
+      ...s,
+      trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? { ...t, sheets: [...t.sheets, newSheet] } : t)
+    } : s));
+
+    const nextSheetIdx = activeTrip.sheets.length;
+    setTallyNav(n => ({ ...n, sheetIdx: nextSheetIdx, blockIdx: 0 }));
+    setSelectedSlotIdx(0);
+    resetEditorDraft();
+    setIsEditorOpen(true);
+    showToast(`Sheet ${savedSheetNumber} saved. Now on Sheet ${savedSheetNumber + 1}`);
   };
 
-  const handleConfirmAll = () => {
-    const finalEntries = [...pendingEntriesPreview];
-    if (finalEntries.length === 0) return;
+  const persistEntriesToSheet = (
+    entries: number[],
+    options?: {
+      closeEditor?: boolean;
+      autoAdvanceWhenFull?: boolean;
+      successMessage?: string;
+    }
+  ) => {
+    const remainingSlots = Math.max(0, 100 - selectedSlotIdx);
+    const finalEntries = entries.slice(0, remainingSlots);
+    if (finalEntries.length === 0) return false;
+
+    const savedSheetNumber = tallyNav.sheetIdx + 1;
+    const fillsSheet = selectedSlotIdx + finalEntries.length >= 100;
+
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
         ...t, sheets: t.sheets.map((sh, si) => si === tallyNav.sheetIdx ? {
@@ -386,8 +396,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         } : sh)
       } : t)
     } : s));
-    setIsEditorOpen(false);
-    showToast(`Waybill Updated: Recorded ${finalEntries.length} items`);
+
     void trackAnalyticsEvent({
       eventType: 'tally_saved',
       employeeId: authState.employeeId,
@@ -399,7 +408,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       metadata: {
         tripName: activeTrip.name,
         direction: activeTrip.direction,
-        sheetNumber: tallyNav.sheetIdx + 1,
+        sheetNumber: savedSheetNumber,
         blockNumber: currentSlotBlock,
         startBox: selectedSlotIdx + 1,
         endBox: Math.min(selectedSlotIdx + finalEntries.length, 100),
@@ -407,6 +416,61 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         totalAdded: finalEntries.reduce((sum, value) => sum + value, 0)
       }
     });
+
+    if ((options?.autoAdvanceWhenFull ?? true) && fillsSheet) {
+      openNextSheet(savedSheetNumber);
+      return true;
+    }
+
+    resetEditorDraft();
+    if (options?.closeEditor ?? true) {
+      setIsEditorOpen(false);
+    }
+    showToast(options?.successMessage ?? `Waybill Updated: Recorded ${finalEntries.length} items`);
+    return true;
+  };
+
+  const handleSlotClick = (idx: number) => {
+    if (activeSheet.status === 'recorded' || activeSession.status === 'closed') return;
+    setSelectedSlotIdx(idx);
+    resetEditorDraft();
+    setIsEditorOpen(true);
+  };
+
+  const commitStandardEntry = (val: number, isTileClick = false) => {
+    if (isNaN(val) || val <= 0) return;
+    const nextEntries = [...stagedStandardEntries, val];
+    const newTapeLength = nextEntries.length;
+    const absoluteSlot = selectedSlotIdx + newTapeLength;
+
+    if (absoluteSlot === 100) {
+      setLastPunched(val);
+      setIsFlashing(true);
+      persistEntriesToSheet(nextEntries, {
+        closeEditor: false,
+        autoAdvanceWhenFull: true
+      });
+      setTimeout(() => setIsFlashing(false), 150);
+      return;
+    }
+
+    setLastPunched(val);
+    setIsFlashing(true);
+    setStagedStandardEntries(nextEntries);
+    setEditValue('');
+    if (absoluteSlot % 25 === 0) {
+      setBlockAlert({ completedBlock: Math.floor(absoluteSlot / 25), nextBlock: Math.floor(absoluteSlot / 25) + 1 });
+    }
+    setTimeout(() => setIsFlashing(false), 150);
+    if (isTileClick) {
+      inputRef.current?.blur();
+    } else {
+      inputRef.current?.focus();
+    }
+  };
+
+  const handleConfirmAll = () => {
+    persistEntriesToSheet([...pendingEntriesPreview], { closeEditor: true, autoAdvanceWhenFull: true });
   };
 
   const getTapeHighlight = (slotNum: number) => {
@@ -434,9 +498,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const handleProceedToNextSheet = () => {
-    handleConfirmAll();
-    handleAddSheet();
-    setSheetCompleteAlert(false);
+    persistEntriesToSheet([...pendingEntriesPreview], { closeEditor: false, autoAdvanceWhenFull: true });
   };
 
   const handleRemoveStagedEntry = (entryIdx: number) => {
@@ -468,10 +530,20 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     }
 
     setEditorMode('standard');
-    setStagedStandardEntries(prev => [...prev, ...acceptedValues]);
+    const nextEntries = [...stagedStandardEntries, ...acceptedValues];
     setEditValue('');
     setIsFlashing(false);
     setLastPunched(acceptedValues[acceptedValues.length - 1] ?? null);
+
+    if (selectedSlotIdx + nextEntries.length === 100) {
+      persistEntriesToSheet(nextEntries, {
+        closeEditor: false,
+        autoAdvanceWhenFull: true
+      });
+      return;
+    } else {
+      setStagedStandardEntries(nextEntries);
+    }
 
     if (acceptedValues.length < values.length) {
       showToast(`Only ${acceptedValues.length} entries fit in the remaining boxes`);
