@@ -213,6 +213,26 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const jumpToBlock = (blockIdx: number) => {
     setEditorTargetSlot(getPreferredSlotIndexForBlock(activeSheet.slots, blockIdx));
   };
+
+  const finalizeDraftAndJumpToBlock = (blockIdx: number) => {
+    const safeBlockIdx = Math.max(0, Math.min(blockIdx, Math.floor(SLOTS_PER_SHEET / SLOTS_PER_BLOCK) - 1));
+
+    if (pendingEntriesPreview.length > 0) {
+      const savedBlockNumber = Math.floor(selectedSlotIdx / SLOTS_PER_BLOCK) + 1;
+      const didPersist = persistEntriesToSheet([...pendingEntriesPreview], {
+        closeEditor: false,
+        autoAdvanceWhenFull: false,
+        successMessage: `Block ${savedBlockNumber} saved. Now on Block ${safeBlockIdx + 1}`
+      });
+
+      if (!didPersist) {
+        return;
+      }
+    }
+
+    jumpToBlock(safeBlockIdx);
+    setBlockAlert(null);
+  };
   
   const filteredBatchFares = useMemo(() => {
     let fares = allBatchFares;
@@ -890,7 +910,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   Next Box
                 </button>
                 <button
-                  onClick={() => jumpToBlock(tallyNav.blockIdx + 1)}
+                  onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
                   disabled={!hasNextBlock}
                   className="rounded-2xl bg-primary px-4 py-3 text-[9px] font-black uppercase tracking-widest text-white shadow-sm active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
                 >
@@ -1181,7 +1201,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 <div className="bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center border-t-8 border-primary">
                    <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-2 uppercase tracking-tighter">BLOCK {blockAlert.completedBlock} COMPLETE</h3>
                    <div className="space-y-2 mt-6">
-                      <button onClick={() => { jumpToBlock(blockAlert.nextBlock - 1); setBlockAlert(null); }} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase text-[10px]">Continue to Block {blockAlert.nextBlock}</button>
+                      <button onClick={() => finalizeDraftAndJumpToBlock(blockAlert.nextBlock - 1)} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase text-[10px]">Continue to Block {blockAlert.nextBlock}</button>
                       <button onClick={() => setBlockAlert(null)} className="w-full py-3 text-slate-400 font-black uppercase text-[9px]">Review Current Block</button>
                    </div>
                 </div>
