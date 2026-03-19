@@ -579,6 +579,10 @@ const CalcScreen: React.FC = () => {
         isOpen={isLocationAssistOpen}
         isLoading={isLocating}
         routeLabel={activeRoute.label}
+        routeStartName={routeStart.name}
+        routeEndName={routeEnd.name}
+        routeStartKm={routeStart.km}
+        routeEndKm={routeEnd.km}
         location={currentLocation}
         nearestMatch={nearestStopMatch}
         segmentMatch={nearestSegmentMatch}

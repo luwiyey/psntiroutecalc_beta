@@ -3,6 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFare } from '../utils/fare';
 import type { Stop } from '../types';
+import { formatRouteEndpointSummary } from '../utils/route-distance';
 
 interface Props {
   isOpen: boolean;
@@ -22,7 +23,10 @@ const resolveKmHint = (
   stops: Stop[],
   minKm: number,
   maxKm: number,
-  routeEndKm: number
+  routeStartKm: number,
+  routeEndKm: number,
+  routeStartName: string,
+  routeEndName: string
 ): KmPlaceHint | null => {
   if (!rawValue.trim()) return null;
 
@@ -44,9 +48,13 @@ const resolveKmHint = (
 
   const sortedStops = [...stops].sort((left, right) => left.km - right.km);
   const exactStop = sortedStops.find(stop => stop.km === parsedKm);
-  const distanceToBaguio = Math.max(0, routeEndKm - parsedKm);
-  const formattedDistanceToBaguio =
-    distanceToBaguio % 1 === 0 ? distanceToBaguio.toFixed(0) : distanceToBaguio.toFixed(1);
+  const endpointSummary = formatRouteEndpointSummary(
+    parsedKm,
+    routeStartKm,
+    routeEndKm,
+    routeStartName,
+    routeEndName
+  );
 
   if (exactStop) {
     return {
@@ -54,7 +62,7 @@ const resolveKmHint = (
       title: exactStop.name,
       detail: [
         exactStop.coverageRange ? `Coverage ${exactStop.coverageRange}` : `Exact stop at KM ${exactStop.km}`,
-        `${formattedDistanceToBaguio} km to Baguio`
+        endpointSummary
       ].join(' • ')
     };
   }
@@ -82,14 +90,14 @@ const resolveKmHint = (
     return {
       tone: 'default',
       title: `Near ${nearestStop.name}`,
-      detail: `Closest recorded stop at KM ${nearestStop.km} • About ${formattedDistanceToBaguio} km to Baguio`
+      detail: `Closest recorded stop at KM ${nearestStop.km} • ${endpointSummary}`
     };
   }
 
   return {
     tone: 'default',
     title: `Near ${nearestStop.name}`,
-    detail: `Between ${previousStop.name} (KM ${previousStop.km}) and ${nextStop.name} (KM ${nextStop.km}) • About ${formattedDistanceToBaguio} km to Baguio`
+    detail: `Between ${previousStop.name} (KM ${previousStop.km}) and ${nextStop.name} (KM ${nextStop.km}) • ${endpointSummary}`
   };
 };
 
@@ -128,6 +136,9 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose, initialPickupKm = n
 
   const routeMinKm = useMemo(() => Math.min(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
   const routeMaxKm = useMemo(() => Math.max(...activeRoute.stops.map(stop => stop.km)), [activeRoute.stops]);
+  const routeStartName = useMemo(() => activeRoute.stops[0]?.name ?? 'Route Start', [activeRoute.stops]);
+  const routeEndName = useMemo(() => activeRoute.stops[activeRoute.stops.length - 1]?.name ?? 'Route End', [activeRoute.stops]);
+  const routeStartKm = useMemo(() => activeRoute.stops[0]?.km ?? routeMinKm, [activeRoute.stops, routeMinKm]);
   const routeEndKm = useMemo(() => activeRoute.stops[activeRoute.stops.length - 1]?.km ?? routeMaxKm, [activeRoute.stops, routeMaxKm]);
   const parsedPickup = useMemo(() => parseFloat(pickup), [pickup]);
   const parsedDest = useMemo(() => parseFloat(dest), [dest]);
@@ -164,12 +175,12 @@ const ManualKMOverlay: React.FC<Props> = ({ isOpen, onClose, initialPickupKm = n
     [activeRoute.fare, distance]
   );
   const pickupHint = useMemo(
-    () => resolveKmHint(pickup, activeRoute.stops, routeMinKm, routeMaxKm, routeEndKm),
-    [activeRoute.stops, pickup, routeEndKm, routeMaxKm, routeMinKm]
+    () => resolveKmHint(pickup, activeRoute.stops, routeMinKm, routeMaxKm, routeStartKm, routeEndKm, routeStartName, routeEndName),
+    [activeRoute.stops, pickup, routeEndKm, routeEndName, routeMaxKm, routeMinKm, routeStartKm, routeStartName]
   );
   const destHint = useMemo(
-    () => resolveKmHint(dest, activeRoute.stops, routeMinKm, routeMaxKm, routeEndKm),
-    [activeRoute.stops, dest, routeEndKm, routeMaxKm, routeMinKm]
+    () => resolveKmHint(dest, activeRoute.stops, routeMinKm, routeMaxKm, routeStartKm, routeEndKm, routeStartName, routeEndName),
+    [activeRoute.stops, dest, routeEndKm, routeEndName, routeMaxKm, routeMinKm, routeStartKm, routeStartName]
   );
 
   const handleKeypadPress = (key: string) => {

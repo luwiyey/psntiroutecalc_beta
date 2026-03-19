@@ -235,8 +235,18 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!preserveFormula) setLastFormula('');
   };
 
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextCaret = event.target.selectionStart ?? event.target.value.length;
+    updateExpression(event.target.value, nextCaret);
+  };
+
   const handleSelect = () => {
     const nextPos = inputRef.current?.selectionStart ?? expression.length;
+    setCaretPos(nextPos);
+  };
+
+  const moveCaret = (delta: number) => {
+    const nextPos = Math.max(0, Math.min(caretPos + delta, expression.length));
     setCaretPos(nextPos);
   };
 
@@ -341,14 +351,33 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 ref={inputRef}
                 type="text"
                 inputMode="none"
-                readOnly
                 value={displayExpression(expression)}
+                onChange={handleInputChange}
                 onClick={handleSelect}
                 onKeyUp={handleSelect}
                 onSelect={handleSelect}
                 placeholder="0"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 className="w-full bg-transparent text-lg font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white"
               />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => moveCaret(-1)}
+                  disabled={caretPos === 0}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
+                >
+                  Cursor Left
+                </button>
+                <button
+                  onClick={() => moveCaret(1)}
+                  disabled={caretPos >= expression.length}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
+                >
+                  Cursor Right
+                </button>
+              </div>
               <p className="mt-2 min-h-[16px] overflow-x-auto whitespace-nowrap text-[10px] font-black tracking-widest text-slate-400 scrollbar-hide">
                 {formulaLine}
               </p>

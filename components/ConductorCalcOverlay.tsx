@@ -19,6 +19,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const [expression, setExpression] = useState("");
   const [lastOp, setLastOp] = useState("");
   const [typedFirst, setTypedFirst] = useState(false);
+  const formatExpressionText = (value: string) => value.replace(/\*/g, "×").replace(/\//g, "÷");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -169,6 +170,15 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
   const quickBills = [20, 50, 100, 200, 500, 1000];
 
+  const liveExpression = (() => {
+    if (!expression.trim()) {
+      return typedFirst || lastOp === "=" || display !== "0" ? formatExpressionText(display) : "";
+    }
+
+    const shouldAppendDisplay = typedFirst || display !== "0" || lastOp === "=";
+    return formatExpressionText(`${expression}${shouldAppendDisplay ? display : ""}`.trim());
+  })();
+
   const handleQuickBill = (amount: number) => {
     if (display === "Error") return;
 
@@ -227,7 +237,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
         <div className="px-6 mb-3 shrink-0">
           <div className="bg-[#0f172a] dark:bg-black rounded-[2rem] p-6 text-right shadow-inner">
             <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest h-4 mb-1">
-              {expression}
+              {liveExpression}
             </p>
 
             <div className="w-full overflow-hidden">

@@ -13,6 +13,24 @@ interface Props {
 }
 
 const peso = '\u20B1';
+const SLOTS_PER_BLOCK = 25;
+const SLOTS_PER_SHEET = 100;
+
+const clampSlotIndex = (slotIdx: number) => Math.max(0, Math.min(slotIdx, SLOTS_PER_SHEET - 1));
+
+const getFirstEmptySlotIndex = (slots: number[]) => {
+  const nextEmptySlot = slots.findIndex(slot => slot === 0);
+  return nextEmptySlot === -1 ? 0 : nextEmptySlot;
+};
+
+const getPreferredSlotIndexForBlock = (slots: number[], blockIdx: number) => {
+  const safeBlockIdx = Math.max(0, Math.min(blockIdx, Math.floor(SLOTS_PER_SHEET / SLOTS_PER_BLOCK) - 1));
+  const blockStart = safeBlockIdx * SLOTS_PER_BLOCK;
+  const blockSlice = slots.slice(blockStart, blockStart + SLOTS_PER_BLOCK);
+  const nextEmptyOffset = blockSlice.findIndex(slot => slot === 0);
+
+  return nextEmptyOffset === -1 ? blockStart : blockStart + nextEmptyOffset;
+};
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, showToast } = useApp();
@@ -185,6 +203,16 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
   const activeTrip = activeSession.trips[tallyNav.tripIdx] || activeSession.trips[0];
   const activeSheet = activeTrip.sheets[tallyNav.sheetIdx] || activeTrip.sheets[0];
+
+  const setEditorTargetSlot = (slotIdx: number) => {
+    const nextSlotIdx = clampSlotIndex(slotIdx);
+    setSelectedSlotIdx(nextSlotIdx);
+    setTallyNav(prev => ({ ...prev, blockIdx: Math.floor(nextSlotIdx / SLOTS_PER_BLOCK) }));
+  };
+
+  const jumpToBlock = (blockIdx: number) => {
+    setEditorTargetSlot(getPreferredSlotIndexForBlock(activeSheet.slots, blockIdx));
+  };
   
   const filteredBatchFares = useMemo(() => {
     let fares = allBatchFares;
@@ -209,14 +237,14 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
   const blockTotals = useMemo(() => {
     return [0, 1, 2, 3].map(blockIdx => {
-      const slice = activeSheet.slots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      const slice = activeSheet.slots.slice(blockIdx * SLOTS_PER_BLOCK, (blockIdx + 1) * SLOTS_PER_BLOCK);
       return slice.reduce((a, b) => a + b, 0);
     });
   }, [activeSheet]);
 
   const blockCounts = useMemo(() => {
     return [0, 1, 2, 3].map(blockIdx => {
-      const slice = activeSheet.slots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      const slice = activeSheet.slots.slice(blockIdx * SLOTS_PER_BLOCK, (blockIdx + 1) * SLOTS_PER_BLOCK);
       return slice.filter(v => v > 0).length;
     });
   }, [activeSheet]);
@@ -255,13 +283,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }, [activeSheet.slots, pendingEntriesPreview, selectedSlotIdx]);
   const projectedBlockTotals = useMemo(() => {
     return [0, 1, 2, 3].map(blockIdx => {
-      const slice = projectedSlots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      const slice = projectedSlots.slice(blockIdx * SLOTS_PER_BLOCK, (blockIdx + 1) * SLOTS_PER_BLOCK);
       return slice.reduce((sum, value) => sum + value, 0);
     });
   }, [projectedSlots]);
   const projectedBlockCounts = useMemo(() => {
     return [0, 1, 2, 3].map(blockIdx => {
-      const slice = projectedSlots.slice(blockIdx * 25, (blockIdx + 1) * 25);
+      const slice = projectedSlots.slice(blockIdx * SLOTS_PER_BLOCK, (blockIdx + 1) * SLOTS_PER_BLOCK);
       return slice.filter(value => value > 0).length;
     });
   }, [projectedSlots]);
@@ -270,17 +298,21 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   
   const currentTargetSlot = selectedSlotIdx + stagedStandardEntries.length;
   const selectedSlotNumber = selectedSlotIdx + 1;
-  const currentSlotNumber = Math.min(currentTargetSlot + 1, 100);
-  const nextSlotNumber = currentSlotNumber >= 100 ? null : currentSlotNumber + 1;
-  const currentSlotBlock = Math.floor((currentSlotNumber - 1) / 25) + 1;
-  const nextSlotBlock = nextSlotNumber ? Math.floor((nextSlotNumber - 1) / 25) + 1 : null;
+  const currentSlotNumber = Math.min(currentTargetSlot + 1, SLOTS_PER_SHEET);
+  const nextSlotNumber = currentSlotNumber >= SLOTS_PER_SHEET ? null : currentSlotNumber + 1;
+  const currentSlotBlock = Math.floor((currentSlotNumber - 1) / SLOTS_PER_BLOCK) + 1;
+  const nextSlotBlock = nextSlotNumber ? Math.floor((nextSlotNumber - 1) / SLOTS_PER_BLOCK) + 1 : null;
   const auditBlockIdx = currentSlotBlock - 1;
   const blockPendingTotal = projectedBlockTotals[auditBlockIdx] - blockTotals[auditBlockIdx];
   const sheetPendingTotal = projectedSheetTotal - sheetTotal;
-  const blockSlotsLeft = Math.max(0, 25 - projectedBlockCounts[auditBlockIdx]);
-  const sheetSlotsLeft = Math.max(0, 100 - projectedSheetEntryCount);
+  const blockSlotsLeft = Math.max(0, SLOTS_PER_BLOCK - projectedBlockCounts[auditBlockIdx]);
+  const sheetSlotsLeft = Math.max(0, SLOTS_PER_SHEET - projectedSheetEntryCount);
   const previewEntryCount = pendingEntriesPreview.length;
-  const previewEndSlotNumber = previewEntryCount > 0 ? Math.min(selectedSlotIdx + previewEntryCount, 100) : currentSlotNumber;
+  const previewEndSlotNumber =
+    previewEntryCount > 0 ? Math.min(selectedSlotIdx + previewEntryCount, SLOTS_PER_SHEET) : currentSlotNumber;
+  const hasPreviousTargetSlot = selectedSlotIdx > 0;
+  const hasNextTargetSlot = selectedSlotIdx < SLOTS_PER_SHEET - 1;
+  const hasNextBlock = currentSlotBlock < SLOTS_PER_SHEET / SLOTS_PER_BLOCK;
 
   const handleAddTrip = () => {
     const lastTrip = activeSession.trips[activeSession.trips.length - 1];
@@ -354,7 +386,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
         ...t, sheets: t.sheets.map((sh, si) => si === tallyNav.sheetIdx ? {
-          ...sh, slots: sh.slots.map((sl, sli) => (sli >= bIdx * 25 && sli < (bIdx + 1) * 25) ? 0 : sl), lastUpdatedAt: Date.now()
+          ...sh, slots: sh.slots.map((sl, sli) => (sli >= bIdx * SLOTS_PER_BLOCK && sli < (bIdx + 1) * SLOTS_PER_BLOCK) ? 0 : sl), lastUpdatedAt: Date.now()
         } : sh)
       } : t)
     } : s));
@@ -383,7 +415,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     if (nextExistingSheetIdx !== -1) {
       const nextExistingSheet = activeTrip.sheets[nextExistingSheetIdx];
       const nextOpenSlotIdx = nextExistingSheet.slots.findIndex(slot => slot === 0);
-      const nextBlockIdx = Math.floor((nextOpenSlotIdx === -1 ? 0 : nextOpenSlotIdx) / 25);
+      const nextBlockIdx = Math.floor((nextOpenSlotIdx === -1 ? 0 : nextOpenSlotIdx) / SLOTS_PER_BLOCK);
 
       setTallyNav(n => ({ ...n, sheetIdx: nextExistingSheetIdx, blockIdx: nextBlockIdx }));
       setSelectedSlotIdx(nextOpenSlotIdx === -1 ? 0 : nextOpenSlotIdx);
@@ -421,12 +453,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       successMessage?: string;
     }
   ) => {
-    const remainingSlots = Math.max(0, 100 - selectedSlotIdx);
+    const remainingSlots = Math.max(0, SLOTS_PER_SHEET - selectedSlotIdx);
     const finalEntries = entries.slice(0, remainingSlots);
     if (finalEntries.length === 0) return false;
 
     const savedSheetNumber = tallyNav.sheetIdx + 1;
-    const fillsSheet = selectedSlotIdx + finalEntries.length >= 100;
+    const fillsSheet = selectedSlotIdx + finalEntries.length >= SLOTS_PER_SHEET;
 
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
@@ -454,7 +486,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         sheetNumber: savedSheetNumber,
         blockNumber: currentSlotBlock,
         startBox: selectedSlotIdx + 1,
-        endBox: Math.min(selectedSlotIdx + finalEntries.length, 100),
+        endBox: Math.min(selectedSlotIdx + finalEntries.length, SLOTS_PER_SHEET),
         entriesRecorded: finalEntries.length,
         totalAdded: finalEntries.reduce((sum, value) => sum + value, 0)
       }
@@ -475,7 +507,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
   const handleSlotClick = (idx: number) => {
     if (activeSheet.status === 'recorded' || activeSession.status === 'closed') return;
-    setSelectedSlotIdx(idx);
+    setEditorTargetSlot(idx);
     resetEditorDraft();
     setIsEditorOpen(true);
   };
@@ -486,7 +518,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     const newTapeLength = nextEntries.length;
     const absoluteSlot = selectedSlotIdx + newTapeLength;
 
-    if (absoluteSlot === 100) {
+    if (absoluteSlot === SLOTS_PER_SHEET) {
       setLastPunched(val);
       setIsFlashing(true);
       persistEntriesToSheet(nextEntries, {
@@ -501,8 +533,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setIsFlashing(true);
     setStagedStandardEntries(nextEntries);
     setEditValue('');
-    if (absoluteSlot % 25 === 0) {
-      setBlockAlert({ completedBlock: Math.floor(absoluteSlot / 25), nextBlock: Math.floor(absoluteSlot / 25) + 1 });
+    if (absoluteSlot % SLOTS_PER_BLOCK === 0) {
+      setBlockAlert({
+        completedBlock: Math.floor(absoluteSlot / SLOTS_PER_BLOCK),
+        nextBlock: Math.floor(absoluteSlot / SLOTS_PER_BLOCK) + 1
+      });
     }
     setTimeout(() => setIsFlashing(false), 150);
     if (isTileClick) {
@@ -517,7 +552,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const getTapeHighlight = (slotNum: number) => {
-    const blockIdx = Math.floor((slotNum - 1) / 25);
+    const blockIdx = Math.floor((slotNum - 1) / SLOTS_PER_BLOCK);
     switch(blockIdx) {
       case 0: return 'bg-red-50 border-red-100 text-red-700 dark:bg-red-900/20 dark:border-red-700/50 dark:text-red-300';
       case 1: return 'bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700/50 dark:text-emerald-300';
@@ -559,7 +594,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const handleApplyCalcEntries = (values: number[]) => {
     if (values.length === 0) return;
 
-    const remainingSlots = 100 - selectedSlotIdx - stagedStandardEntries.length;
+    const remainingSlots = SLOTS_PER_SHEET - selectedSlotIdx - stagedStandardEntries.length;
     const acceptedValues = values.slice(0, Math.max(0, remainingSlots));
 
     if (acceptedValues.length === 0) {
@@ -573,7 +608,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setIsFlashing(false);
     setLastPunched(acceptedValues[acceptedValues.length - 1] ?? null);
 
-    if (selectedSlotIdx + nextEntries.length === 100) {
+    if (selectedSlotIdx + nextEntries.length === SLOTS_PER_SHEET) {
       persistEntriesToSheet(nextEntries, {
         closeEditor: false,
         autoAdvanceWhenFull: true
@@ -630,7 +665,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         tripName: activeTrip.name,
         direction: activeTrip.direction,
         sheetNumber: tallyNav.sheetIdx + 1,
-        blockNumber: Math.floor(slotIdx / 25) + 1,
+        blockNumber: Math.floor(slotIdx / SLOTS_PER_BLOCK) + 1,
         boxNumber: slotIdx + 1,
         clearedValue: previousValue
       }
@@ -669,7 +704,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         <div className="flex bg-slate-100 dark:bg-black/40 h-auto items-center">
           <div className="flex flex-1 overflow-x-auto scrollbar-hide">
             {activeSession.trips.map((t, i) => (
-              <button key={t.id} onClick={() => setTallyNav(n => ({ ...n, tripIdx: i, sheetIdx: 0, blockIdx: 0 }))} 
+              <button
+                key={t.id}
+                onClick={() => {
+                  setTallyNav(n => ({ ...n, tripIdx: i, sheetIdx: 0, blockIdx: 0 }));
+                  setSelectedSlotIdx(getFirstEmptySlotIndex(t.sheets[0]?.slots ?? Array(SLOTS_PER_SHEET).fill(0)));
+                }}
                 className={`flex-shrink-0 px-8 py-4 border-b-2 transition-all ${tallyNav.tripIdx === i ? 'bg-white dark:bg-night-charcoal border-primary text-primary' : 'border-transparent text-slate-400'}`}>
                 <span className="font-900 uppercase text-[11px] tracking-[0.1em]">{t.name}</span>
               </button>
@@ -682,7 +722,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         <div className="flex bg-white dark:bg-night-charcoal h-auto items-center border-t border-slate-100 dark:border-white/5">
           <div className="flex flex-1 overflow-x-auto scrollbar-hide">
             {activeTrip.sheets.map((s, i) => (
-              <button key={s.id} onClick={() => setTallyNav(n => ({ ...n, sheetIdx: i, blockIdx: 0 }))} 
+              <button
+                key={s.id}
+                onClick={() => {
+                  setTallyNav(n => ({ ...n, sheetIdx: i, blockIdx: 0 }));
+                  setSelectedSlotIdx(getFirstEmptySlotIndex(s.slots));
+                }}
                 className={`flex-shrink-0 min-w-[90px] py-3.5 border-b-2 transition-all flex flex-col items-center justify-center ${tallyNav.sheetIdx === i ? 'border-primary text-primary bg-white dark:bg-white/5' : 'border-transparent text-slate-300'}`}>
                 <span className="font-900 uppercase text-[10px] tracking-wider leading-none">Sheet {i + 1}</span>
               </button>
@@ -719,9 +764,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         <div className="flex p-2 gap-2 bg-slate-100 dark:bg-black/20 h-auto border-t border-slate-200 dark:border-white/10">
           {[0, 1, 2, 3].map(b => (
             <div key={b} className="flex-1 flex flex-col items-stretch">
-               <button onClick={() => setTallyNav(n => ({ ...n, blockIdx: b }))}
+               <button onClick={() => jumpToBlock(b)}
                  className={`w-full py-2 rounded-xl font-black border flex flex-col items-center justify-center transition-all ${tallyNav.blockIdx === b ? 'bg-white dark:bg-night-charcoal border-primary/20 text-primary shadow-sm' : 'bg-transparent border-transparent text-slate-400'}`}>
-                 <span className="text-[8px] opacity-60 uppercase tracking-tighter">Block {b + 1} ({blockCounts[b]}/25)</span>
+                 <span className="text-[8px] opacity-60 uppercase tracking-tighter">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
                  <span className="text-[9px]">{peso}{blockTotals[b]}</span>
                </button>
                 <button onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="flex items-center justify-center gap-1 text-slate-400 hover:text-red-500 mt-1 transition-colors">
@@ -734,8 +779,8 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       </div>
 
       <div className="p-4 grid grid-cols-5 gap-3.5 flex-1 overflow-y-auto pb-8">
-        {activeSheet.slots.slice(tallyNav.blockIdx * 25, (tallyNav.blockIdx + 1) * 25).map((val, i) => {
-          const idx = tallyNav.blockIdx * 25 + i;
+        {activeSheet.slots.slice(tallyNav.blockIdx * SLOTS_PER_BLOCK, (tallyNav.blockIdx + 1) * SLOTS_PER_BLOCK).map((val, i) => {
+          const idx = tallyNav.blockIdx * SLOTS_PER_BLOCK + i;
           return (
             <div
               key={idx}
@@ -829,6 +874,30 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               </div>
 
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setEditorTargetSlot(selectedSlotIdx - 1)}
+                  disabled={!hasPreviousTargetSlot}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm active:scale-95 disabled:opacity-40 dark:border-white/10 dark:bg-black/30 dark:text-slate-300"
+                >
+                  Prev Box
+                </button>
+                <button
+                  onClick={() => setEditorTargetSlot(selectedSlotIdx + 1)}
+                  disabled={!hasNextTargetSlot}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm active:scale-95 disabled:opacity-40 dark:border-white/10 dark:bg-black/30 dark:text-slate-300"
+                >
+                  Next Box
+                </button>
+                <button
+                  onClick={() => jumpToBlock(tallyNav.blockIdx + 1)}
+                  disabled={!hasNextBlock}
+                  className="rounded-2xl bg-primary px-4 py-3 text-[9px] font-black uppercase tracking-widest text-white shadow-sm active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
+                >
+                  Next Block
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowDetails(prev => !prev)}
                 className="mb-3 flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition-all dark:border-white/10 dark:bg-black/30"
@@ -864,12 +933,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                       </span>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedBlockCounts[auditBlockIdx] / 25) * 100)}%` }} />
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedBlockCounts[auditBlockIdx] / SLOTS_PER_BLOCK) * 100)}%` }} />
                     </div>
                     <div className="mt-3 space-y-1.5">
                       <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
                         <span>Filled After Clicking Finalize</span>
-                        <span className="text-slate-700 dark:text-slate-200">{projectedBlockCounts[auditBlockIdx]}/25</span>
+                        <span className="text-slate-700 dark:text-slate-200">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK}</span>
                       </div>
                       <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
                         <span>Saved Money Now</span>
@@ -899,12 +968,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                       </span>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/10 dark:bg-white/5">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedSheetEntryCount / 100) * 100)}%` }} />
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedSheetEntryCount / SLOTS_PER_SHEET) * 100)}%` }} />
                     </div>
                     <div className="mt-3 space-y-1.5">
                       <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
                         <span>Filled After Clicking Finalize</span>
-                        <span className="text-slate-700 dark:text-slate-200">{projectedSheetEntryCount}/100</span>
+                        <span className="text-slate-700 dark:text-slate-200">{projectedSheetEntryCount}/{SLOTS_PER_SHEET}</span>
                       </div>
                       <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
                         <span>Saved Money Now</span>
@@ -1112,7 +1181,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 <div className="bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center border-t-8 border-primary">
                    <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-2 uppercase tracking-tighter">BLOCK {blockAlert.completedBlock} COMPLETE</h3>
                    <div className="space-y-2 mt-6">
-                      <button onClick={() => { setTallyNav(prev => ({ ...prev, blockIdx: blockAlert.nextBlock - 1 })); setBlockAlert(null); }} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase text-[10px]">Continue to Block {blockAlert.nextBlock}</button>
+                      <button onClick={() => { jumpToBlock(blockAlert.nextBlock - 1); setBlockAlert(null); }} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase text-[10px]">Continue to Block {blockAlert.nextBlock}</button>
                       <button onClick={() => setBlockAlert(null)} className="w-full py-3 text-slate-400 font-black uppercase text-[9px]">Review Current Block</button>
                    </div>
                 </div>

@@ -7,11 +7,16 @@ import type {
   StopMatch
 } from '../utils/location';
 import { formatMeters } from '../utils/location';
+import { formatRouteEndpointSummary } from '../utils/route-distance';
 
 interface Props {
   isOpen: boolean;
   isLoading: boolean;
   routeLabel: string;
+  routeStartName: string;
+  routeEndName: string;
+  routeStartKm: number;
+  routeEndKm: number;
   location: CurrentLocationSnapshot | null;
   nearestMatch: StopMatch | null;
   segmentMatch: SegmentMatch | null;
@@ -26,19 +31,17 @@ interface Props {
   onUseManualKm: (pickupKm: number) => void;
 }
 
-const BAGUIO_KM = 271;
-
 const formatCoordinate = (value: number) => value.toFixed(6);
 const formatKm = (value: number) => value.toFixed(2).replace(/\.?0+$/, '');
-const formatRemainingDistance = (distance?: number) => {
-  if (typeof distance !== 'number') return null;
-  return distance % 1 === 0 ? distance.toFixed(0) : distance.toFixed(1);
-};
 
 const LocationAssistOverlay: React.FC<Props> = ({
   isOpen,
   isLoading,
   routeLabel,
+  routeStartName,
+  routeEndName,
+  routeStartKm,
+  routeEndKm,
   location,
   nearestMatch,
   segmentMatch,
@@ -64,7 +67,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
       )
   );
 
-  const segmentDistanceToBaguio = segmentMatch ? Math.max(0, BAGUIO_KM - segmentMatch.estimatedKm) : null;
+  const segmentEndpointSummary = segmentMatch
+    ? formatRouteEndpointSummary(segmentMatch.estimatedKm, routeStartKm, routeEndKm, routeStartName, routeEndName)
+    : null;
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
@@ -176,11 +181,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
                   KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
                 </p>
-                {typeof nearestMatch.stop.distanceToBaguio === 'number' && (
-                  <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                    {formatRemainingDistance(nearestMatch.stop.distanceToBaguio)} km to Baguio
-                  </p>
-                )}
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  {formatRouteEndpointSummary(nearestMatch.stop.km, routeStartKm, routeEndKm, routeStartName, routeEndName)}
+                </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
@@ -204,9 +207,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
                       GPS looks near KM {formatKm(segmentMatch.estimatedKm)}, between {segmentMatch.startStop.name} and{' '}
                       {segmentMatch.endStop.name}.
                     </p>
-                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                      {formatKm(segmentDistanceToBaguio ?? 0)} km to Baguio
-                    </p>
+                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">{segmentEndpointSummary}</p>
                     <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                       Use Manual KM if the pickup was not at an exact tariff stop.
                     </p>
@@ -228,9 +229,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">
                   Between {segmentMatch.startStop.name} and {segmentMatch.endStop.name}
                 </p>
-                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  {formatKm(segmentDistanceToBaguio ?? 0)} km to Baguio
-                </p>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">{segmentEndpointSummary}</p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                   Stop picker only supports exact tariff stops. Manual KM is better for this pickup.
                 </p>

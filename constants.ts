@@ -1,6 +1,6 @@
 import type { AppSettings, RouteProfile, Stop } from './types';
 
-export const FARE_SETTINGS_VERSION = 6;
+export const FARE_SETTINGS_VERSION = 7;
 export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 export const VICE_VERSA = '\u2194';
 
@@ -922,17 +922,11 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: ORDINARY_BAYAMBANG_STOPS,
     fare: {
-      regularRate: 2.2,
-      discountRate: Number((2.2 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 1.9,
+      discountRate: Number((1.9 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 22,
       minimumDiscountFare: 18,
-      roundingMode: 'legacy',
-      previousFare: {
-        regularRate: 1.9,
-        discountRate: Number((1.9 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-        minimumRegularFare: 20,
-        minimumDiscountFare: 16
-      }
+      roundingMode: 'legacy'
     }
   },
   {
@@ -942,8 +936,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: AIRCON_BAYAMBANG_STOPS,
     fare: {
-      regularRate: 2.7,
-      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.35,
+      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 70,
       minimumDiscountFare: 56,
       roundingMode: 'standard'
@@ -956,8 +950,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: TARLAC_STOPS,
     fare: {
-      regularRate: 2.7,
-      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.35,
+      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 70,
       minimumDiscountFare: 56,
       roundingMode: 'standard'
@@ -985,8 +979,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: CABANATUAN_VIA_SAN_JOSE_STOPS,
     fare: {
-      regularRate: 2.7,
-      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.35,
+      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 70,
       minimumDiscountFare: 56,
       roundingMode: 'standard'
@@ -999,8 +993,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: CABANATUAN_VIA_TARLAC_STOPS,
     fare: {
-      regularRate: 2.7,
-      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.35,
+      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 70,
       minimumDiscountFare: 56,
       roundingMode: 'standard'
