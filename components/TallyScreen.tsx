@@ -271,6 +271,14 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
   const sheetTotal = useMemo(() => activeSheet.slots.reduce((a, b) => a + b, 0), [activeSheet]);
   const sheetEntryCount = useMemo(() => activeSheet.slots.filter(v => v > 0).length, [activeSheet]);
+  const tripTotal = useMemo(
+    () =>
+      activeTrip.sheets.reduce(
+        (tripGross, sheet) => tripGross + sheet.slots.reduce((sheetGross, slot) => sheetGross + slot, 0),
+        0
+      ),
+    [activeTrip]
+  );
 
   const batchTotalGross = useMemo(() => {
     return (Object.entries(batchCounts) as [string, string][]).reduce((sum: number, [fare, count]) => {
@@ -766,21 +774,27 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
              <span className="material-icons text-2xl">add</span>
           </button>
         </div>
-        <div className="px-4 py-2.5 bg-white dark:bg-night-charcoal flex items-center justify-between h-auto border-t border-slate-50 dark:border-white/5">
-           <button onClick={() => setPendingAction({ type: 'flip-direction' })} className="flex items-center gap-3 active:scale-95 transition-transform bg-slate-50 dark:bg-white/5 px-4 py-1.5 rounded-xl border border-slate-100 dark:border-white/5">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${activeTrip.direction === 'north' ? 'bg-primary text-white' : 'bg-slate-800 text-white'}`}>
-                <span className="material-icons text-xs">{activeTrip.direction === 'north' ? 'north' : 'south'}</span>
+         <div className="px-4 py-2.5 bg-white dark:bg-night-charcoal flex items-center justify-between h-auto border-t border-slate-50 dark:border-white/5">
+            <button onClick={() => setPendingAction({ type: 'flip-direction' })} className="flex items-center gap-3 active:scale-95 transition-transform bg-slate-50 dark:bg-white/5 px-4 py-1.5 rounded-xl border border-slate-100 dark:border-white/5">
+               <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${activeTrip.direction === 'north' ? 'bg-primary text-white' : 'bg-slate-800 text-white'}`}>
+                 <span className="material-icons text-xs">{activeTrip.direction === 'north' ? 'north' : 'south'}</span>
+               </div>
+               <div className="text-left">
+                 <p className="text-[6px] font-black uppercase text-slate-400 leading-none mb-0.5">Heading</p>
+                 <span className="font-black uppercase text-[10px] tracking-tight text-slate-900 dark:text-white leading-none">{activeTrip.direction === 'north' ? northboundTerminal : southboundTerminal}</span>
+               </div>
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Trip Total</p>
+                <p className="text-xl font-900 text-slate-900 dark:text-white leading-none">{peso}{tripTotal}</p>
               </div>
-              <div className="text-left">
-                <p className="text-[6px] font-black uppercase text-slate-400 leading-none mb-0.5">Heading</p>
-                <span className="font-black uppercase text-[10px] tracking-tight text-slate-900 dark:text-white leading-none">{activeTrip.direction === 'north' ? northboundTerminal : southboundTerminal}</span>
+              <div className="text-right">
+                <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Sheet Total</p>
+                <p className="text-xl font-900 text-primary leading-none">{peso}{sheetTotal}</p>
               </div>
-           </button>
-           <div className="text-right">
-             <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Sheet Total</p>
-             <p className="text-xl font-900 text-primary leading-none">{peso}{sheetTotal}</p>
-          </div>
-        </div>
+           </div>
+         </div>
         <div className="flex p-2 gap-2 bg-slate-100 dark:bg-black/20 h-auto border-t border-slate-200 dark:border-white/10">
           {[0, 1, 2, 3].map(b => (
             <div key={b} className="flex-1 flex flex-col items-stretch">
