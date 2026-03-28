@@ -1,4 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { BrowserSpeechRecognition } from '../utils/voice';
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseCalculatorVoiceTranscript
+} from '../utils/voice';
 
 type Operator = '+' | '-' | '*' | '/';
 
@@ -200,6 +207,12 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [caretPos, setCaretPos] = useState(0);
   const [lastFormula, setLastFormula] = useState('');
   const [hasEvaluated, setHasEvaluated] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -207,6 +220,10 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setCaretPos(0);
     setLastFormula('');
     setHasEvaluated(false);
+    setIsVoiceListening(false);
+    setVoiceTranscript('');
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
   }, [isOpen]);
 
   useEffect(() => {
@@ -215,6 +232,13 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     inputRef.current.focus();
     inputRef.current.setSelectionRange(nextPos, nextPos);
   }, [caretPos, expression, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
 
   const preview = useMemo(() => findEvaluableExpression(expression), [expression]);
   const previewResult = preview ? formatNumber(preview.result) : '0';
@@ -233,6 +257,63 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setCaretPos(Math.min(nextCaret, normalized.length));
     setHasEvaluated(false);
     if (!preserveFormula) setLastFormula('');
+  };
+
+  const startVoiceCalculator = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      return;
+    }
+
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback('Listening... say something like "12 plus 45" or "60 times point eight".');
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-PH';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onerror = event => {
+      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      setIsVoiceListening(false);
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? '';
+      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const parsed = parseCalculatorVoiceTranscript(transcript);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+
+      if (parsed.status === 'match') {
+        updateExpression(parsed.expression, parsed.expression.length);
+        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Review it, then tap = when ready.`);
+      } else {
+        setVoiceFeedback(parsed.message);
+      }
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceFeedback('Voice recognition could not start. Please try again.');
+      setIsVoiceListening(false);
+    }
   };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -335,15 +416,47 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-          >
-            <span className="material-icons text-base">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={startVoiceCalculator}
+              className={`flex h-9 min-w-[44px] items-center justify-center rounded-full px-3 text-[10px] font-black uppercase tracking-widest active:scale-90 ${
+                isVoiceListening
+                  ? 'bg-primary text-white'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
+              }`}
+              title={canUseVoiceRecognition ? 'Voice calculator' : 'Voice not available in this browser'}
+            >
+              <span className="material-icons text-base">{isVoiceListening ? 'mic' : 'mic_none'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+            >
+              <span className="material-icons text-base">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 visible-scrollbar">
+          {(voiceFeedback || voiceTranscript) && (
+            <div className="mb-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
+                  <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {formatVoiceConfidence(voiceConfidence)}
+                </p>
+              </div>
+              {voiceTranscript && (
+                <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  Heard: "{voiceTranscript}"
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-[2rem] bg-[#0f172a] p-4 shadow-inner dark:bg-black">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Expression</p>
             <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { LandingScreen } from './components/LandingScreen';
@@ -13,6 +13,14 @@ import RouteSelectionScreen from './components/RouteSelectionScreen';
 import InstallAppBanner from './components/InstallAppBanner';
 import UpdateAppBanner from './components/UpdateAppBanner';
 import { flushAnalyticsQueue, trackAnalyticsEvent } from './utils/analytics';
+import type { CurrentLocationSnapshot } from './utils/location';
+import {
+  getDistanceMeters,
+  getLocationErrorMessage,
+  queryLocationPermissionState,
+  watchLiveLocation
+} from './utils/location';
+import { estimateTravelSpeedMetersPerSecond, getStopAlertRadius } from './utils/stop-data';
 
 type Tab = 'calc' | 'between' | 'tally' | 'logs' | 'setup';
 const STARTED_STORAGE_KEY = 'psnti_started';
@@ -24,13 +32,73 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+const playReminderTone = async () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const AudioContextClass =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+  if (!AudioContextClass) {
+    return;
+  }
+
+  const audioContext = new AudioContextClass();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+
+  oscillator.type = 'sine';
+  oscillator.frequency.value = 880;
+  gainNode.gain.value = 0.05;
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.22);
+
+  window.setTimeout(() => {
+    void audioContext.close();
+  }, 350);
+};
+
 const AppContent: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(() => localStorage.getItem(STARTED_STORAGE_KEY) === 'true');
   const [activeTab, setActiveTab] = useState<Tab>('calc');
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [waitingRegistration, setWaitingRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const { authState } = useAuth();
-  const { settings, showToast } = useApp();
+  const {
+    settings,
+    showToast,
+    activeRoute,
+    stopReminders,
+    setStopReminders,
+    reminderSettings
+  } = useApp();
+  const lastReminderLocationRef = useRef<CurrentLocationSnapshot | null>(null);
+  const reminderErrorShownRef = useRef(false);
+  const activeRouteRef = useRef(activeRoute);
+  const reminderSettingsRef = useRef(reminderSettings);
+
+  useEffect(() => {
+    activeRouteRef.current = activeRoute;
+  }, [activeRoute]);
+
+  useEffect(() => {
+    reminderSettingsRef.current = reminderSettings;
+  }, [reminderSettings]);
+
+  const activeReminderCount = useMemo(
+    () =>
+      stopReminders.filter(
+        reminder =>
+          reminder.routeId === activeRoute.id &&
+          reminder.enabled &&
+          reminder.status !== 'done'
+      ).length,
+    [activeRoute.id, stopReminders]
+  );
 
   useEffect(() => {
     void flushAnalyticsQueue();
@@ -109,6 +177,178 @@ const AppContent: React.FC = () => {
       window.removeEventListener(SW_UPDATE_EVENT, handleSwUpdate as EventListener);
     };
   }, [authState.deviceId, authState.employeeId, authState.employeeName, settings.activeRouteId, showToast]);
+
+  useEffect(() => {
+    if (!reminderSettings.enabled || activeReminderCount === 0) {
+      lastReminderLocationRef.current = null;
+      return;
+    }
+
+    let stopWatching: (() => void) | undefined;
+    let isCancelled = false;
+    reminderErrorShownRef.current = false;
+
+    const triggerReminderFeedback = async (message: string) => {
+      showToast(message, 'info');
+
+      if (reminderSettingsRef.current.vibrationEnabled && typeof navigator.vibrate === 'function') {
+        navigator.vibrate([180, 120, 180]);
+      }
+
+      if (reminderSettingsRef.current.soundEnabled) {
+        await playReminderTone();
+      }
+    };
+
+    const startReminderWatch = async () => {
+      try {
+        stopWatching = await watchLiveLocation(
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
+          },
+          snapshot => {
+            if (isCancelled) {
+              return;
+            }
+
+            const previousSnapshot = lastReminderLocationRef.current;
+            lastReminderLocationRef.current = snapshot;
+            const speedMetersPerSecond = estimateTravelSpeedMetersPerSecond(previousSnapshot, snapshot);
+            const currentRoute = activeRouteRef.current;
+            const alertMessages: string[] = [];
+
+            setStopReminders(prev => {
+              let changed = false;
+
+              const nextReminders = prev.map(reminder => {
+                if (
+                  reminder.routeId !== currentRoute.id ||
+                  !reminder.enabled ||
+                  reminder.status === 'done'
+                ) {
+                  return reminder;
+                }
+
+                const matchedStop = currentRoute.stops.find(stop => stop.name === reminder.stopName);
+
+                if (!matchedStop?.latitude || !matchedStop?.longitude) {
+                  return reminder;
+                }
+
+                const distanceMeters = getDistanceMeters(
+                  snapshot.latitude,
+                  snapshot.longitude,
+                  matchedStop.latitude,
+                  matchedStop.longitude
+                );
+                const etaSeconds =
+                  speedMetersPerSecond && speedMetersPerSecond > 1
+                    ? distanceMeters / speedMetersPerSecond
+                    : null;
+                const arrivalRadius = getStopAlertRadius(matchedStop, snapshot.accuracy);
+
+                if (!reminder.alertsTriggered.arrival && distanceMeters <= arrivalRadius) {
+                  changed = true;
+                  alertMessages.push(
+                    `Arriving now: ${reminder.passengerCount} pax for ${reminder.stopName}`
+                  );
+                  return {
+                    ...reminder,
+                    status: 'arriving',
+                    alertsTriggered: {
+                      twoMinute: true,
+                      oneMinute: true,
+                      arrival: true
+                    }
+                  };
+                }
+
+                if (
+                  etaSeconds !== null &&
+                  etaSeconds <= 60 &&
+                  !reminder.alertsTriggered.oneMinute
+                ) {
+                  changed = true;
+                  alertMessages.push(
+                    `About 1 min away: ${reminder.passengerCount} pax for ${reminder.stopName}`
+                  );
+                  return {
+                    ...reminder,
+                    alertsTriggered: {
+                      twoMinute: true,
+                      oneMinute: true,
+                      arrival: false
+                    }
+                  };
+                }
+
+                if (
+                  etaSeconds !== null &&
+                  etaSeconds <= 120 &&
+                  !reminder.alertsTriggered.twoMinute
+                ) {
+                  changed = true;
+                  alertMessages.push(
+                    `About 2 min away: ${reminder.passengerCount} pax for ${reminder.stopName}`
+                  );
+                  return {
+                    ...reminder,
+                    alertsTriggered: {
+                      ...reminder.alertsTriggered,
+                      twoMinute: true
+                    }
+                  };
+                }
+
+                return reminder;
+              });
+
+              return changed ? nextReminders : prev;
+            });
+
+            alertMessages.forEach(message => {
+              void triggerReminderFeedback(message);
+            });
+          },
+          async error => {
+            if (reminderErrorShownRef.current || isCancelled) {
+              return;
+            }
+
+            reminderErrorShownRef.current = true;
+            const permissionState = await queryLocationPermissionState();
+            showToast(getLocationErrorMessage(error, permissionState, false), 'info');
+          }
+        );
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        const permissionState = await queryLocationPermissionState();
+        showToast(
+          getLocationErrorMessage(
+            error instanceof Error ? error : new Error('Unable to start drop-off alerts.'),
+            permissionState,
+            false
+          ),
+          'info'
+        );
+      }
+    };
+
+    void startReminderWatch();
+
+    return () => {
+      isCancelled = true;
+      lastReminderLocationRef.current = null;
+      if (stopWatching) {
+        stopWatching();
+      }
+    };
+  }, [activeReminderCount, reminderSettings.enabled, setStopReminders, showToast]);
 
   const dismissInstallBanner = () => {
     localStorage.setItem(INSTALL_BANNER_DISMISSED_KEY, 'true');

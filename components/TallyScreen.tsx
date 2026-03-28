@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+﻿import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { TallyTrip, TallySheet, TallySession } from '../types';
@@ -7,6 +7,7 @@ import TallyCalcOverlay from './TallyCalcOverlay';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 type EditorMode = 'standard' | 'batch';
+type EditorSection = 'totals' | 'details' | 'tape';
 
 interface Props {
   onExit?: () => void;
@@ -33,14 +34,24 @@ const getPreferredSlotIndexForBlock = (slots: number[], blockIdx: number) => {
 };
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
-  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, showToast } = useApp();
+  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, currentShift, showToast } = useApp();
   const { authState } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const routeSessions = useMemo(
-    () => sessions.filter(session => session.routeId === activeRoute.id),
+    () =>
+      [...sessions]
+        .filter(session => session.routeId === activeRoute.id)
+        .sort((left, right) => Date.parse(right.date) - Date.parse(left.date)),
     [activeRoute.id, sessions]
+  );
+  const activeShiftSession = useMemo(
+    () =>
+      currentShift?.routeId === activeRoute.id
+        ? routeSessions.find(session => session.shiftId === currentShift.id) ?? null
+        : null,
+    [activeRoute.id, currentShift, routeSessions]
   );
   const fallbackSession = useMemo<TallySession>(() => ({
     id: `pending-${activeRoute.id}`,
@@ -48,6 +59,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     status: 'open',
     routeId: activeRoute.id,
     routeLabel: activeRoute.label,
+    shiftId: currentShift?.routeId === activeRoute.id ? currentShift.id : null,
     trips: [{
       id: `pending-trip-${activeRoute.id}`,
       name: 'Trip 1',
@@ -59,8 +71,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         lastUpdatedAt: Date.now()
       }]
     }]
-  }), [activeRoute.id, activeRoute.label]);
-  const activeSession = routeSessions.find(s => s.id === tallyNav.sessionId) || routeSessions[routeSessions.length - 1] || fallbackSession;
+  }), [activeRoute.id, activeRoute.label, currentShift]);
+  const activeSession =
+    activeShiftSession ||
+    routeSessions.find(s => s.id === tallyNav.sessionId) ||
+    routeSessions[0] ||
+    fallbackSession;
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<EditorMode>('standard');
@@ -74,7 +90,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [isFooterCollapsed, setIsFooterCollapsed] = useState(true);
   const [isTallyCalcOpen, setIsTallyCalcOpen] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<EditorSection, boolean>>({
+    totals: false,
+    details: false,
+    tape: false
+  });
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'delete-sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number; sheetIdx?: number } | null>(null);
@@ -301,6 +321,14 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       });
     return previewEntries;
   }, [batchCounts, currentTypingValue, stagedStandardEntries]);
+  const selectedBatchItems = useMemo(
+    () =>
+      (Object.entries(batchCounts) as [string, string][])
+        .map(([fare, count]) => [parseInt(fare), parseInt(count) || 0] as const)
+        .filter(([, count]) => count > 0)
+        .sort((a, b) => a[0] - b[0]),
+    [batchCounts]
+  );
   const projectedSlots = useMemo(() => {
     if (pendingEntriesPreview.length === 0) return activeSheet.slots;
     return activeSheet.slots.map((slot, idx) => {
@@ -341,6 +369,42 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const hasPreviousTargetSlot = selectedSlotIdx > 0;
   const hasNextTargetSlot = selectedSlotIdx < SLOTS_PER_SHEET - 1;
   const hasNextBlock = currentSlotBlock < SLOTS_PER_SHEET / SLOTS_PER_BLOCK;
+  const currentBoxLabel = `B${currentSlotBlock} - Slot ${currentSlotNumber}`;
+  const nextBoxLabel = nextSlotNumber ? `B${nextSlotBlock} - Slot ${nextSlotNumber}` : 'Sheet Full';
+  const standardTapeSummary =
+    stagedStandardEntries.length > 0
+      ? `Last ${Math.min(3, stagedStandardEntries.length)}: ${stagedStandardEntries.slice(-3).map(fare => `${peso}${fare}`).join(' / ')}`
+      : currentTypingValue > 0
+        ? `Typing ${peso}${currentTypingValue}`
+        : 'No staged fares yet.';
+  const batchTapeSummary =
+    selectedBatchItems.length > 0
+      ? selectedBatchItems.slice(0, 3).map(([fare, count]) => `${count} x ${peso}${fare}`).join(' / ')
+      : 'No batch fares selected yet.';
+  const toggleSection = (section: EditorSection) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+  const renderAccordion = (section: EditorSection, label: string, summary: string, children: React.ReactNode) => {
+    const isOpen = expandedSections[section];
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-black/30">
+        <button
+          onClick={() => toggleSection(section)}
+          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+        >
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">{label}</p>
+            <p className="mt-1 text-[11px] font-bold text-slate-500">{summary}</p>
+          </div>
+          <span className={`material-icons text-base text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+            expand_more
+          </span>
+        </button>
+        {isOpen && <div className="border-t border-slate-100 px-4 py-4 dark:border-white/10">{children}</div>}
+      </div>
+    );
+  };
 
   const handleAddTrip = () => {
     const lastTrip = activeSession.trips[activeSession.trips.length - 1];
@@ -432,7 +496,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setLastPunched(null);
     setBlockAlert(null);
     setIsFooterCollapsed(true);
-    setShowDetails(false);
+    setExpandedSections({ totals: false, details: false, tape: false });
   };
 
   const openNextSheet = (savedSheetNumber: number) => {
@@ -795,15 +859,19 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </div>
            </div>
          </div>
-        <div className="flex p-2 gap-2 bg-slate-100 dark:bg-black/20 h-auto border-t border-slate-200 dark:border-white/10">
+        <div className="flex gap-2 border-t border-slate-200 bg-slate-100 p-2 dark:border-white/10 dark:bg-[#05070b]">
           {[0, 1, 2, 3].map(b => (
             <div key={b} className="flex-1 flex flex-col items-stretch">
                <button onClick={() => jumpToBlock(b)}
-                 className={`w-full py-2 rounded-xl font-black border flex flex-col items-center justify-center transition-all ${tallyNav.blockIdx === b ? 'bg-white dark:bg-night-charcoal border-primary/20 text-primary shadow-sm' : 'bg-transparent border-transparent text-slate-400'}`}>
-                 <span className="text-[8px] opacity-60 uppercase tracking-tighter">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
-                 <span className="text-[9px]">{peso}{blockTotals[b]}</span>
+                 className={`w-full rounded-xl border py-2 font-black transition-all active:scale-[0.99] ${
+                   tallyNav.blockIdx === b
+                     ? 'border-primary/25 bg-white text-primary shadow-sm dark:border-primary/30 dark:bg-night-charcoal'
+                     : 'border-slate-200 bg-white text-slate-500 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200'
+                 }`}>
+                 <span className="text-[8px] uppercase tracking-tighter opacity-70">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
+                 <span className="mt-1 text-[10px]">{peso}{blockTotals[b]}</span>
                </button>
-                <button onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="flex items-center justify-center gap-1 text-slate-400 hover:text-red-500 mt-1 transition-colors">
+                <button onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="mt-1 flex items-center justify-center gap-1 text-slate-400 transition-colors hover:text-red-500 dark:text-slate-300">
                   <span className="material-icons text-xs">refresh</span>
                   <span className="text-[8px] font-bold uppercase tracking-wider">reset</span>
                 </button>
@@ -827,9 +895,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   handleSlotClick(idx);
                 }
               }}
-              className={`aspect-square rounded-[1.25rem] border flex flex-col items-center justify-center relative transition-all cursor-pointer ${val > 0 ? 'bg-primary border-primary text-white shadow-md' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/10 text-slate-300 hover:border-primary/40'}`}
+              className={`relative aspect-square cursor-pointer rounded-[1.25rem] border transition-all ${
+                val > 0
+                  ? 'border-primary bg-primary text-white shadow-md'
+                  : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-primary/40 hover:bg-slate-50 dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-100 dark:hover:border-primary/40 dark:hover:bg-white/[0.08]'
+              } flex flex-col items-center justify-center`}
             >
-              <span className="font-black opacity-30 absolute top-2 left-2 text-[7px]">{idx + 1}</span>
+              <span className={`absolute left-2 top-2 text-[7px] font-black ${val > 0 ? 'opacity-40' : 'opacity-60 dark:text-slate-400'}`}>{idx + 1}</span>
               {val > 0 && (
                 <button
                   onClick={(event) => {
@@ -842,7 +914,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   <span className="material-icons text-[11px] leading-none">close</span>
                 </button>
               )}
-              <span className="font-900 text-lg leading-none">{val || '—'}</span>
+              <span className="font-900 text-lg leading-none">{val || ''}</span>
             </div>
           );
         })}
@@ -864,218 +936,111 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
             />
 
             {/* MODAL HEADER */}
-            <div className="shrink-0 flex items-center justify-between px-8 pt-8 pb-4">
-               <h1 className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Waybill Entry</h1>
-               <div className="flex items-center gap-2">
-                 <button
-                   onClick={() => setIsTallyCalcOpen(true)}
-                   className="px-3 py-2 rounded-full bg-primary/10 text-primary text-[9px] font-black uppercase tracking-widest active:scale-95"
-                 >
-                   Calc
-                 </button>
-                 <button onClick={() => setIsEditorOpen(false)} className="bg-slate-100 dark:bg-white/10 p-2 rounded-full"><span className="material-icons text-slate-600 dark:text-white text-lg">close</span></button>
-               </div>
+            <div className="shrink-0 flex items-center justify-between px-5 pt-6 pb-3">
+              <div>
+                <h1 className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Waybill Entry</h1>
+                <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {activeTrip.name.toUpperCase()} • Sheet {tallyNav.sheetIdx + 1}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="rounded-full bg-zinc-900 px-4 py-2 text-right shadow-sm dark:bg-black">
+                  <p className="text-[7px] font-black uppercase tracking-widest text-slate-500">Gross</p>
+                  <p className="mt-1 text-lg font-900 leading-none text-white">{peso}{grandTotalInEditor}</p>
+                </div>
+                <button
+                  onClick={() => setIsEditorOpen(false)}
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 shadow-sm dark:bg-white/10"
+                >
+                  <span className="material-icons text-slate-600 dark:text-white text-lg">close</span>
+                </button>
+              </div>
             </div>
 
-            <div className="shrink-0 px-8 pb-4">
-              <div className="mb-4 flex gap-2">
-                <div className="flex-1 rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-white/5 dark:bg-black/30">
-                  <p className="mb-0.5 text-[6px] font-black uppercase tracking-widest text-slate-400">
-                    {activeTrip.direction === 'north' ? 'BAGUIO' : (activeRoute.stops[0]?.name ?? 'ROUTE').toUpperCase()} {activeTrip.name.toUpperCase()}
-                  </p>
-                  <h2 className="text-[11px] font-900 uppercase leading-none text-slate-800 dark:text-white">Sheet {tallyNav.sheetIdx + 1} • Block {currentSlotBlock}</h2>
-                  <p className="mt-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
-                    Start Slot {selectedSlotNumber} {stagedStandardEntries.length > 0 ? `• ${stagedStandardEntries.length} staged` : '• ready'}
-                  </p>
-                </div>
-                <div className="flex-1 rounded-2xl border-b-[2px] border-black/50 bg-zinc-900 p-3 shadow-lg dark:bg-black">
-                  <p className="mb-0.5 text-[6px] font-black uppercase tracking-widest text-slate-400">Gross</p>
-                  <p className="text-lg font-900 leading-none text-white">{peso}{grandTotalInEditor}</p>
-                  <p className="mt-2 text-[8px] font-black uppercase tracking-widest text-slate-500">Current Block B{currentSlotBlock}</p>
-                </div>
-              </div>
-
-              <div className="mb-4 grid grid-cols-2 gap-2">
-                <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 px-4 py-3 shadow-sm">
-                  <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
-                  <p className="mt-2 text-base font-900 leading-none text-primary">B{currentSlotBlock} • Slot {currentSlotNumber}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/30">
-                  <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
-                  <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">
-                    {nextSlotNumber ? `B${nextSlotBlock} • Slot ${nextSlotNumber}` : 'Sheet Full'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-4 grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setEditorTargetSlot(selectedSlotIdx - 1)}
-                  disabled={!hasPreviousTargetSlot}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm active:scale-95 disabled:opacity-40 dark:border-white/10 dark:bg-black/30 dark:text-slate-300"
-                >
-                  Prev Box
-                </button>
-                <button
-                  onClick={() => setEditorTargetSlot(selectedSlotIdx + 1)}
-                  disabled={!hasNextTargetSlot}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[9px] font-black uppercase tracking-widest text-slate-600 shadow-sm active:scale-95 disabled:opacity-40 dark:border-white/10 dark:bg-black/30 dark:text-slate-300"
-                >
-                  Next Box
-                </button>
-                <button
-                  onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
-                  disabled={!hasNextBlock}
-                  className="rounded-2xl bg-primary px-4 py-3 text-[9px] font-black uppercase tracking-widest text-white shadow-sm active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
-                >
-                  Next Block
-                </button>
-              </div>
-
-              <button
-                onClick={() => setShowDetails(prev => !prev)}
-                className="mb-3 flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition-all dark:border-white/10 dark:bg-black/30"
-              >
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Details</p>
-                  <p className="mt-1 text-xs font-bold text-slate-500">
-                    {previewEntryCount > 0
-                      ? `Tap Finalize Session to see ${previewEntryCount === 1 ? `box ${selectedSlotNumber}` : `boxes ${selectedSlotNumber} to ${previewEndSlotNumber}`}`
-                      : `Tap Finalize Session to see box ${currentSlotNumber}`}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    {blockSlotsLeft} Block Left • {peso}{projectedBlockTotals[auditBlockIdx]}
-                  </p>
-                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-primary/80">
-                    {sheetSlotsLeft} Sheet Left • {peso}{projectedSheetTotal}
-                  </p>
-                </div>
-              </button>
-
-              {showDetails && (
-                <div className="mb-4 grid grid-cols-2 gap-2">
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-black/30">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Block 25 Audit</p>
-                        <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">Block {currentSlotBlock}</p>
-                      </div>
-                      <span className={`text-[8px] font-black uppercase tracking-widest ${blockSlotsLeft === 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                        {blockSlotsLeft === 0 ? 'Ready' : `${blockSlotsLeft} left`}
-                      </span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/5">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedBlockCounts[auditBlockIdx] / SLOTS_PER_BLOCK) * 100)}%` }} />
-                    </div>
-                    <div className="mt-3 space-y-1.5">
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Filled After Clicking Finalize</span>
-                        <span className="text-slate-700 dark:text-slate-200">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Saved Money Now</span>
-                        <span className="text-slate-700 dark:text-slate-200">{peso}{blockTotals[auditBlockIdx]}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Money After Finalizing</span>
-                        <span className="text-primary">{peso}{projectedBlockTotals[auditBlockIdx]}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Added Money Now</span>
-                        <span className={blockPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-                          {blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)}
-                        </span>
-                      </div>
-                    </div>
+            <div className="shrink-0 px-5 pb-3 space-y-3">
+              <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
+                <p className="text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">Current Entry</p>
+                <div className="mt-3 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
+                    <h2 className="mt-2 text-xl font-900 leading-none text-slate-900 dark:text-white">{currentBoxLabel}</h2>
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
+                    </p>
                   </div>
-
-                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-[7px] font-black uppercase tracking-widest text-primary/70">Sheet 100 Audit</p>
-                        <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">Sheet {tallyNav.sheetIdx + 1}</p>
-                      </div>
-                      <span className={`text-[8px] font-black uppercase tracking-widest ${sheetSlotsLeft === 0 ? 'text-emerald-500' : 'text-primary/70'}`}>
-                        {sheetSlotsLeft === 0 ? 'Ready' : `${sheetSlotsLeft} left`}
-                      </span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/10 dark:bg-white/5">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (projectedSheetEntryCount / SLOTS_PER_SHEET) * 100)}%` }} />
-                    </div>
-                    <div className="mt-3 space-y-1.5">
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Filled After Clicking Finalize</span>
-                        <span className="text-slate-700 dark:text-slate-200">{projectedSheetEntryCount}/{SLOTS_PER_SHEET}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Saved Money Now</span>
-                        <span className="text-slate-700 dark:text-slate-200">{peso}{sheetTotal}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Money After Finalizing</span>
-                        <span className="text-primary">{peso}{projectedSheetTotal}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
-                        <span>Added Money Now</span>
-                        <span className={sheetPendingTotal >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-                          {sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
+                    <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">{nextBoxLabel}</p>
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      {blockSlotsLeft} block left • {sheetSlotsLeft} sheet left
+                    </p>
                   </div>
                 </div>
-              )}
+              </div>
 
-              <button 
-                onClick={() => inputRef.current?.focus()} 
-                className={`w-full rounded-[2rem] py-4 border-2 flex flex-col items-center justify-center transition-all relative active:scale-95 ${isFlashing ? 'bg-neon-green/10 border-neon-green shadow-lg' : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'}`}
+              <div
+                className={`rounded-[2.25rem] border-2 px-4 py-4 transition-all ${
+                  isFlashing
+                    ? 'bg-neon-green/10 border-neon-green shadow-lg'
+                    : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'
+                }`}
               >
-                <p className="text-[7px] font-black uppercase tracking-widest mb-1 text-slate-400">{editorMode === 'batch' ? 'Batch Mode Total' : 'Punch Amount'}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-900 text-slate-400 leading-none">{peso}</span>
-                  <h3 className={`text-3xl font-900 leading-none transition-colors ${isFlashing ? 'text-neon-green' : (editValue ? 'text-primary' : 'text-slate-900 dark:text-white')}`}>
-                    {editorMode === 'batch' ? batchTotalGross : (isFlashing ? lastPunched : (editValue || '0'))}
-                  </h3>
+                <p className="text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">
+                  {editorMode === 'batch' ? 'Batch Mode Total' : 'Punch Amount'}
+                </p>
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    onClick={() => setEditorTargetSlot(selectedSlotIdx - 1)}
+                    disabled={!hasPreviousTargetSlot}
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition-transform active:scale-95 disabled:opacity-40 dark:bg-night-charcoal dark:text-slate-300"
+                    title="Previous box"
+                  >
+                    <span className="material-icons text-xl">chevron_left</span>
+                  </button>
+                  <button
+                    onClick={() => inputRef.current?.focus()}
+                    className="flex min-h-[104px] flex-1 flex-col items-center justify-center rounded-[1.75rem] bg-white/70 px-4 py-4 text-center shadow-sm active:scale-[0.99] dark:bg-black/30"
+                  >
+                    <div className="flex items-end gap-2">
+                      <span className="text-2xl font-900 leading-none text-slate-400">{peso}</span>
+                      <h3 className={`text-5xl font-900 leading-none tracking-tight transition-colors ${
+                        isFlashing ? 'text-neon-green' : (editValue ? 'text-primary' : 'text-slate-900 dark:text-white')
+                      }`}>
+                        {editorMode === 'batch' ? batchTotalGross : (isFlashing ? lastPunched : (editValue || '0'))}
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Tap fares below or type directly
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => setEditorTargetSlot(selectedSlotIdx + 1)}
+                    disabled={!hasNextTargetSlot}
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm transition-transform active:scale-95 disabled:bg-slate-300 dark:disabled:bg-white/10"
+                    title="Next box"
+                  >
+                    <span className="material-icons text-xl">chevron_right</span>
+                  </button>
                 </div>
-              </button>
-
-              <div className="flex bg-slate-100 dark:bg-black/40 p-1 rounded-full mt-4 border dark:border-white/5">
-                <button onClick={() => setEditorMode('standard')} className={`flex-1 py-2.5 rounded-full font-black uppercase text-[9px] tracking-widest transition-all ${editorMode === 'standard' ? 'bg-white dark:bg-night-charcoal text-primary shadow-sm' : 'text-slate-400'}`}>Standard</button>
-                <button onClick={() => setEditorMode('batch')} className={`flex-1 py-2.5 rounded-full font-black uppercase text-[9px] tracking-widest transition-all ${editorMode === 'batch' ? 'bg-white dark:bg-night-charcoal text-primary shadow-sm' : 'text-slate-400'}`}>Batch Mode</button>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
+                    disabled={!hasNextBlock}
+                    className="text-[10px] font-black uppercase tracking-widest text-primary disabled:text-slate-300 dark:disabled:text-slate-500"
+                  >
+                    Next Block
+                  </button>
+                  <p className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Enter saves current amount
+                  </p>
+                </div>
               </div>
             </div>
 
             {/* DYNAMIC SCROLLABLE BODY */}
-            <div className="flex-1 overflow-hidden flex flex-col min-h-0 px-8">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
               {editorMode === 'standard' ? (
-                <div className="flex-1 overflow-y-auto pb-4">
-                  {stagedStandardEntries.length > 0 && (
-                    <div className="w-full bg-slate-50 dark:bg-black/20 p-3 rounded-2xl border dark:border-white/5 mb-4 shrink-0">
-                      <div className="flex justify-between items-center mb-2 px-1">
-                        <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Entry Tape</p>
-                        <button onClick={() => setStagedStandardEntries([])} className="text-[7px] font-black uppercase text-primary">Clear</button>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 max-h-[164px] overflow-y-auto visible-scrollbar">
-                        {stagedStandardEntries.map((fare, i) => (
-                          <div key={`${fare}-${i}`} className={`relative min-h-[52px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
-                            <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
-                            <button
-                              onClick={() => handleRemoveStagedEntry(i)}
-                              className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-white/80 dark:bg-black/50 flex items-center justify-center text-slate-500 active:scale-90"
-                              title={`Delete slot ${selectedSlotIdx + i + 1}`}
-                            >
-                              <span className="material-icons text-[11px] leading-none">close</span>
-                            </button>
-                            <div className="flex h-full items-center justify-center pt-2">
-                              <span className="text-[11px] font-black">{peso}{fare}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                <div className="pb-4">
                   <div className="grid grid-cols-3 gap-2.5">
                     {smartQuickFares.map(f => (
                       <button key={f} onClick={() => commitStandardEntry(f, true)} className="aspect-square bg-primary text-white rounded-[1.5rem] font-black text-2xl shadow-md active:scale-90 transition-transform">
@@ -1083,11 +1048,77 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                       </button>
                     ))}
                   </div>
+
+                  <div className="mt-4 space-y-3">
+                    {renderAccordion(
+                      'totals',
+                      'Totals',
+                      `Block ${peso}${projectedBlockTotals[auditBlockIdx]} • Sheet ${peso}${projectedSheetTotal} • Staged ${previewEntryCount}`,
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Block Audit</p>
+                          <p className="mt-2 text-lg font-900 text-slate-900 dark:text-white">{peso}{projectedBlockTotals[auditBlockIdx]}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK} filled</p>
+                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)} pending</p>
+                        </div>
+                        <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Sheet Audit</p>
+                          <p className="mt-2 text-lg font-900 text-primary">{peso}{projectedSheetTotal}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedSheetEntryCount}/{SLOTS_PER_SHEET} filled</p>
+                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)} pending</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {renderAccordion(
+                      'details',
+                      'Details',
+                      `${currentBoxLabel} • Next ${nextBoxLabel}`,
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Trip</p>
+                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">{activeTrip.name}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Sheet {tallyNav.sheetIdx + 1}</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Range</p>
+                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">Start Slot {selectedSlotNumber}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Preview end {previewEndSlotNumber}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {renderAccordion(
+                      'tape',
+                      'Entry Tape',
+                      standardTapeSummary,
+                      stagedStandardEntries.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {stagedStandardEntries.map((fare, i) => (
+                            <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
+                              <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
+                              <button
+                                onClick={() => handleRemoveStagedEntry(i)}
+                                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
+                                title={`Delete slot ${selectedSlotIdx + i + 1}`}
+                              >
+                                <span className="material-icons text-[11px] leading-none">close</span>
+                              </button>
+                              <div className="flex h-full items-center justify-center pt-2">
+                                <span className="text-[11px] font-black">{peso}{fare}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
+                      )
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col min-h-0">
-                  {/* BATCH SEARCH BAR & ACTIONS */}
-                  <div className="shrink-0 space-y-2 mb-3">
+                <div className="pb-4">
+                  <div className="space-y-2 mb-3">
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-base">search</span>
@@ -1131,30 +1162,91 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     </div>
                   </div>
 
-                  {/* FARE LIST */}
-                  <div className="flex-1 overflow-y-auto visible-scrollbar pr-1 mb-2" ref={scrollContainerRef}>
-                    <div className="divide-y dark:divide-white/5">
-                      {filteredBatchFares.length > 0 ? (
-                        filteredBatchFares.map(f => (
-                          <div key={f} className={`flex items-center justify-between py-2.5 transition-colors ${batchCounts[f] ? 'bg-primary/5 -mx-1 px-1 rounded-xl' : ''}`}>
-                            <div className="flex items-center gap-2">
-                              <p className={`font-900 ${batchCounts[f] ? 'text-primary text-lg' : 'text-sm text-slate-800 dark:text-white'}`}>{peso}{f}</p>
-                              {batchCounts[f] && <span className="w-1 h-1 rounded-full bg-neon-green shadow-sm animate-pulse"></span>}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => setBatchCounts(p => ({...p, [f]: Math.max(0, parseInt(p[f] || '0') - 1).toString()}))} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">remove</span></button>
-                              <input type="number" inputMode="numeric" className="w-12 h-8 bg-white dark:bg-black border rounded-lg text-center font-900 text-sm" value={batchCounts[f] || ''} placeholder="0" onChange={e => setBatchCounts(p => ({...p, [f]: e.target.value}))} />
-                              <button onClick={() => setBatchCounts(p => ({...p, [f]: (parseInt(p[f] || '0') + 1).toString()}))} className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">add</span></button>
-                            </div>
+                  <div className="divide-y dark:divide-white/5" ref={scrollContainerRef}>
+                    {filteredBatchFares.length > 0 ? (
+                      filteredBatchFares.map(f => (
+                        <div key={f} className={`flex items-center justify-between py-2.5 transition-colors ${batchCounts[f] ? 'bg-primary/5 px-1 rounded-xl' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <p className={`font-900 ${batchCounts[f] ? 'text-primary text-lg' : 'text-sm text-slate-800 dark:text-white'}`}>{peso}{f}</p>
+                            {batchCounts[f] && <span className="w-1 h-1 rounded-full bg-neon-green shadow-sm animate-pulse"></span>}
                           </div>
-                        ))
-                      ) : (
-                        <div className="py-10 text-center opacity-30 text-[10px] font-black uppercase">
-                          <span className="material-icons block text-3xl mb-2">search_off</span>
-                          {showOnlySelected ? 'No selected fares to show' : 'No fares found'}
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setBatchCounts(p => ({...p, [f]: Math.max(0, parseInt(p[f] || '0') - 1).toString()}))} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">remove</span></button>
+                            <input type="number" inputMode="numeric" className="w-12 h-8 bg-white dark:bg-black border rounded-lg text-center font-900 text-sm" value={batchCounts[f] || ''} placeholder="0" onChange={e => setBatchCounts(p => ({...p, [f]: e.target.value}))} />
+                            <button onClick={() => setBatchCounts(p => ({...p, [f]: (parseInt(p[f] || '0') + 1).toString()}))} className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">add</span></button>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                      ))
+                    ) : (
+                      <div className="py-10 text-center opacity-30 text-[10px] font-black uppercase">
+                        <span className="material-icons block text-3xl mb-2">search_off</span>
+                        {showOnlySelected ? 'No selected fares to show' : 'No fares found'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {renderAccordion(
+                      'totals',
+                      'Totals',
+                      `Block ${peso}${projectedBlockTotals[auditBlockIdx]} • Sheet ${peso}${projectedSheetTotal} • Entries ${previewEntryCount}`,
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Block Audit</p>
+                          <p className="mt-2 text-lg font-900 text-slate-900 dark:text-white">{peso}{projectedBlockTotals[auditBlockIdx]}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK} filled</p>
+                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)} pending</p>
+                        </div>
+                        <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Sheet Audit</p>
+                          <p className="mt-2 text-lg font-900 text-primary">{peso}{projectedSheetTotal}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedSheetEntryCount}/{SLOTS_PER_SHEET} filled</p>
+                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)} pending</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {renderAccordion(
+                      'details',
+                      'Details',
+                      `${currentBoxLabel} • Next ${nextBoxLabel}`,
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Trip</p>
+                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">{activeTrip.name}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Sheet {tallyNav.sheetIdx + 1}</p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Range</p>
+                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">Start Slot {selectedSlotNumber}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Preview end {previewEndSlotNumber}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {renderAccordion(
+                      'tape',
+                      'Batch Selection',
+                      batchTapeSummary,
+                      selectedBatchItems.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedBatchItems.map(([fare, count]) => (
+                            <div key={`${fare}-${count}`} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
+                              <div>
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Fare</p>
+                                <p className="mt-1 text-sm font-900 text-slate-900 dark:text-white">{peso}{fare}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Count</p>
+                                <p className="mt-1 text-sm font-900 text-primary">{count}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-500">No batch fares selected yet. Add counts from the list above.</p>
+                      )
+                    )}
                   </div>
                 </div>
               )}
@@ -1269,3 +1361,4 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 };
 
 export default TallyScreen;
+

@@ -64,7 +64,7 @@ const SupportContactSheet: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
           <button
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
           >
             <span className="material-icons text-base">close</span>
           </button>
@@ -81,10 +81,10 @@ const SupportContactSheet: React.FC<Props> = ({ isOpen, onClose }) => {
               onClose();
               openWithFallback(FACEBOOK_APP_URL, FACEBOOK_PROFILE_URL);
             }}
-            className="flex w-full items-center justify-between rounded-[1.5rem] bg-slate-50 px-4 py-4 text-left shadow-sm transition-all active:scale-[0.99] dark:bg-white/5"
+            className="flex w-full items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-left shadow-sm transition-all active:scale-[0.99] dark:border-white/10 dark:bg-white/5"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1877F2] text-white shadow-sm">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-white shadow-sm">
                 <svg viewBox="0 0 24 24" className="h-5.5 w-5.5 fill-current" aria-hidden="true">
                   <path d="M22 12.07C22 6.5 17.52 2 12 2S2 6.5 2 12.07c0 5.02 3.66 9.18 8.44 9.93v-7.03H7.9v-2.9h2.54V9.85c0-2.52 1.49-3.91 3.78-3.91 1.1 0 2.24.2 2.24.2v2.47H15.2c-1.24 0-1.63.78-1.63 1.58v1.89h2.77l-.44 2.9h-2.33V22c4.78-.75 8.43-4.91 8.43-9.93z"/>
                 </svg>
@@ -94,7 +94,7 @@ const SupportContactSheet: React.FC<Props> = ({ isOpen, onClose }) => {
                 <p className="text-xs text-slate-500 dark:text-slate-400">Opens app first when available</p>
               </div>
             </div>
-            <span className="material-icons text-slate-300">chevron_right</span>
+            <span className="material-icons shrink-0 text-slate-300">chevron_right</span>
           </button>
 
           <button
@@ -110,10 +110,10 @@ const SupportContactSheet: React.FC<Props> = ({ isOpen, onClose }) => {
                 window.location.href = MESSENGER_URL;
               }
             }}
-            className="flex w-full items-center justify-between rounded-[1.5rem] bg-slate-50 px-4 py-4 text-left shadow-sm transition-all active:scale-[0.99] dark:bg-white/5"
+            className="flex w-full items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-left shadow-sm transition-all active:scale-[0.99] dark:border-white/10 dark:bg-white/5"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0084FF] text-white shadow-sm">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#0084FF] text-white shadow-sm">
                 <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current" aria-hidden="true">
                   <path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.914 1.454 5.514 3.724 7.207V22l3.382-1.855c.903.252 1.858.387 2.894.387 5.523 0 10-4.145 10-9.258S17.523 2 12 2zm1.007 12.45-2.544-2.715-4.966 2.715 5.462-5.806 2.582 2.715 4.928-2.715-5.462 5.806z"/>
                 </svg>
@@ -123,7 +123,7 @@ const SupportContactSheet: React.FC<Props> = ({ isOpen, onClose }) => {
                 <p className="text-xs text-slate-500 dark:text-slate-400">Uses Messenger link for direct chat</p>
               </div>
             </div>
-            <span className="material-icons text-slate-300">chevron_right</span>
+            <span className="material-icons shrink-0 text-slate-300">chevron_right</span>
           </button>
         </div>
       </div>

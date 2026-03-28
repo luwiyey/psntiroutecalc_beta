@@ -1,6 +1,6 @@
 import type { AppSettings, RouteProfile, Stop } from './types';
 
-export const FARE_SETTINGS_VERSION = 8;
+export const FARE_SETTINGS_VERSION = 9;
 export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 export const VICE_VERSA = '\u2194';
 
@@ -10,6 +10,8 @@ export const TARLAC_ROUTE_ID = 'tarlac-baguio';
 export const CABANATUAN_ROUTE_ID = 'cabanatuan-baguio';
 export const CABANATUAN_VIA_SAN_JOSE_ROUTE_ID = 'cabanatuan-via-san-jose-baguio';
 export const CABANATUAN_VIA_TARLAC_ROUTE_ID = 'cabanatuan-via-tarlac-baguio';
+export const CUBAO_BAGUIO_ROUTE_ID = 'cubao-baguio';
+export const DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID = 'dagupan-san-carlos-cubao';
 export const DEFAULT_ROUTE_ID = ORDINARY_BAYAMBANG_ROUTE_ID;
 
 const BAGUIO_KM = 271;
@@ -18,8 +20,8 @@ interface StopSeed {
   km: number;
   name: string;
   coverageRange: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number;
+  longitude?: number;
   isTerminal?: boolean;
   aliases?: string[];
 }
@@ -29,8 +31,8 @@ const buildStops = (seeds: StopSeed[]): Stop[] =>
     name: seed.name,
     km: seed.km,
     coverageRange: seed.coverageRange,
-    latitude: seed.latitude,
-    longitude: seed.longitude,
+    ...(typeof seed.latitude === 'number' ? { latitude: seed.latitude } : {}),
+    ...(typeof seed.longitude === 'number' ? { longitude: seed.longitude } : {}),
     distanceToBaguio: Math.max(0, BAGUIO_KM - seed.km),
     ...(seed.isTerminal ? { isTerminal: true } : {}),
     ...(seed.aliases?.length ? { aliases: seed.aliases } : {})
@@ -912,7 +914,441 @@ const CABANATUAN_VIA_TARLAC_STOPS: Stop[] = buildStops([
   ...COMMON_BAGUIO_CORRIDOR_SEEDS
 ]);
 
-const createLabel = (label: string) => `${label} ${VICE_VERSA} Baguio`;
+const CUBAO_BAGUIO_STOPS: Stop[] = buildStops([
+  {
+    km: 0,
+    name: 'Cubao',
+    coverageRange: 'Terminal',
+    isTerminal: true
+  },
+  {
+    km: 95,
+    name: 'Dau',
+    coverageRange: 'KM 95 stop',
+    aliases: ['Mabalacat / Dau']
+  },
+  {
+    km: 189,
+    name: 'Carmen',
+    coverageRange: 'KM 189 stop'
+  },
+  {
+    km: 199,
+    name: 'Urdaneta',
+    coverageRange: 'KM 199 stop',
+    aliases: ['Urdaneta City']
+  },
+  {
+    km: 209,
+    name: 'Binalonan',
+    coverageRange: 'KM 209 stop'
+  },
+  {
+    km: 215,
+    name: 'Villa',
+    coverageRange: 'KM 215 stop'
+  },
+  {
+    km: 218,
+    name: 'Pozzorubio',
+    coverageRange: 'KM 218 stop'
+  },
+  {
+    km: 220,
+    name: 'Paldit',
+    coverageRange: 'KM 220 stop'
+  },
+  {
+    km: 224,
+    name: 'Sison',
+    coverageRange: 'KM 224 stop'
+  },
+  {
+    km: 228,
+    name: 'Artacho',
+    coverageRange: 'KM 228 stop'
+  },
+  {
+    km: 230,
+    name: 'Esperanza',
+    coverageRange: 'KM 230 stop'
+  },
+  {
+    km: 232,
+    name: 'Saitan',
+    coverageRange: 'KM 232 stop'
+  },
+  {
+    km: 234,
+    name: 'Rosario',
+    coverageRange: 'KM 234 stop'
+  },
+  {
+    km: 237,
+    name: 'Cuenca',
+    coverageRange: 'KM 237 stop'
+  },
+  {
+    km: 239,
+    name: 'San Luis',
+    coverageRange: 'KM 239 stop'
+  },
+  {
+    km: 241,
+    name: 'Maoasoas',
+    coverageRange: 'KM 241 stop'
+  },
+  {
+    km: 247,
+    name: 'Pugo',
+    coverageRange: 'KM 247 stop'
+  },
+  {
+    km: 253,
+    name: 'Palina',
+    coverageRange: 'KM 253 stop'
+  },
+  {
+    km: 254,
+    name: 'Palina / Bus Stop',
+    coverageRange: 'KM 254 stop',
+    aliases: ['Palina Bus Stop']
+  },
+  {
+    km: 258,
+    name: 'Taloy',
+    coverageRange: 'KM 258 stop'
+  },
+  {
+    km: 272,
+    name: 'Tuba',
+    coverageRange: 'KM 272 stop'
+  },
+  {
+    km: 283,
+    name: 'Baguio',
+    coverageRange: 'Terminal',
+    isTerminal: true
+  }
+]);
+
+const DAGUPAN_SAN_CARLOS_CUBAO_STOPS: Stop[] = buildStops([
+  {
+    km: 0,
+    name: 'Cubao',
+    coverageRange: 'Terminal',
+    isTerminal: true
+  },
+  {
+    km: 6,
+    name: 'Manila',
+    coverageRange: 'KM 6 stop'
+  },
+  {
+    km: 95,
+    name: 'Marquee',
+    coverageRange: 'KM 95 stop'
+  },
+  {
+    km: 95,
+    name: 'Dau',
+    coverageRange: 'KM 95 stop',
+    aliases: ['Mabalacat / Dau']
+  },
+  {
+    km: 120,
+    name: 'Concepcion',
+    coverageRange: 'KM 120 stop'
+  },
+  {
+    km: 120,
+    name: 'Santiago',
+    coverageRange: 'KM 120 stop'
+  },
+  {
+    km: 123,
+    name: 'Capas',
+    coverageRange: 'KM 123 stop'
+  },
+  {
+    km: 126,
+    name: 'Dolores',
+    coverageRange: 'KM 126 stop'
+  },
+  {
+    km: 128,
+    name: 'Jalaga',
+    coverageRange: 'KM 128 stop'
+  },
+  {
+    km: 131,
+    name: 'Burot',
+    coverageRange: 'KM 131 stop'
+  },
+  {
+    km: 134,
+    name: 'San Miguel',
+    coverageRange: 'KM 134 stop'
+  },
+  {
+    km: 140,
+    name: 'Tarlac',
+    coverageRange: 'KM 140 stop'
+  },
+  {
+    km: 149,
+    name: 'Sta. Cruz / Aguso',
+    coverageRange: 'KM 149 stop'
+  },
+  {
+    km: 154,
+    name: 'Amacalanan / Parsolingan',
+    coverageRange: 'KM 154 stop'
+  },
+  {
+    km: 156,
+    name: 'Gerona',
+    coverageRange: 'KM 156 stop'
+  },
+  {
+    km: 164,
+    name: 'Paniqui',
+    coverageRange: 'KM 164 stop'
+  },
+  {
+    km: 170,
+    name: 'San Julian',
+    coverageRange: 'KM 170 stop'
+  },
+  {
+    km: 172,
+    name: 'Moncada',
+    coverageRange: 'KM 172 stop'
+  },
+  {
+    km: 178,
+    name: 'San Juan',
+    coverageRange: 'KM 178 stop'
+  },
+  {
+    km: 180,
+    name: 'San Manuel',
+    coverageRange: 'KM 180 stop'
+  },
+  {
+    km: 183,
+    name: 'San Felipe',
+    coverageRange: 'KM 183 stop'
+  },
+  {
+    km: 186,
+    name: 'Salcedo',
+    coverageRange: 'KM 186 stop'
+  },
+  {
+    km: 189,
+    name: 'Carmen',
+    coverageRange: 'KM 189 stop'
+  },
+  {
+    km: 191,
+    name: 'Sto. Tomas',
+    coverageRange: 'KM 191 stop'
+  },
+  {
+    km: 193,
+    name: 'San Antonio',
+    coverageRange: 'KM 193 stop'
+  },
+  {
+    km: 195,
+    name: 'Pindangan',
+    coverageRange: 'KM 195 stop'
+  },
+  {
+    km: 197,
+    name: 'Kisikis',
+    coverageRange: 'KM 197 stop'
+  },
+  {
+    km: 199,
+    name: 'Alcala',
+    coverageRange: 'KM 199 stop'
+  },
+  {
+    km: 201,
+    name: 'Laoac',
+    coverageRange: 'KM 201 stop'
+  },
+  {
+    km: 203,
+    name: 'Anulid',
+    coverageRange: 'KM 203 stop'
+  },
+  {
+    km: 206,
+    name: 'Bautista',
+    coverageRange: 'KM 206 stop'
+  },
+  {
+    km: 208,
+    name: 'Bayambang',
+    coverageRange: 'KM 208 stop'
+  },
+  {
+    km: 213,
+    name: 'Yumling',
+    coverageRange: 'KM 213 stop'
+  },
+  {
+    km: 213,
+    name: 'Naclian',
+    coverageRange: 'KM 213 stop'
+  },
+  {
+    km: 215,
+    name: 'Don Pedro',
+    coverageRange: 'KM 215 stop'
+  },
+  {
+    km: 218,
+    name: 'Pulong Gomez',
+    coverageRange: 'KM 218 stop'
+  },
+  {
+    km: 219,
+    name: 'Malasiqui',
+    coverageRange: 'KM 219 stop'
+  },
+  {
+    km: 225,
+    name: 'Pasima',
+    coverageRange: 'KM 225 stop'
+  },
+  {
+    km: 226,
+    name: 'Taloy',
+    coverageRange: 'KM 226 stop'
+  },
+  {
+    km: 227,
+    name: 'Magtaking',
+    coverageRange: 'KM 227 stop'
+  },
+  {
+    km: 228,
+    name: 'Iang',
+    coverageRange: 'KM 228 stop'
+  },
+  {
+    km: 229,
+    name: 'San Carlos',
+    coverageRange: 'Terminal',
+    isTerminal: true
+  }
+]);
+
+const CABANATUAN_VIA_SAN_JOSE_STOPS_UPDATED: Stop[] = buildStops([
+  { km: 71, name: 'Cabanatuan', coverageRange: 'Terminal', isTerminal: true },
+  { km: 82, name: 'Mayapyap', coverageRange: 'KM 82 stop' },
+  { km: 86, name: 'Caalibangbangan', coverageRange: 'KM 86 stop' },
+  { km: 88, name: 'Pinagpanaan', coverageRange: 'KM 88 stop' },
+  { km: 90, name: 'Latorre', coverageRange: 'KM 90 stop' },
+  { km: 92, name: 'Talavera', coverageRange: 'KM 92 stop' },
+  { km: 96, name: 'Siksikan', coverageRange: 'KM 96 stop' },
+  { km: 98, name: 'Lomboy', coverageRange: 'KM 98 stop' },
+  { km: 99, name: 'Balok', coverageRange: 'KM 99 stop' },
+  { km: 100, name: 'Maligaya', coverageRange: 'KM 100 stop' },
+  { km: 109, name: 'Munoz', coverageRange: 'KM 109 stop', aliases: ['Munoz City'] },
+  { km: 112, name: 'CLSU', coverageRange: 'KM 112 stop' },
+  { km: 115, name: 'Magtangol', coverageRange: 'KM 115 stop' },
+  { km: 117, name: 'Sto. Tomas', coverageRange: 'KM 117 stop', aliases: ['Sto.tomas', 'Sto Tomas'] },
+  { km: 122, name: 'San Jose', coverageRange: 'KM 122 stop', aliases: ['San Jose City'] },
+  { km: 125, name: 'Sto. Nino', coverageRange: 'KM 125 stop', aliases: ['Sto.nino', 'Sto Nino'] },
+  { km: 127, name: 'San Isidro', coverageRange: 'KM 127 stop' },
+  { km: 131, name: 'Balbalungao', coverageRange: 'KM 131 stop' },
+  { km: 135, name: 'Cordero', coverageRange: 'KM 135 stop' },
+  { km: 136, name: 'Zenzo', coverageRange: 'KM 136 stop' },
+  { km: 138, name: 'Lupao', coverageRange: 'KM 138 stop' },
+  { km: 141, name: 'San Roque', coverageRange: 'KM 141 stop' },
+  { km: 143, name: 'Maseil-seil', coverageRange: 'KM 143 stop' },
+  { km: 145, name: 'Sta. Catalina College', coverageRange: 'KM 145 stop', aliases: ['Sta. Catalina college'] },
+  { km: 146, name: 'San Montano', coverageRange: 'KM 146 stop' },
+  { km: 149, name: 'Umingan', coverageRange: 'KM 149 stop' },
+  { km: 151, name: 'Pamienta', coverageRange: 'KM 151 stop' },
+  { km: 152, name: 'Lubong Elem. School', coverageRange: 'KM 152 stop', aliases: ['Lubong elem. School'] },
+  { km: 154, name: 'Sta. Maria', coverageRange: 'KM 154 stop', aliases: ['Sta.Maria'] },
+  { km: 157, name: 'Gonsalez', coverageRange: 'KM 157 stop' },
+  { km: 160, name: 'Cabaruan', coverageRange: 'KM 160 stop' },
+  { km: 162, name: 'San Andres', coverageRange: 'KM 162 stop' },
+  { km: 163, name: 'San Leon', coverageRange: 'KM 163 stop' },
+  { km: 168, name: 'Balungao', coverageRange: 'KM 168 stop' },
+  { km: 170, name: 'Bakit-bakit', coverageRange: 'KM 170 stop', aliases: ['Bakit-Bakit'] },
+  { km: 173, name: 'Rosales', coverageRange: 'KM 173 stop' },
+  { km: 175, name: 'Tomana', coverageRange: 'KM 175 stop' },
+  { km: 177, name: 'Carmen', coverageRange: 'KM 177 stop' },
+  { km: 179, name: 'Villasis', coverageRange: 'KM 179 stop' },
+  { km: 183, name: 'Baccag / Wilcon / Mcdo', coverageRange: 'KM 183 stop', aliases: ['Baccag', 'Wilcon', 'Mcdo'] },
+  { km: 185, name: 'Nancayasan', coverageRange: 'KM 185 stop' },
+  { km: 187, name: 'Urdaneta / PSU / Bypass', coverageRange: 'KM 187 stop', aliases: ['Urdaneta', 'PSU', 'Bypass'] },
+  { km: 191, name: 'Anonas / Tabuyok', coverageRange: 'KM 191 stop', aliases: ['Anonas', 'Tabuyok'] },
+  { km: 194, name: 'Sumabnit / Tulong / Tangke', coverageRange: 'KM 194 stop', aliases: ['Sumabnit', 'Tulong', 'Tangke'] },
+  { km: 197, name: 'Binalonan / Sili', coverageRange: 'KM 197 stop', aliases: ['Binalonan', 'Sili'] },
+  { km: 200, name: 'Vacante / Bugayong', coverageRange: 'KM 200 stop', aliases: ['Vacante', 'Bugayong'] },
+  { km: 203, name: 'Rosario / Villa Pozzorubio', coverageRange: 'KM 203 stop', aliases: ['Rosario', 'Villa Pozzorubio'] },
+  { km: 206, name: 'Pozzorubio Bayan', coverageRange: 'KM 206 stop', aliases: ['Pozzorubio'] },
+  { km: 208, name: 'Batakil', coverageRange: 'KM 208 stop' },
+  { km: 212, name: 'Sison NCC', coverageRange: 'KM 212 stop', aliases: ['Sison'] },
+  { km: 214, name: 'Sison Ice Plant', coverageRange: 'KM 214 stop', aliases: ['Sison Ice plant'] },
+  { km: 216, name: 'Cauringan / Artacho / Agat', coverageRange: 'KM 216 stop', aliases: ['Cauringan', 'Artacho', 'Agat'] },
+  { km: 218, name: 'Esperanza / Udiao', coverageRange: 'KM 218 stop', aliases: ['Esperanza', 'Udiao'] },
+  { km: 220, name: 'Saitan / Jollibee', coverageRange: 'KM 220 stop', aliases: ['Saitan', 'Jollibee'] },
+  { km: 222, name: 'Rosario / Alipang / Inabaan', coverageRange: 'KM 222 stop', aliases: ['Rosario', 'Alipang', 'Inabaan'] },
+  { km: 225, name: 'Casilagan / Cuenca', coverageRange: 'KM 225 stop', aliases: ['Casilagan', 'Cuenca'] },
+  { km: 227, name: 'San Luis', coverageRange: 'KM 227 stop' },
+  { km: 229, name: 'Maoasoas', coverageRange: 'KM 229 stop' },
+  { km: 230, name: 'Ambangonan', coverageRange: 'KM 230 stop' },
+  { km: 232, name: 'Ambelete', coverageRange: 'KM 232 stop' },
+  { km: 235, name: 'Pugo Crossing', coverageRange: 'KM 235 stop', aliases: ['Pugo'] },
+  { km: 241, name: 'Palina', coverageRange: 'KM 241 stop' },
+  { km: 246, name: 'Salpang Taloy', coverageRange: 'KM 246 stop', aliases: ['Taloy'] },
+  { km: 251, name: 'Realiza / Tafarmco Taloy', coverageRange: 'KM 251 stop', aliases: ['Realiza', 'Tafarmco Taloy'] },
+  { km: 256, name: 'Bayacsan / Baw-ek / Poyopoy', coverageRange: 'KM 256 stop', aliases: ['Bayacsan', 'Baw-ek', 'Poyopoy'] },
+  { km: 261, name: 'Tuba Wilcon / Rockshed', coverageRange: 'KM 261 stop', aliases: ['Tuba Wilcon', 'Rockshed'] },
+  { km: 271, name: 'Baguio', coverageRange: 'Terminal', isTerminal: true }
+]);
+
+const CUBAO_BAGUIO_STOPS_UPDATED: Stop[] = buildStops([
+  { km: 0, name: 'Cubao', coverageRange: 'Terminal', isTerminal: true },
+  { km: 94, name: 'Dau', coverageRange: 'KM 94 stop' },
+  { km: 177, name: 'Carmen', coverageRange: 'KM 177 stop' },
+  { km: 187, name: 'Urdaneta', coverageRange: 'KM 187 stop', aliases: ['Urdaneta City'] },
+  { km: 197, name: 'Binalonan', coverageRange: 'KM 197 stop' },
+  { km: 203, name: 'Villa Pozzorubio', coverageRange: 'KM 203 stop', aliases: ['Villa', 'Pozzorubio'] },
+  { km: 206, name: 'Pozzorubio Bayan', coverageRange: 'KM 206 stop', aliases: ['Pozzorubio'] },
+  { km: 208, name: 'Paldit', coverageRange: 'KM 208 stop' },
+  { km: 212, name: 'Sison', coverageRange: 'KM 212 stop' },
+  { km: 216, name: 'Cauringan / Artacho / Agat', coverageRange: 'KM 216 stop', aliases: ['Cauringan', 'Artacho', 'Agat'] },
+  { km: 218, name: 'Esperanza / Udiao', coverageRange: 'KM 218 stop', aliases: ['Esperanza', 'Udiao'] },
+  { km: 220, name: 'Saitan', coverageRange: 'KM 220 stop' },
+  { km: 222, name: 'Rosario', coverageRange: 'KM 222 stop' },
+  { km: 225, name: 'Casilagan / Cuenca', coverageRange: 'KM 225 stop', aliases: ['Casilagan', 'Cuenca'] },
+  { km: 227, name: 'San Luis', coverageRange: 'KM 227 stop' },
+  { km: 229, name: 'Maoasoas', coverageRange: 'KM 229 stop' },
+  { km: 230, name: 'Ambangonan', coverageRange: 'KM 230 stop' },
+  { km: 232, name: 'Ambelete', coverageRange: 'KM 232 stop' },
+  { km: 235, name: 'Pugo Crossing', coverageRange: 'KM 235 stop', aliases: ['Pugo'] },
+  { km: 241, name: 'Palina', coverageRange: 'KM 241 stop' },
+  { km: 242, name: 'Palina / Bus Stop', coverageRange: 'KM 242 stop', aliases: ['Palina Bus Stop'] },
+  { km: 246, name: 'Salpang Taloy', coverageRange: 'KM 246 stop', aliases: ['Taloy'] },
+  { km: 251, name: 'Realiza / Tafarmco Taloy', coverageRange: 'KM 251 stop', aliases: ['Realiza', 'Tafarmco Taloy'] },
+  { km: 256, name: 'Bayacsan / Baw-ek / Poyopoy', coverageRange: 'KM 256 stop', aliases: ['Bayacsan', 'Baw-ek', 'Poyopoy'] },
+  { km: 261, name: 'Tuba Wilcon / Rockshed', coverageRange: 'KM 261 stop', aliases: ['Tuba Wilcon', 'Rockshed'] },
+  { km: 271, name: 'Baguio', coverageRange: 'Terminal', isTerminal: true }
+]);
+
+const createCorridorLabel = (leftLabel: string, rightLabel: string) => `${leftLabel} ${VICE_VERSA} ${rightLabel}`;
+const createLabel = (label: string) => createCorridorLabel(label, 'Baguio');
 
 export const ROUTES: RouteProfile[] = [
   {
@@ -936,8 +1372,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: AIRCON_BAYAMBANG_STOPS,
     fare: {
-      regularRate: 2.5,
-      discountRate: Number((2.5 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
       roundingMode: 'standard'
@@ -950,8 +1386,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: TARLAC_STOPS,
     fare: {
-      regularRate: 2.5,
-      discountRate: Number((2.5 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
       roundingMode: 'standard'
@@ -965,10 +1401,10 @@ export const ROUTES: RouteProfile[] = [
     lockedReason: 'Waiting for route data',
     stops: [],
     fare: {
-      regularRate: 0,
-      discountRate: 0,
-      minimumRegularFare: 70,
-      minimumDiscountFare: 56,
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      minimumRegularFare: 60,
+      minimumDiscountFare: 48,
       roundingMode: 'standard'
     }
   },
@@ -977,10 +1413,10 @@ export const ROUTES: RouteProfile[] = [
     label: createLabel('Cabanatuan via San Jose'),
     shortLabel: 'Cab via San Jose',
     status: 'ready',
-    stops: CABANATUAN_VIA_SAN_JOSE_STOPS,
+    stops: CABANATUAN_VIA_SAN_JOSE_STOPS_UPDATED,
     fare: {
-      regularRate: 2.5,
-      discountRate: Number((2.5 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
       roundingMode: 'standard'
@@ -993,8 +1429,36 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: CABANATUAN_VIA_TARLAC_STOPS,
     fare: {
-      regularRate: 2.5,
-      discountRate: Number((2.5 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      minimumRegularFare: 60,
+      minimumDiscountFare: 48,
+      roundingMode: 'standard'
+    }
+  },
+  {
+    id: CUBAO_BAGUIO_ROUTE_ID,
+    label: createCorridorLabel('Cubao', 'Baguio'),
+    shortLabel: 'Cubao / Baguio',
+    status: 'ready',
+    stops: CUBAO_BAGUIO_STOPS_UPDATED,
+    fare: {
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      minimumRegularFare: 100,
+      minimumDiscountFare: 80,
+      roundingMode: 'standard'
+    }
+  },
+  {
+    id: DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID,
+    label: createCorridorLabel('Dagupan / San Carlos', 'Cubao'),
+    shortLabel: 'Dagupan / San Carlos',
+    status: 'ready',
+    stops: DAGUPAN_SAN_CARLOS_CUBAO_STOPS,
+    fare: {
+      regularRate: 2.35,
+      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
       roundingMode: 'standard'

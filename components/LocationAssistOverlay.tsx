@@ -57,6 +57,8 @@ const LocationAssistOverlay: React.FC<Props> = ({
 }) => {
   if (!isOpen) return null;
 
+  const isSecureBrowserContext = typeof window === 'undefined' ? true : window.isSecureContext;
+
   const shouldOfferManualKm = Boolean(
     segmentMatch &&
       (
@@ -146,16 +148,20 @@ const LocationAssistOverlay: React.FC<Props> = ({
               <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Browser Check</p>
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  {permissionState === 'denied'
-                    ? 'Location is blocked for this browser or site.'
+                  {!isSecureBrowserContext
+                    ? 'This preview is not using HTTPS, so the browser may block GPS even if phone location is on.'
+                    : permissionState === 'denied'
+                      ? 'Location is blocked for this browser or this site.'
                     : permissionState === 'prompt'
                       ? 'This browser should ask for location permission when GPS is requested.'
                       : 'Some in-app browsers do not return GPS reliably even when phone location is on.'}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  {inAppBrowser
-                    ? 'If you opened this from Messenger or Facebook, use Open in Browser or Chrome for better GPS access.'
-                    : 'If no popup appears, check the browser app permission in your phone settings.'}
+                  {!isSecureBrowserContext
+                    ? 'Use the deployed HTTPS site or the installed app. A phone opened on a local http:// address can fail GPS permission.'
+                    : inAppBrowser
+                      ? 'If you opened this from Messenger or Facebook, use Open in Browser or Chrome for better GPS access.'
+                      : 'If no popup appears, check the site permission inside Chrome and the browser app permission in phone settings.'}
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button

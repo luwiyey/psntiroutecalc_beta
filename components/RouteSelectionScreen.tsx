@@ -3,6 +3,8 @@ import {
   AIRCON_BAYAMBANG_ROUTE_ID,
   CABANATUAN_VIA_SAN_JOSE_ROUTE_ID,
   CABANATUAN_VIA_TARLAC_ROUTE_ID,
+  CUBAO_BAGUIO_ROUTE_ID,
+  DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID,
   ORDINARY_BAYAMBANG_ROUTE_ID,
   TARLAC_ROUTE_ID,
   VICE_VERSA
@@ -14,9 +16,21 @@ interface Props {
   onComplete?: () => void;
 }
 
+type PickerMode = 'north' | 'cubao' | null;
+
+interface SelectionCard {
+  id: string;
+  label: string;
+  badge: string;
+  status: 'ready' | 'locked';
+  helper?: string;
+  onSelect: () => void;
+}
+
 const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
   const { routes, selectRoute } = useApp();
   const { authState, completeRouteSelection, logout } = useAuth();
+  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [isBayambangPickerOpen, setIsBayambangPickerOpen] = useState(false);
 
   const tarlacRoute = useMemo(() => routes.find(route => route.id === TARLAC_ROUTE_ID), [routes]);
@@ -36,6 +50,14 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     () => routes.find(route => route.id === CABANATUAN_VIA_TARLAC_ROUTE_ID),
     [routes]
   );
+  const cubaoBaguioRoute = useMemo(
+    () => routes.find(route => route.id === CUBAO_BAGUIO_ROUTE_ID),
+    [routes]
+  );
+  const dagupanSanCarlosCubaoRoute = useMemo(
+    () => routes.find(route => route.id === DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID),
+    [routes]
+  );
 
   const handleSelectRoute = (routeId: string) => {
     selectRoute(routeId);
@@ -47,14 +69,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
     (route): route is NonNullable<typeof route> => Boolean(route)
   );
 
-  const cards = [
-    {
-      id: 'tarlac',
-      label: `Tarlac ${VICE_VERSA} Baguio`,
-      badge: 'Use Route',
-      status: tarlacRoute?.status ?? 'locked',
-      onSelect: () => tarlacRoute && handleSelectRoute(tarlacRoute.id)
-    },
+  const northCards = [
     {
       id: 'bayambang',
       label: `Bayambang ${VICE_VERSA} Baguio`,
@@ -64,13 +79,26 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
         bayambangRoutes.every(route => route.status === 'ready')
           ? 'ready'
           : 'locked',
-      onSelect: () => setIsBayambangPickerOpen(true)
+      helper: 'Ordinary or Aircon',
+      onSelect: () => {
+        setPickerMode(null);
+        setIsBayambangPickerOpen(true);
+      }
+    },
+    {
+      id: 'tarlac',
+      label: `Tarlac ${VICE_VERSA} Baguio`,
+      badge: 'Use Route',
+      status: tarlacRoute?.status ?? 'locked',
+      helper: 'North line direct route',
+      onSelect: () => tarlacRoute && handleSelectRoute(tarlacRoute.id)
     },
     {
       id: 'cabanatuan-via-tarlac',
       label: `Cabanatuan via Tarlac ${VICE_VERSA} Baguio`,
       badge: 'Use Route',
       status: cabanatuanViaTarlacRoute?.status ?? 'locked',
+      helper: 'North line via Tarlac',
       onSelect: () => cabanatuanViaTarlacRoute && handleSelectRoute(cabanatuanViaTarlacRoute.id)
     },
     {
@@ -78,18 +106,100 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
       label: `Cabanatuan via San Jose ${VICE_VERSA} Baguio`,
       badge: 'Use Route',
       status: cabanatuanViaSanJoseRoute?.status ?? 'locked',
+      helper: 'North line via San Jose',
       onSelect: () => cabanatuanViaSanJoseRoute && handleSelectRoute(cabanatuanViaSanJoseRoute.id)
     }
   ].sort((a, b) => a.label.localeCompare(b.label));
+
+  const cubaoCards = [
+    {
+      id: 'cubao-baguio',
+      label: `Baguio ${VICE_VERSA} Cubao`,
+      badge: 'Use Route',
+      status: cubaoBaguioRoute?.status ?? 'locked',
+      helper: 'Cubao line to Baguio',
+      onSelect: () => cubaoBaguioRoute && handleSelectRoute(cubaoBaguioRoute.id)
+    },
+    {
+      id: 'dagupan-san-carlos-cubao',
+      label: `Dagupan / San Carlos ${VICE_VERSA} Cubao`,
+      badge: 'Use Route',
+      status: dagupanSanCarlosCubaoRoute?.status ?? 'locked',
+      helper: 'Cubao line to San Carlos corridor',
+      onSelect: () => dagupanSanCarlosCubaoRoute && handleSelectRoute(dagupanSanCarlosCubaoRoute.id)
+    }
+  ].sort((a, b) => a.label.localeCompare(b.label));
+
+  const lineCards: SelectionCard[] = [
+    {
+      id: 'north-line',
+      label: 'North Line',
+      badge: 'Choose Route',
+      status: northCards.some(card => card.status === 'ready') ? 'ready' : 'locked',
+      helper: 'Bayambang, Tarlac, and Cabanatuan corridors',
+      onSelect: () => setPickerMode('north')
+    },
+    {
+      id: 'cubao-line',
+      label: 'Cubao Line',
+      badge: 'Choose Route',
+      status: cubaoCards.some(card => card.status === 'ready') ? 'ready' : 'locked',
+      helper: 'Baguio and Dagupan / San Carlos corridors',
+      onSelect: () => setPickerMode('cubao')
+    }
+  ];
+
+  const activePickerCards = pickerMode === 'north' ? northCards : cubaoCards;
+  const activePickerTitle = pickerMode === 'north' ? 'North Line' : 'Cubao Line';
+  const activePickerSubtitle =
+    pickerMode === 'north'
+      ? 'Choose the North corridor for today'
+      : 'Choose the Cubao corridor for today';
+
+  const renderCard = (card: SelectionCard) => {
+    const isLocked = card.status === 'locked';
+
+    return (
+      <button
+        key={card.id}
+        onClick={() => !isLocked && card.onSelect()}
+        disabled={isLocked}
+        className={`w-full rounded-[2rem] p-5 text-left shadow-md transition-all ${
+          isLocked
+            ? 'bg-white/70 text-slate-400 dark:bg-white/5'
+            : 'bg-white text-slate-800 active:scale-[0.99] dark:bg-night-charcoal dark:text-white'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-[0.24em] ${isLocked ? 'text-slate-400' : 'text-primary'}`}>
+              {isLocked ? 'Locked Route' : 'Ready To Use'}
+            </p>
+            <h2 className="mt-3 text-xl font-black leading-tight">{card.label}</h2>
+            {card.helper && (
+              <p className="mt-3 text-xs font-bold text-slate-500 dark:text-slate-300">{card.helper}</p>
+            )}
+          </div>
+          <div
+            className={`shrink-0 rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+              isLocked ? 'bg-slate-100 text-slate-400 dark:bg-white/10' : 'bg-primary/10 text-primary'
+            }`}
+          >
+            {isLocked ? 'Data Pending' : card.badge}
+          </div>
+        </div>
+      </button>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#f8f6f6] px-4 py-6 dark:bg-black">
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-lg flex-col">
         <div className="rounded-[2rem] bg-primary px-6 py-6 text-white shadow-xl">
           <p className="text-[10px] font-black uppercase tracking-[0.28em] text-white/70">Assigned Route</p>
-          <h1 className="mt-3 text-3xl font-black leading-tight">Choose Your Route</h1>
+          <h1 className="mt-3 text-3xl font-black leading-tight">Choose Your Line</h1>
           <p className="mt-3 max-w-md text-sm text-white/80">
-            Pick the corridor you are handling today. This sets your calculator, tally sheet, and logs.
+            Pick the line you are handling today first, then choose the exact route. This sets your calculator, tally sheet, and logs.
           </p>
           <div className="mt-5 rounded-3xl bg-white/10 px-4 py-4">
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/60">Signed In</p>
@@ -98,39 +208,8 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
           </div>
         </div>
 
-        <div className="mt-5 flex-1 space-y-3">
-          {cards.map(card => {
-            const isLocked = card.status === 'locked';
-
-            return (
-              <button
-                key={card.id}
-                onClick={() => !isLocked && card.onSelect()}
-                disabled={isLocked}
-                className={`w-full rounded-[2rem] p-5 text-left shadow-md transition-all ${
-                  isLocked
-                    ? 'bg-white/70 text-slate-400 dark:bg-white/5'
-                    : 'bg-white text-slate-800 active:scale-[0.99] dark:bg-night-charcoal dark:text-white'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className={`text-[10px] font-black uppercase tracking-[0.24em] ${isLocked ? 'text-slate-400' : 'text-primary'}`}>
-                      {isLocked ? 'Locked Route' : 'Ready To Use'}
-                    </p>
-                    <h2 className="mt-3 text-xl font-black leading-tight">{card.label}</h2>
-                  </div>
-                  <div
-                    className={`shrink-0 rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
-                      isLocked ? 'bg-slate-100 text-slate-400 dark:bg-white/10' : 'bg-primary/10 text-primary'
-                    }`}
-                  >
-                    {isLocked ? 'Data Pending' : card.badge}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-2">
+          {lineCards.map(renderCard)}
         </div>
 
         <button
@@ -141,9 +220,32 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
         </button>
       </div>
 
-      {isBayambangPickerOpen && (
+      {pickerMode && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
+          <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">{activePickerSubtitle}</p>
+                <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{activePickerTitle}</h2>
+              </div>
+              <button
+                onClick={() => setPickerMode(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+              >
+                <span className="material-icons text-base">close</span>
+              </button>
+            </div>
+
+            <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+              {activePickerCards.map(renderCard)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBayambangPickerOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">{`Bayambang ${VICE_VERSA} Baguio`}</p>
@@ -157,7 +259,7 @@ const RouteSelectionScreen: React.FC<Props> = ({ onComplete }) => {
               </button>
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {bayambangRoutes.map(route => (
                 <button
                   key={route.id}

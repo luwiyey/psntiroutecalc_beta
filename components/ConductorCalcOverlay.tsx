@@ -1,4 +1,11 @@
 import React, { useEffect, useState } from "react";
+import type { BrowserSpeechRecognition } from "../utils/voice";
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseCalculatorVoiceTranscript
+} from "../utils/voice";
 
 interface Props {
   isOpen: boolean;
@@ -19,6 +26,12 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const [expression, setExpression] = useState("");
   const [lastOp, setLastOp] = useState("");
   const [typedFirst, setTypedFirst] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const voiceRecognitionRef = React.useRef<BrowserSpeechRecognition | null>(null);
+  const canUseVoiceRecognition = Boolean(getSpeechRecognitionCtor());
   const formatExpressionText = (value: string) => value.replace(/\*/g, "×").replace(/\//g, "÷");
 
   useEffect(() => {
@@ -27,7 +40,18 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setExpression("");
     setLastOp("");
     setTypedFirst(false);
+    setIsVoiceListening(false);
+    setVoiceTranscript("");
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
   }, [initialValue, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -193,6 +217,77 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setDisplay((current + amount).toString());
   };
 
+  const applyVoiceExpression = (spokenExpression: string) => {
+    const match = spokenExpression.match(/^(-?\d+(?:\.\d+)?)([+\-*/])(-?\d+(?:\.\d+)?)$/);
+    if (!match) {
+      setVoiceFeedback("Voice calculator here supports one clear operation at a time, like 12 plus 45.");
+      return;
+    }
+
+    const [, left, op, right] = match;
+    setDisplay(right);
+    setExpression(`${left} ${op} `);
+    setLastOp(op);
+    setTypedFirst(true);
+  };
+
+  const startVoiceCalculator = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback("Voice command is not available in this browser. Use Chrome on Android for the best result.");
+      return;
+    }
+
+    setVoiceTranscript("");
+    setVoiceFeedback("Listening... say something like 12 plus 45.");
+    setVoiceConfidence(null);
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = "en-PH";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onerror = event => {
+      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      setIsVoiceListening(false);
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? "";
+      const confidence = typeof alternative?.confidence === "number" ? alternative.confidence : null;
+      const parsed = parseCalculatorVoiceTranscript(transcript);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+
+      if (parsed.status === "match") {
+        applyVoiceExpression(parsed.expression);
+        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Tap = when ready.`);
+      } else {
+        setVoiceFeedback(parsed.message);
+      }
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceFeedback("Voice recognition could not start. Please try again.");
+      setIsVoiceListening(false);
+    }
+  };
+
   /* ---------------- STYLES ---------------- */
 
   const keyBase =
@@ -225,12 +320,25 @@ const ConductorCalcOverlay: React.FC<Props> = ({
             </h2>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 active:scale-90"
-          >
-            <span className="material-icons text-sm">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={startVoiceCalculator}
+              className={`flex h-8 min-w-[40px] items-center justify-center rounded-full px-2 active:scale-90 ${
+                isVoiceListening
+                  ? "bg-primary text-white"
+                  : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300"
+              }`}
+              title={canUseVoiceRecognition ? "Voice calculator" : "Voice not available in this browser"}
+            >
+              <span className="material-icons text-sm">{isVoiceListening ? "mic" : "mic_none"}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 active:scale-90"
+            >
+              <span className="material-icons text-sm">close</span>
+            </button>
+          </div>
         </div>
 
         {/* Display */}
@@ -250,6 +358,27 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
         {/* Body */}
         <div className="flex flex-col flex-1 min-h-0">
+          {(voiceFeedback || voiceTranscript) && (
+            <div className="px-6 mb-3 shrink-0">
+              <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/20">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
+                    <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {formatVoiceConfidence(voiceConfidence)}
+                  </p>
+                </div>
+                {voiceTranscript && (
+                  <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                    Heard: "{voiceTranscript}"
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {showQuickBills && (
             <div className="px-6 mb-3 shrink-0">
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">

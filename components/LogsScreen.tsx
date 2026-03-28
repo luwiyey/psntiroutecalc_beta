@@ -1,18 +1,41 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 
 interface Props {
   onExit?: () => void;
 }
 
+const peso = '\u20B1';
 const formatDistance = (distance: number) =>
   Number.isInteger(distance) ? `${distance} km` : `${distance.toFixed(1)} km`;
 
 const LogsScreen: React.FC<Props> = ({ onExit }) => {
-  const { settings, history, toggleFavorite, deleteHistory, activeRoute } = useApp();
-  const [tab, setTab] = useState<'all' | 'fav'>('all');
+  const { settings, history, toggleFavorite, deleteHistory, activeRoute, currentShift } = useApp();
+  const [tab, setTab] = useState<'all' | 'route' | 'shift' | 'fav'>('route');
 
-  const filtered = tab === 'all' ? history : history.filter(record => record.isFavorite);
+  const allHistory = useMemo(() => history, [history]);
+  const routeHistory = useMemo(
+    () => history.filter(record => record.routeId === activeRoute.id),
+    [activeRoute.id, history]
+  );
+  const currentRouteShift = currentShift?.routeId === activeRoute.id ? currentShift : null;
+  const shiftHistory = useMemo(
+    () => currentRouteShift
+      ? routeHistory.filter(record => record.shiftId === currentRouteShift.id)
+      : [],
+    [currentRouteShift, routeHistory]
+  );
+  const favoriteHistory = useMemo(
+    () => history.filter(record => record.isFavorite),
+    [history]
+  );
+  const filtered = tab === 'all'
+    ? allHistory
+    : tab === 'shift'
+      ? shiftHistory
+      : tab === 'fav'
+        ? favoriteHistory
+        : routeHistory;
   const isCM = settings.conductorMode;
 
   return (
@@ -33,32 +56,73 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
         </button>
       </header>
 
-      <div className="sticky top-[76px] z-10 flex items-center gap-3 border-b bg-[#f8f6f6]/80 px-4 pb-4 pt-4 backdrop-blur-lg dark:border-white/10 dark:bg-black/80">
-        <div className="flex flex-1 rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+      <div className="sticky top-[76px] z-10 space-y-3 border-b bg-[#f8f6f6]/80 px-4 pb-4 pt-4 backdrop-blur-lg dark:border-white/10 dark:bg-black/80">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-1 flex-wrap rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
+            <button
+              onClick={() => setTab('all')}
+              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'all' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
+            >
+              <span className="material-icons text-sm">history</span>
+              ALL
+            </button>
+            <button
+              onClick={() => setTab('route')}
+              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'route' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
+            >
+              <span className="material-icons text-sm">alt_route</span>
+              ROUTE
+            </button>
+            <button
+              onClick={() => setTab('shift')}
+              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'shift' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
+            >
+              <span className="material-icons text-sm">badge</span>
+              SHIFT
+            </button>
+            <button
+              onClick={() => setTab('fav')}
+              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'fav' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
+            >
+              <span className="material-icons text-sm">star</span>
+              FAVORITES
+            </button>
+          </div>
           <button
-            onClick={() => setTab('all')}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'all' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
+            onClick={deleteHistory}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/10 bg-primary/10 text-primary shadow-sm transition-transform active:scale-90"
           >
-            <span className="material-icons text-sm">history</span>
-            HISTORY
-          </button>
-          <button
-            onClick={() => setTab('fav')}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'fav' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
-          >
-            <span className="material-icons text-sm">star</span>
-            FAVORITES
+            <span className="material-icons">delete_outline</span>
           </button>
         </div>
-        <button
-          onClick={deleteHistory}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/10 bg-primary/10 text-primary shadow-sm transition-transform active:scale-90"
-        >
-          <span className="material-icons">delete_outline</span>
-        </button>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">All Logs</p>
+            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{allHistory.length}</p>
+          </div>
+          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Route Logs</p>
+            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{routeHistory.length}</p>
+          </div>
+          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shift Logs</p>
+            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{shiftHistory.length}</p>
+          </div>
+          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Favorites</p>
+            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{favoriteHistory.length}</p>
+          </div>
+        </div>
       </div>
 
       <main className={`p-4 pb-8 transition-all ${isCM ? 'space-y-5' : 'space-y-4'}`}>
+        {tab === 'shift' && !currentRouteShift && (
+          <div className="rounded-2xl bg-white px-4 py-5 text-sm font-semibold text-slate-500 shadow-sm dark:bg-night-charcoal dark:text-slate-300">
+            No open shift on this route yet. Start a shift in Settings to keep logs grouped per trip.
+          </div>
+        )}
+
         {filtered.length === 0 ? (
           <div className="py-14 text-center opacity-30 dark:text-white">
             <span className="material-icons text-6xl">receipt_long</span>
@@ -96,6 +160,11 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
                         {record.routeLabel}
                       </span>
                     )}
+                    {record.shiftId && (
+                      <span className={`rounded bg-emerald-50 px-2 py-1 font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300 ${isCM ? 'text-[12px]' : 'text-[10px]'}`}>
+                        Shift Saved
+                      </span>
+                    )}
                     {record.type !== 'tally' && (
                       <span
                         className={`rounded px-2 py-1 font-black ${isCM ? 'text-[12px]' : 'text-[10px]'} ${isDiscountedPunch ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}
@@ -128,10 +197,10 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
                   </div>
 
                   <div className="text-right">
-                    <p className={`font-900 text-primary transition-all ${isCM ? 'text-5xl' : 'text-3xl'}`}>₱{primaryFare}</p>
+                    <p className={`font-900 text-primary transition-all ${isCM ? 'text-5xl' : 'text-3xl'}`}>{peso}{primaryFare}</p>
                     {record.type !== 'tally' && secondaryFare > 0 && (
                       <p className={`mt-1 font-black uppercase text-slate-400 transition-all ${isCM ? 'text-[12px]' : 'text-[9px]'}`}>
-                        {secondaryLabel}: ₱{secondaryFare}
+                        {secondaryLabel}: {peso}{secondaryFare}
                       </p>
                     )}
                   </div>

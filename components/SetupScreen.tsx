@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { VICE_VERSA } from '../constants';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import NormalCalcOverlay from './NormalCalcOverlay';
+import StopCalibrationOverlay from './StopCalibrationOverlay';
+import StopReminderOverlay from './StopReminderOverlay';
 import SupportContactSheet from './SupportContactSheet';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
@@ -12,13 +13,33 @@ interface Props {
 
 const peso = '\u20B1';
 const PWD_VERIFICATION_URL = 'https://pwd.doh.gov.ph/tbl_pwd_id_verificationlist.php';
+type AuditScope = 'shift' | 'today' | 'route' | 'all';
 
 const SetupScreen: React.FC<Props> = ({ onExit }) => {
-  const { activeRoute, settings, setSettings, history, sessions, showToast } = useApp();
+  const {
+    activeRoute,
+    settings,
+    setSettings,
+    history,
+    sessions,
+    verifiedStops,
+    stopSyncState,
+    syncStopSubmissions,
+    currentShift,
+    shiftHistory,
+    startShift,
+    endShift,
+    stopReminders,
+    reminderSettings,
+    showToast
+  } = useApp();
   const { authState, logout } = useAuth();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [isStopCalibrationOpen, setIsStopCalibrationOpen] = useState(false);
+  const [isStopReminderOpen, setIsStopReminderOpen] = useState(false);
+  const [auditScope, setAuditScope] = useState<AuditScope>('shift');
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -34,40 +55,117 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     setSettings(prev => ({ ...prev, isNightMode: !prev.isNightMode }));
   };
 
-  const totalTripLogs = history.reduce((sum, record) => {
-    const punchedFare =
-      record.punchedFareType === 'discounted' && record.discountedFare > 0
-        ? record.discountedFare
-        : record.regularFare;
-    return sum + punchedFare;
+  const activeShiftForRoute = currentShift?.routeId === activeRoute.id ? currentShift : null;
+  const routeSessions = sessions.filter(session => session.routeId === activeRoute.id);
+  const routeHistory = history.filter(record => record.routeId === activeRoute.id);
+  const shiftHistoryRecords = activeShiftForRoute
+    ? routeHistory.filter(record => record.shiftId === activeShiftForRoute.id)
+    : [];
+  const shiftSessions = activeShiftForRoute
+    ? routeSessions.filter(session => session.shiftId === activeShiftForRoute.id)
+    : [];
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = startOfToday.getTime() + 24 * 60 * 60 * 1000;
+  const isToday = (value: number) => value >= startOfToday.getTime() && value < endOfToday;
+  const getPunchedFare = (record: typeof history[number]) =>
+    record.punchedFareType === 'discounted' && record.discountedFare > 0
+      ? record.discountedFare
+      : record.regularFare;
+  const getSessionGross = (session: typeof sessions[number]) =>
+    session.trips.reduce(
+      (sessionTotal, trip) =>
+        sessionTotal +
+        trip.sheets.reduce(
+          (tripTotal, sheet) => tripTotal + sheet.slots.reduce((sheetTotal, slot) => sheetTotal + slot, 0),
+          0
+        ),
+      0
+    );
+  const getSessionActivityAt = (session: typeof sessions[number]) => {
+    const sessionTimestamp = Date.parse(session.date);
+    const latestSheetUpdate = session.trips.reduce((sessionLatest, trip) => {
+      return Math.max(
+        sessionLatest,
+        ...trip.sheets.map(sheet => sheet.lastUpdatedAt ?? 0)
+      );
+    }, 0);
+
+    return Math.max(Number.isNaN(sessionTimestamp) ? 0 : sessionTimestamp, latestSheetUpdate);
+  };
+  const todayHistory = history.filter(record => isToday(record.timestamp));
+  const todaySessions = sessions.filter(session => isToday(getSessionActivityAt(session)));
+  const auditCollection = (() => {
+    switch (auditScope) {
+      case 'today':
+        return {
+          label: 'Today',
+          historyRecords: todayHistory,
+          sessionRecords: todaySessions
+        };
+      case 'route':
+        return {
+          label: 'This Route',
+          historyRecords: routeHistory,
+          sessionRecords: routeSessions
+        };
+      case 'all':
+        return {
+          label: 'All Saved Data',
+          historyRecords: history,
+          sessionRecords: sessions
+        };
+      case 'shift':
+      default:
+        return {
+          label: 'Current Shift',
+          historyRecords: shiftHistoryRecords,
+          sessionRecords: shiftSessions
+        };
+    }
+  })();
+  const totalTripLogs = auditCollection.historyRecords.reduce((sum, record) => {
+    return sum + getPunchedFare(record);
   }, 0);
-  const totalTallyGross = sessions.reduce(
-    (sessionTotal, session) =>
-      sessionTotal +
-      session.trips.reduce(
-        (tripTotal, trip) =>
-          tripTotal +
-          trip.sheets.reduce(
-            (sheetTotal, sheet) => sheetTotal + sheet.slots.reduce((slotTotal, slot) => slotTotal + slot, 0),
-            0
-          ),
-        0
-      ),
+  const totalTallyGross = auditCollection.sessionRecords.reduce(
+    (sum, session) => sum + getSessionGross(session),
     0
   );
+  const calibratedStopCount = activeRoute.stops.filter(stop => (stop.calibrationSamples ?? 0) > 0).length;
+  const verifiedStopCount = verifiedStops.length;
+  const completedRouteShiftCount = shiftHistory.filter(
+    shift => shift.routeId === activeRoute.id && shift.status === 'closed'
+  ).length;
+  const routeReminderCount = stopReminders.filter(
+    reminder => reminder.routeId === activeRoute.id && reminder.status !== 'done'
+  ).length;
 
   const handleExportAudit = async () => {
+    if (auditScope === 'shift' && !activeShiftForRoute) {
+      showToast('Start a shift first before generating a remittance report.', 'info');
+      return;
+    }
+
     const report = {
       conductor: authState.employeeName,
       employee_id: authState.employeeId,
       date: new Date().toLocaleDateString(),
+      audit_scope: auditCollection.label,
+      shift: activeShiftForRoute ? {
+        id: activeShiftForRoute.id,
+        route: activeShiftForRoute.routeLabel,
+        started_at: new Date(activeShiftForRoute.startedAt).toISOString(),
+        ended_at: activeShiftForRoute.endedAt ? new Date(activeShiftForRoute.endedAt).toISOString() : null,
+        status: activeShiftForRoute.status
+      } : null,
       financial_summary: {
         manual_logs_gross: `${peso}${totalTripLogs}`,
         waybill_tally_gross: `${peso}${totalTallyGross}`,
         total_combined_gross: `${peso}${totalTripLogs + totalTallyGross}`
       },
       system_meta: {
-        total_records: history.length + sessions.length,
+        total_records: auditCollection.historyRecords.length + auditCollection.sessionRecords.length,
+        verified_stops: verifiedStopCount,
         sync_status: isOnline ? 'Synced' : 'Local Only'
       },
       timestamp: new Date().toISOString()
@@ -83,11 +181,13 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       routeLabel: activeRoute.label,
       appSurface: 'setup',
       metadata: {
+        shiftId: activeShiftForRoute?.id ?? null,
+        auditScope,
         historyGross: totalTripLogs,
         tallyGross: totalTallyGross,
         combinedGross: totalTripLogs + totalTallyGross,
-        historyCount: history.length,
-        sessionCount: sessions.length
+        historyCount: auditCollection.historyRecords.length,
+        sessionCount: auditCollection.sessionRecords.length
       }
     });
     alert("Full audit report copied to clipboard. You can now paste it into your supervisor's message or email.");
@@ -162,8 +262,89 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </section>
 
         <section className="space-y-3">
+          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Shift Control</h2>
+          <div className="space-y-4 rounded-[1.75rem] bg-white p-6 shadow-md dark:bg-night-charcoal">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Current Shift</p>
+                <p className="mt-2 text-2xl font-900 text-slate-800 dark:text-white">
+                  {activeShiftForRoute ? 'OPEN' : 'NOT STARTED'}
+                </p>
+                <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-300">
+                  {activeShiftForRoute
+                    ? `Started ${new Date(activeShiftForRoute.startedAt).toLocaleString()}`
+                    : 'Start a shift so remittance, logs, and tally totals only count this trip.'}
+                </p>
+              </div>
+              <span className={`rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+                activeShiftForRoute
+                  ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
+              }`}>
+                {activeShiftForRoute ? 'Running' : 'Idle'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Route Shifts Closed</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{completedRouteShiftCount}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Logs This Shift</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{shiftHistoryRecords.length}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={activeShiftForRoute ? endShift : startShift}
+              className={`flex w-full items-center justify-center gap-2 rounded-2xl py-5 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 ${
+                activeShiftForRoute ? 'bg-zinc-900 dark:bg-black' : 'bg-primary'
+              }`}
+            >
+              <span className="material-icons text-sm">{activeShiftForRoute ? 'flag' : 'play_arrow'}</span>
+              {activeShiftForRoute ? 'End Shift' : 'Start Shift'}
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
           <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Live Audit</h2>
           <div className="space-y-5 rounded-[1.75rem] bg-white p-6 shadow-md dark:bg-night-charcoal">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {([
+                { id: 'shift', label: 'Current Shift' },
+                { id: 'today', label: 'Today' },
+                { id: 'route', label: 'This Route' },
+                { id: 'all', label: 'All Saved' }
+              ] as Array<{ id: AuditScope; label: string }>).map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => setAuditScope(option.id)}
+                  className={`rounded-2xl px-3 py-3 text-[10px] font-black uppercase tracking-widest transition-all ${
+                    auditScope === option.id
+                      ? 'bg-primary text-white shadow-md'
+                      : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {auditScope === 'shift' && !activeShiftForRoute && (
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 text-xs font-semibold text-slate-500 dark:bg-black/30 dark:text-slate-300">
+                Shift totals stay at zero until you tap <span className="font-black text-primary">Start Shift</span>.
+              </div>
+            )}
+
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">{auditCollection.label}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                {auditCollection.historyRecords.length} fare logs and {auditCollection.sessionRecords.length} tally sessions are included in this view.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-5">
               <div>
                 <p className="mb-2 text-[10px] font-black uppercase text-slate-400">Trip Logs</p>
@@ -175,17 +356,18 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               </div>
             </div>
 
-              <div className="border-t pt-5 dark:border-white/5">
+            <div className="border-t pt-5 dark:border-white/5">
               <div className="mb-5 flex items-end justify-between">
                 <p className="text-[11px] font-black uppercase tracking-widest text-primary">Total Due</p>
                 <p className="text-3xl font-900 text-primary">{peso}{(totalTripLogs + totalTallyGross).toLocaleString()}</p>
               </div>
               <button
                 onClick={handleExportAudit}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-900 py-5 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 dark:bg-black"
+                disabled={auditScope === 'shift' && !activeShiftForRoute}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-900 py-5 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 disabled:opacity-40 dark:bg-black"
               >
                 <span className="material-icons text-sm">ios_share</span>
-                Generate Remittance Report
+                {auditScope === 'shift' ? 'Generate Remittance Report' : 'Copy Audit Snapshot'}
               </button>
             </div>
           </div>
@@ -196,7 +378,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
           <div className="rounded-2xl bg-white shadow-md dark:bg-night-charcoal">
             <button
               onClick={() => setIsCalculatorOpen(true)}
-              className="flex w-full items-center justify-between p-5 transition-all active:scale-[0.99]"
+              className="flex w-full items-center justify-between border-b border-slate-100 p-5 transition-all active:scale-[0.99] dark:border-white/5"
             >
               <div className="flex items-center gap-4">
                 <div className="rounded-xl bg-primary/10 p-3 text-primary">
@@ -209,6 +391,115 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               </div>
               <span className="material-icons text-slate-400">chevron_right</span>
             </button>
+
+            <button
+              onClick={() => setIsStopCalibrationOpen(true)}
+              className="flex w-full items-center justify-between border-b border-slate-100 p-5 transition-all active:scale-[0.99] dark:border-white/5"
+            >
+              <div className="flex items-center gap-4">
+                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                  <span className="material-icons">near_me</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold dark:text-white">Calibrate Stops</p>
+                  <p className="text-xs text-slate-500">
+                    Save this route stop from the phone&apos;s current GPS
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">{calibratedStopCount} learned</p>
+                <span className="material-icons text-slate-400">chevron_right</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setIsStopReminderOpen(true)}
+              className="flex w-full items-center justify-between p-5 transition-all active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-4">
+                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                  <span className="material-icons">notifications_active</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold dark:text-white">Drop-Off Alerts</p>
+                  <p className="text-xs text-slate-500">
+                    Queue stops, passenger counts, and GPS reminders
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+                  {routeReminderCount} queued
+                </p>
+                <span className="material-icons text-slate-400">chevron_right</span>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">GPS Stop Learning</h2>
+          <div className="rounded-2xl bg-white p-5 shadow-md dark:bg-night-charcoal">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-bold dark:text-white">Shared Stop Data</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Conductors can save better stop points from the phone&apos;s GPS. Verified stops are computed from submitted samples so the route keeps improving over time.
+                </p>
+              </div>
+              <span className={`rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+                stopSyncState.enabled
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
+              }`}>
+                {stopSyncState.enabled ? 'Sync Ready' : 'Local Only'}
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Learned Stops</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{calibratedStopCount}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Verified Stops</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{verifiedStopCount}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Pending Sync</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{stopSyncState.pendingCount}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Reminder Engine</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                {reminderSettings.enabled
+                  ? `Alerts are ON with ${routeReminderCount} queued stop reminders on this route.`
+                  : 'Alerts are OFF right now. Turn them on in Drop-Off Alerts when needed.'}
+              </p>
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => setIsStopCalibrationOpen(true)}
+                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98]"
+              >
+                Open Calibration
+              </button>
+              <button
+                onClick={() => void syncStopSubmissions()}
+                disabled={!stopSyncState.enabled || !isOnline || stopSyncState.isSyncing}
+                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] disabled:opacity-50 dark:border-white/10 dark:text-slate-300"
+              >
+                {stopSyncState.isSyncing ? 'Syncing...' : 'Sync Stop Data'}
+              </button>
+            </div>
+
+            {stopSyncState.lastError && (
+              <p className="mt-3 text-xs font-semibold text-red-500">{stopSyncState.lastError}</p>
+            )}
           </div>
         </section>
 
@@ -302,7 +593,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             </button>
           </div>
         </section>
-
       </div>
 
       <footer className="px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">
@@ -318,6 +608,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       </footer>
 
       <NormalCalcOverlay isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+      <StopCalibrationOverlay isOpen={isStopCalibrationOpen} onClose={() => setIsStopCalibrationOpen(false)} />
+      <StopReminderOverlay isOpen={isStopReminderOpen} onClose={() => setIsStopReminderOpen(false)} />
       <SupportContactSheet isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
     </div>
   );

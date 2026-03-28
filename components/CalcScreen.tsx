@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import StopPickerOverlay from './StopPickerOverlay';
 import ManualKMOverlay from './ManualKMOverlay';
@@ -22,12 +22,30 @@ import {
   queryLocationPermissionState,
   requestBestCurrentLocation
 } from '../utils/location';
+import type { BrowserSpeechRecognition, FareVoiceParseResult } from '../utils/voice';
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseFareVoiceTranscript
+} from '../utils/voice';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 const peso = '\u20B1';
+const RECENT_FARE_LIMIT = 4;
 
 const CalcScreen: React.FC = () => {
-  const { activeRoute, origin, destination, setOrigin, setDestination, addRecord, setActiveFare, showToast } = useApp();
+  const {
+    activeRoute,
+    origin,
+    destination,
+    setOrigin,
+    setDestination,
+    history,
+    addRecord,
+    setActiveFare,
+    showToast
+  } = useApp();
   const { authState } = useAuth();
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestPickerOpen, setIsDestPickerOpen] = useState(false);
@@ -42,7 +60,14 @@ const CalcScreen: React.FC = () => {
   const [nearestSegmentMatch, setNearestSegmentMatch] = useState<SegmentMatch | null>(null);
   const [manualPrefill, setManualPrefill] = useState<{ pickupKm?: number; destKm?: number } | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceResult, setVoiceResult] = useState<FareVoiceParseResult | null>(null);
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const inAppBrowser = useMemo(() => isLikelyInAppBrowser(), []);
+  const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   const routeStart = activeRoute.stops[0];
   const routeEnd = activeRoute.stops[activeRoute.stops.length - 1];
@@ -77,6 +102,23 @@ const CalcScreen: React.FC = () => {
     setNearestStopMatch(findNearestMappedStop(activeRoute.stops, currentLocation));
     setNearestSegmentMatch(findNearestMappedSegment(activeRoute.stops, currentLocation));
   }, [activeRoute.stops, currentLocation]);
+
+  useEffect(() => {
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback(null);
+    setVoiceResult(null);
+    setIsVoiceListening(false);
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+  }, [activeRoute.id]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
 
   const fareGuide = useMemo(() => {
     const previousFare = activeRoute.fare.previousFare;
@@ -147,6 +189,24 @@ const CalcScreen: React.FC = () => {
   };
   }, [activeRoute]);
 
+  const routeRecentFares = useMemo(() => {
+    const seen = new Set<string>();
+
+    return history
+      .filter(record => record.routeId === activeRoute.id && record.type !== 'tally')
+      .filter(record => {
+        const key = `${record.origin}::${record.destination}`;
+        if (seen.has(key)) {
+          return false;
+        }
+
+        seen.add(key);
+        return true;
+      })
+      .slice(0, RECENT_FARE_LIMIT);
+  }, [activeRoute.id, history]);
+  const lastRouteFare = routeRecentFares[0] ?? null;
+
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toFixed(0) : km.toFixed(1);
   };
@@ -187,6 +247,86 @@ const CalcScreen: React.FC = () => {
     setOrigin(routeStart.name);
     setDestination(routeEnd.name);
     showToast(`Reset to ${activeRoute.shortLabel}`);
+  };
+
+  const applyRecentFare = (nextOrigin: string, nextDestination: string) => {
+    setOrigin(nextOrigin);
+    setDestination(nextDestination);
+    showToast(`Loaded ${nextOrigin} to ${nextDestination}`);
+  };
+
+  const applyVoiceFare = () => {
+    if (!voiceResult || voiceResult.status !== 'match') return;
+
+    setOrigin(voiceResult.originStop.name);
+    setDestination(voiceResult.destinationStop.name);
+    showToast(`Voice set ${voiceResult.originStop.name} to ${voiceResult.destinationStop.name}`);
+  };
+
+  const startFareVoiceRecognition = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      showToast('Voice command needs Chrome on Android or a supported browser.', 'info');
+      return;
+    }
+
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback(null);
+    setVoiceResult(null);
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-PH';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      setIsVoiceListening(true);
+      setVoiceFeedback('Listening... say a fare like "Bayambang to Baguio discounted".');
+    };
+    recognition.onerror = event => {
+      const nextMessage = getSpeechRecognitionErrorMessage(event.error);
+      setVoiceFeedback(nextMessage);
+      setIsVoiceListening(false);
+      showToast(nextMessage, 'info');
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? '';
+      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const parsed = parseFareVoiceTranscript(transcript, activeRoute);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+      setVoiceResult(parsed);
+      setVoiceFeedback(
+        parsed.status === 'match'
+          ? 'Review the heard route below, then tap Use Voice Fare.'
+          : parsed.message
+      );
+      if (parsed.status === 'match') {
+        showToast('Voice fare ready. Review it before using.', 'success');
+      }
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setIsVoiceListening(false);
+      setVoiceFeedback('Voice recognition could not start. Please try again.');
+    }
   };
 
   const requestCurrentLocation = async () => {
@@ -374,15 +514,30 @@ const CalcScreen: React.FC = () => {
       </header>
 
       <div className="flex flex-col items-center mt-6 mb-4 gap-2 px-5">
-        <button
-          onClick={requestCurrentLocation}
-          className="bg-white dark:bg-night-charcoal px-5 py-2 rounded-full border border-primary/10 shadow-sm active:scale-95 transition-all flex items-center gap-2"
-        >
-          <span className="material-icons text-sm text-primary">my_location</span>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-            Use Current Location
-          </span>
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            onClick={requestCurrentLocation}
+            className="bg-white dark:bg-night-charcoal px-5 py-2 rounded-full border border-primary/10 shadow-sm active:scale-95 transition-all flex items-center gap-2"
+          >
+            <span className="material-icons text-sm text-primary">my_location</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+              Use Current Location
+            </span>
+          </button>
+          <button
+            onClick={startFareVoiceRecognition}
+            className={`px-5 py-2 rounded-full border shadow-sm active:scale-95 transition-all flex items-center gap-2 ${
+              isVoiceListening
+                ? 'border-primary bg-primary text-white'
+                : 'border-primary/10 bg-white text-primary dark:bg-night-charcoal'
+            }`}
+          >
+            <span className="material-icons text-sm">{isVoiceListening ? 'mic' : 'mic_none'}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+              {isVoiceListening ? 'Listening' : 'Voice Fare'}
+            </span>
+          </button>
+        </div>
         <button
           onClick={handleSwap}
           className="bg-[#eff6ff] dark:bg-white/5 px-8 py-2 rounded-full border border-[#dbeafe] dark:border-white/10 shadow-sm active:scale-95 transition-all"
@@ -403,6 +558,74 @@ const CalcScreen: React.FC = () => {
           </span>
         )}
       </div>
+
+      {(voiceFeedback || voiceTranscript || voiceResult) && (
+        <div className="px-5 mb-5">
+          <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Voice Fare</p>
+                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {voiceFeedback ?? 'Voice command ready.'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Confidence</p>
+                <p className="mt-1 text-[11px] font-black text-slate-600 dark:text-slate-300">
+                  {formatVoiceConfidence(voiceConfidence)}
+                </p>
+              </div>
+            </div>
+
+            {voiceTranscript && (
+              <div className="mt-4 rounded-[1.5rem] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:bg-black/30 dark:text-slate-300">
+                Heard: "{voiceTranscript}"
+              </div>
+            )}
+
+            {voiceResult?.status === 'match' && (
+              <div className="mt-4 grid gap-3">
+                <div className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-white/10 dark:bg-black/30">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Parsed Route</p>
+                    <p className="mt-2 text-base font-black text-slate-900 dark:text-white">
+                      {voiceResult.originStop.name} to {voiceResult.destinationStop.name}
+                    </p>
+                    <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      {voiceResult.distance.toFixed(1).replace(/\.0$/, '')} km • {voiceResult.fareType}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Answer</p>
+                    <p className="mt-1 text-xl font-900 text-primary">
+                      {peso}{voiceResult.fareType === 'discounted' ? voiceResult.discountedFare : voiceResult.regularFare}
+                    </p>
+                  </div>
+                </div>
+                {voiceResult.fareType === 'either' && (
+                  <div className="rounded-[1.5rem] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:bg-black/30 dark:text-slate-300">
+                    Regular {peso}{voiceResult.regularFare} • Discounted {peso}{voiceResult.discountedFare}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={applyVoiceFare}
+                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                  >
+                    Use Voice Fare
+                  </button>
+                  <button
+                    onClick={startFareVoiceRecognition}
+                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    Speak Again
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="px-5 space-y-2 relative mb-6">
         <button
@@ -522,6 +745,61 @@ const CalcScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {(lastRouteFare || routeRecentFares.length > 0) && (
+        <div className="px-5 mb-6">
+          <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">Recent Fares</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Reuse the latest route selections without tapping all the stops again.
+                </p>
+              </div>
+              {lastRouteFare && (
+                <button
+                  onClick={() => applyRecentFare(lastRouteFare.origin, lastRouteFare.destination)}
+                  className="rounded-2xl bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                >
+                  Repeat Last
+                </button>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              {routeRecentFares.map(record => {
+                const punchedFare =
+                  record.punchedFareType === 'discounted' && record.discountedFare > 0
+                    ? record.discountedFare
+                    : record.regularFare;
+
+                return (
+                  <button
+                    key={record.id}
+                    onClick={() => applyRecentFare(record.origin, record.destination)}
+                    className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-left active:scale-[0.99] dark:border-white/10 dark:bg-black/30"
+                  >
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary">
+                        KM {formatKM(record.distance)} Saved Fare
+                      </p>
+                      <p className="mt-2 text-base font-black text-slate-900 dark:text-white">
+                        {record.origin} to {record.destination}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-900 text-primary">{peso}{punchedFare}</p>
+                      <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Tap to Load
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="px-5 space-y-4 pb-8">
         <div className="grid grid-cols-2 gap-4">
