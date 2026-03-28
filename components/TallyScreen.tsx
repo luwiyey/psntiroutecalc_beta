@@ -8,6 +8,15 @@ import { trackAnalyticsEvent } from '../utils/analytics';
 
 type EditorMode = 'standard' | 'batch';
 type EditorSection = 'totals' | 'details' | 'tape';
+type PendingActionType =
+  | 'trip'
+  | 'sheet'
+  | 'delete-sheet'
+  | 'reset-block'
+  | 'flip-direction'
+  | 'reset-batch'
+  | 'batch-typing-help'
+  | 'finalize-session';
 
 interface Props {
   onExit?: () => void;
@@ -97,7 +106,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   });
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
-  const [pendingAction, setPendingAction] = useState<{ type: 'trip' | 'sheet' | 'delete-sheet' | 'reset-block' | 'flip-direction' | 'reset-batch'; blockIdx?: number; sheetIdx?: number } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: PendingActionType; blockIdx?: number; sheetIdx?: number } | null>(null);
   const northboundTerminal = activeRoute.stops[activeRoute.stops.length - 1]?.name ?? 'North';
   const southboundTerminal = activeRoute.stops[0]?.name ?? 'South';
   const routeKms = useMemo(
@@ -366,11 +375,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const previewEntryCount = pendingEntriesPreview.length;
   const previewEndSlotNumber =
     previewEntryCount > 0 ? Math.min(selectedSlotIdx + previewEntryCount, SLOTS_PER_SHEET) : currentSlotNumber;
-  const hasPreviousTargetSlot = selectedSlotIdx > 0;
+  const hasPreviousTargetSlot = selectedSlotIdx > 0 || stagedStandardEntries.length > 0;
   const hasNextTargetSlot = selectedSlotIdx < SLOTS_PER_SHEET - 1;
   const hasNextBlock = currentSlotBlock < SLOTS_PER_SHEET / SLOTS_PER_BLOCK;
-  const currentBoxLabel = `B${currentSlotBlock} - Slot ${currentSlotNumber}`;
-  const nextBoxLabel = nextSlotNumber ? `B${nextSlotBlock} - Slot ${nextSlotNumber}` : 'Sheet Full';
+  const compactCurrentBoxLabel = `B${currentSlotBlock} - Slot ${currentSlotNumber}`;
+  const compactNextBoxLabel = nextSlotNumber ? `B${nextSlotBlock} - Slot ${nextSlotNumber}` : 'Sheet Full';
+  const currentBoxLabel = `Block ${currentSlotBlock} • Slot ${currentSlotNumber}`;
+  const nextBoxLabel = nextSlotNumber ? `Block ${nextSlotBlock} • Slot ${nextSlotNumber}` : 'Sheet Full';
   const standardTapeSummary =
     stagedStandardEntries.length > 0
       ? `Last ${Math.min(3, stagedStandardEntries.length)}: ${stagedStandardEntries.slice(-3).map(fare => `${peso}${fare}`).join(' / ')}`
@@ -381,6 +392,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     selectedBatchItems.length > 0
       ? selectedBatchItems.slice(0, 3).map(([fare, count]) => `${count} x ${peso}${fare}`).join(' / ')
       : 'No batch fares selected yet.';
+  const activeTapeSummary = editorMode === 'batch' ? batchTapeSummary : standardTapeSummary;
+  const currentTripLabel = `${activeTrip.name} • Sheet ${tallyNav.sheetIdx + 1}`;
+  const blockSlotsLeftLabel =
+    blockSlotsLeft === 1 ? '1 slot left in this block' : `${blockSlotsLeft} slots left in this block`;
+  const remainingSlotsSummary = `${blockSlotsLeft} block left | ${sheetSlotsLeft} sheet left`;
   const toggleSection = (section: EditorSection) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
@@ -675,6 +691,24 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     inputRef.current?.focus();
   };
 
+  const handlePreviousTarget = () => {
+    if (editorMode === 'standard' && stagedStandardEntries.length > 0) {
+      handleRemoveStagedEntry(stagedStandardEntries.length - 1);
+      return;
+    }
+
+    setEditorTargetSlot(selectedSlotIdx - 1);
+  };
+
+  const handlePunchBoxPress = () => {
+    if (editorMode === 'batch') {
+      setPendingAction({ type: 'batch-typing-help' });
+      return;
+    }
+
+    inputRef.current?.focus();
+  };
+
   const handleApplyCalcTotal = (value: number) => {
     setEditorMode('standard');
     setEditValue(Math.trunc(value).toString());
@@ -931,17 +965,32 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               inputMode="numeric" 
               className="absolute top-0 opacity-0 pointer-events-none" 
               value={editValue} 
-              onChange={e => setEditValue(e.target.value)} 
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitStandardEntry(parseInt(editValue) || 0); } }} 
+              onChange={e => {
+                if (editorMode === 'batch') {
+                  setPendingAction({ type: 'batch-typing-help' });
+                  return;
+                }
+
+                setEditValue(e.target.value);
+              }} 
+              onKeyDown={e => {
+                if (editorMode === 'batch') {
+                  e.preventDefault();
+                  setPendingAction({ type: 'batch-typing-help' });
+                  return;
+                }
+
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitStandardEntry(parseInt(editValue) || 0);
+                }
+              }} 
             />
 
             {/* MODAL HEADER */}
-            <div className="shrink-0 flex items-center justify-between px-5 pt-6 pb-3">
+            <div className="shrink-0 flex items-center justify-between px-5 pt-5 pb-2">
               <div>
                 <h1 className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Waybill Entry</h1>
-                <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  {activeTrip.name.toUpperCase()} • Sheet {tallyNav.sheetIdx + 1}
-                </p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="rounded-full bg-zinc-900 px-4 py-2 text-right shadow-sm dark:bg-black">
@@ -950,7 +999,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
                 <button
                   onClick={() => setIsEditorOpen(false)}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 shadow-sm dark:bg-white/10"
+                  className="flex h-11 w-11 min-w-[44px] items-center justify-center rounded-full bg-slate-100 shadow-sm dark:bg-white/10"
                 >
                   <span className="material-icons text-slate-600 dark:text-white text-lg">close</span>
                 </button>
@@ -963,16 +1012,16 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 <div className="mt-3 flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
-                    <h2 className="mt-2 text-xl font-900 leading-none text-slate-900 dark:text-white">{currentBoxLabel}</h2>
-                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <p className="mt-2 text-xl font-900 leading-none text-slate-900 dark:text-white">{compactCurrentBoxLabel}</p>
+                    <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
                       Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="min-w-0 text-right">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
-                    <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">{nextBoxLabel}</p>
-                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {blockSlotsLeft} block left • {sheetSlotsLeft} sheet left
+                    <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">{compactNextBoxLabel}</p>
+                    <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      {remainingSlotsSummary}
                     </p>
                   </div>
                 </div>
@@ -985,12 +1034,35 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'
                 }`}
               >
-                <p className="text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">
-                  {editorMode === 'batch' ? 'Batch Mode Total' : 'Punch Amount'}
-                </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => setEditorMode('standard')}
+                    className={`min-w-[104px] rounded-full px-4 py-2 text-[10px] font-900 uppercase tracking-[0.2em] transition-colors ${
+                      editorMode === 'standard'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
+                    }`}
+                  >
+                    Standard
+                  </button>
+                  <p className="text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">
+                    Punch Amount
+                  </p>
+                  <button
+                    onClick={() => setEditorMode('batch')}
+                    className={`min-w-[104px] rounded-full px-4 py-2 text-[10px] font-900 uppercase tracking-[0.2em] transition-colors ${
+                      editorMode === 'batch'
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
+                    }`}
+                  >
+                    Batch Mode
+                  </button>
+                </div>
+
                 <div className="mt-3 flex items-center gap-3">
                   <button
-                    onClick={() => setEditorTargetSlot(selectedSlotIdx - 1)}
+                    onClick={handlePreviousTarget}
                     disabled={!hasPreviousTargetSlot}
                     className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition-transform active:scale-95 disabled:opacity-40 dark:bg-night-charcoal dark:text-slate-300"
                     title="Previous box"
@@ -998,10 +1070,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     <span className="material-icons text-xl">chevron_left</span>
                   </button>
                   <button
-                    onClick={() => inputRef.current?.focus()}
-                    className="flex min-h-[104px] flex-1 flex-col items-center justify-center rounded-[1.75rem] bg-white/70 px-4 py-4 text-center shadow-sm active:scale-[0.99] dark:bg-black/30"
+                    onClick={handlePunchBoxPress}
+                    className="flex min-h-[132px] flex-1 flex-col rounded-[1.75rem] bg-white/80 px-4 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30"
                   >
-                    <div className="flex items-end gap-2">
+                    <div className="mt-2 flex items-end justify-center gap-2 text-center">
                       <span className="text-2xl font-900 leading-none text-slate-400">{peso}</span>
                       <h3 className={`text-5xl font-900 leading-none tracking-tight transition-colors ${
                         isFlashing ? 'text-neon-green' : (editValue ? 'text-primary' : 'text-slate-900 dark:text-white')
@@ -1009,7 +1081,16 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                         {editorMode === 'batch' ? batchTotalGross : (isFlashing ? lastPunched : (editValue || '0'))}
                       </h3>
                     </div>
-                    <p className="mt-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
+
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      <span>Block {peso}{projectedBlockTotals[auditBlockIdx]}</span>
+                      <span className="text-slate-300">|</span>
+                      <span>Sheet {peso}{projectedSheetTotal}</span>
+                      <span className="text-slate-300">|</span>
+                      <span>{previewEntryCount} pending</span>
+                    </div>
+
+                    <p className="mt-3 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">
                       Tap fares below or type directly
                     </p>
                   </button>
@@ -1022,19 +1103,84 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     <span className="material-icons text-xl">chevron_right</span>
                   </button>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
+
+                <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  <span />
+                  <p className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Enter saves current amount
+                  </p>
                   <button
                     onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
                     disabled={!hasNextBlock}
-                    className="text-[10px] font-black uppercase tracking-widest text-primary disabled:text-slate-300 dark:disabled:text-slate-500"
+                    className="justify-self-end rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-sm disabled:bg-slate-300 dark:disabled:bg-white/10"
                   >
                     Next Block
                   </button>
-                  <p className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Enter saves current amount
-                  </p>
                 </div>
               </div>
+
+              {renderAccordion(
+                'tape',
+                'Entry Tape',
+                activeTapeSummary,
+                editorMode === 'batch' ? (
+                  selectedBatchItems.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedBatchItems.map(([fare, count]) => (
+                        <div
+                          key={`${fare}-${count}`}
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20"
+                        >
+                          <div>
+                            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Queued Fare</p>
+                            <p className="mt-1 text-base font-900 text-slate-900 dark:text-white">{peso}{fare}</p>
+                          </div>
+                          <button
+                            onClick={() => setBatchCounts(prev => ({ ...prev, [fare]: '0' }))}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-90 dark:bg-black/40"
+                            title={`Remove ${fare}`}
+                          >
+                            <span className="material-icons text-sm leading-none">close</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-bold text-slate-500">No batch fares selected yet.</p>
+                  )
+                ) : stagedStandardEntries.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {stagedStandardEntries.map((fare, i) => (
+                      <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
+                        <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
+                        <button
+                          onClick={() => handleRemoveStagedEntry(i)}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
+                          title={`Delete slot ${selectedSlotIdx + i + 1}`}
+                        >
+                          <span className="material-icons text-[11px] leading-none">close</span>
+                        </button>
+                        <div className="flex h-full items-center justify-center pt-2">
+                          <span className="text-[11px] font-black">{peso}{fare}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : currentTypingValue > 0 ? (
+                  <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/[0.06] px-4 py-3 text-center">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Current Draft</p>
+                    <p className="mt-2 text-lg font-900 text-primary">{peso}{currentTypingValue}</p>
+                    <button
+                      onClick={() => setEditValue('')}
+                      className="mt-3 rounded-full bg-white px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm dark:bg-black/40 dark:text-slate-300"
+                    >
+                      Clear Draft
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
+                )
+              )}
             </div>
 
             {/* DYNAMIC SCROLLABLE BODY */}
@@ -1049,72 +1195,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     ))}
                   </div>
 
-                  <div className="mt-4 space-y-3">
-                    {renderAccordion(
-                      'totals',
-                      'Totals',
-                      `Block ${peso}${projectedBlockTotals[auditBlockIdx]} • Sheet ${peso}${projectedSheetTotal} • Staged ${previewEntryCount}`,
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Block Audit</p>
-                          <p className="mt-2 text-lg font-900 text-slate-900 dark:text-white">{peso}{projectedBlockTotals[auditBlockIdx]}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK} filled</p>
-                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)} pending</p>
-                        </div>
-                        <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Sheet Audit</p>
-                          <p className="mt-2 text-lg font-900 text-primary">{peso}{projectedSheetTotal}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedSheetEntryCount}/{SLOTS_PER_SHEET} filled</p>
-                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)} pending</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {renderAccordion(
-                      'details',
-                      'Details',
-                      `${currentBoxLabel} • Next ${nextBoxLabel}`,
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Trip</p>
-                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">{activeTrip.name}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Sheet {tallyNav.sheetIdx + 1}</p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Range</p>
-                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">Start Slot {selectedSlotNumber}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Preview end {previewEndSlotNumber}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {renderAccordion(
-                      'tape',
-                      'Entry Tape',
-                      standardTapeSummary,
-                      stagedStandardEntries.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-2">
-                          {stagedStandardEntries.map((fare, i) => (
-                            <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
-                              <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
-                              <button
-                                onClick={() => handleRemoveStagedEntry(i)}
-                                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
-                                title={`Delete slot ${selectedSlotIdx + i + 1}`}
-                              >
-                                <span className="material-icons text-[11px] leading-none">close</span>
-                              </button>
-                              <div className="flex h-full items-center justify-center pt-2">
-                                <span className="text-[11px] font-black">{peso}{fare}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
-                      )
-                    )}
-                  </div>
                 </div>
               ) : (
                 <div className="pb-4">
@@ -1185,69 +1265,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     )}
                   </div>
 
-                  <div className="mt-4 space-y-3">
-                    {renderAccordion(
-                      'totals',
-                      'Totals',
-                      `Block ${peso}${projectedBlockTotals[auditBlockIdx]} • Sheet ${peso}${projectedSheetTotal} • Entries ${previewEntryCount}`,
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Block Audit</p>
-                          <p className="mt-2 text-lg font-900 text-slate-900 dark:text-white">{peso}{projectedBlockTotals[auditBlockIdx]}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedBlockCounts[auditBlockIdx]}/{SLOTS_PER_BLOCK} filled</p>
-                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{blockPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(blockPendingTotal)} pending</p>
-                        </div>
-                        <div className="rounded-2xl border border-primary/10 bg-primary/[0.06] px-4 py-3">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Sheet Audit</p>
-                          <p className="mt-2 text-lg font-900 text-primary">{peso}{projectedSheetTotal}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">{projectedSheetEntryCount}/{SLOTS_PER_SHEET} filled</p>
-                          <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-primary">{sheetPendingTotal >= 0 ? '+' : '-'}{peso}{Math.abs(sheetPendingTotal)} pending</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {renderAccordion(
-                      'details',
-                      'Details',
-                      `${currentBoxLabel} • Next ${nextBoxLabel}`,
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Trip</p>
-                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">{activeTrip.name}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Sheet {tallyNav.sheetIdx + 1}</p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Range</p>
-                          <p className="mt-2 text-sm font-900 text-slate-900 dark:text-white">Start Slot {selectedSlotNumber}</p>
-                          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Preview end {previewEndSlotNumber}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {renderAccordion(
-                      'tape',
-                      'Batch Selection',
-                      batchTapeSummary,
-                      selectedBatchItems.length > 0 ? (
-                        <div className="space-y-2">
-                          {selectedBatchItems.map(([fare, count]) => (
-                            <div key={`${fare}-${count}`} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20">
-                              <div>
-                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Fare</p>
-                                <p className="mt-1 text-sm font-900 text-slate-900 dark:text-white">{peso}{fare}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Count</p>
-                                <p className="mt-1 text-sm font-900 text-primary">{count}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm font-bold text-slate-500">No batch fares selected yet. Add counts from the list above.</p>
-                      )
-                    )}
-                  </div>
                 </div>
               )}
             </div>
@@ -1289,11 +1306,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                        <p className="text-sm font-900 text-primary mt-2">{peso}{projectedSheetTotal}</p>
                      </div>
                    </div>
-                   <button 
-                     onClick={handleConfirmAll} 
-                     disabled={grandTotalInEditor === 0} 
-                     className="w-full bg-primary text-white py-4 rounded-[1.5rem] font-black uppercase text-[10px] shadow-lg active:scale-95 border-b-[4px] border-black/20 flex items-center justify-center gap-2"
-                   >
+                    <button 
+                      onClick={() => setPendingAction({ type: 'finalize-session' })} 
+                      disabled={grandTotalInEditor === 0} 
+                      className="w-full bg-primary text-white py-4 rounded-[1.5rem] font-black uppercase text-[10px] shadow-lg active:scale-95 border-b-[4px] border-black/20 flex items-center justify-center gap-2"
+                    >
                      Finalize Session {peso}{grandTotalInEditor}
                      <span className="material-icons text-sm">check_circle</span>
                    </button>
@@ -1321,29 +1338,48 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       {pendingAction && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center px-8">
            <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setPendingAction(null)} />
-           <div className="relative bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center">
+            <div className="relative bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center">
               <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-6 uppercase">
-                {pendingAction.type === 'reset-batch' ? 'Clear Batch Entries?' :
+                {pendingAction.type === 'batch-typing-help' ? 'Typing Works In Standard' :
+                 pendingAction.type === 'finalize-session' ? 'Finalize This Entry?' :
+                 pendingAction.type === 'reset-batch' ? 'Clear Batch Entries?' :
                  pendingAction.type === 'delete-sheet' ? `Delete Sheet ${(pendingAction.sheetIdx ?? 0) + 1}?` :
                  pendingAction.type === 'reset-block' ? `Reset Block ${pendingAction.blockIdx! + 1}?` :
                  'Confirm Action'}
               </h3>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-6 -mt-4">
-                {pendingAction.type === 'reset-batch' ? 'This will reset all current ticket counts to zero.' :
+                {pendingAction.type === 'batch-typing-help' ? 'Batch mode uses the plus and minus counters. If you want to type a fare in the punch box, switch to Standard first.' :
+                 pendingAction.type === 'finalize-session' ? `This will save ${previewEntryCount} pending entr${previewEntryCount === 1 ? 'y' : 'ies'} worth ${peso}${grandTotalInEditor} into the current sheet.` :
+                 pendingAction.type === 'reset-batch' ? 'This will reset all current ticket counts to zero.' :
                  pendingAction.type === 'delete-sheet' ? 'This removes the current sheet and keeps the remaining sheet numbers in order.' :
                  pendingAction.type === 'reset-block' ? 'All 25 slots in this block will be cleared. This action cannot be undone.' :
                  'Are you sure you want to proceed?'}
               </p>
               <div className="space-y-2">
-                 <button onClick={() => {
-                     if (pendingAction.type === 'trip') handleAddTrip();
-                     else if (pendingAction.type === 'sheet') handleAddSheet();
-                     else if (pendingAction.type === 'delete-sheet') handleDeleteSheet(pendingAction.sheetIdx ?? tallyNav.sheetIdx);
-                     else if (pendingAction.type === 'flip-direction') handleFlipDirection();
-                     else if (pendingAction.type === 'reset-block') handleResetBlock(pendingAction.blockIdx!);
-                     else if (pendingAction.type === 'reset-batch') confirmResetBatch();
-                   }} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase tracking-widest text-[10px]">Confirm</button>
-                 <button onClick={() => setPendingAction(null)} className="w-full py-3 text-slate-400 font-black uppercase text-[9px]">Cancel</button>
+                  <button onClick={() => {
+                      if (pendingAction.type === 'batch-typing-help') {
+                        setPendingAction(null);
+                        setEditorMode('standard');
+                        inputRef.current?.focus();
+                      }
+                      else if (pendingAction.type === 'finalize-session') {
+                        setPendingAction(null);
+                        handleConfirmAll();
+                      }
+                      else if (pendingAction.type === 'trip') handleAddTrip();
+                      else if (pendingAction.type === 'sheet') handleAddSheet();
+                      else if (pendingAction.type === 'delete-sheet') handleDeleteSheet(pendingAction.sheetIdx ?? tallyNav.sheetIdx);
+                      else if (pendingAction.type === 'flip-direction') handleFlipDirection();
+                      else if (pendingAction.type === 'reset-block') handleResetBlock(pendingAction.blockIdx!);
+                      else if (pendingAction.type === 'reset-batch') confirmResetBatch();
+                    }} className="w-full bg-primary text-white py-4 rounded-xl font-black uppercase tracking-widest text-[10px]">
+                    {pendingAction.type === 'batch-typing-help'
+                      ? 'Switch To Standard'
+                      : pendingAction.type === 'finalize-session'
+                        ? 'Save And Finalize'
+                        : 'Confirm'}
+                  </button>
+                  <button onClick={() => setPendingAction(null)} className="w-full py-3 text-slate-400 font-black uppercase text-[9px]">Cancel</button>
               </div>
            </div>
         </div>

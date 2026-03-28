@@ -20,6 +20,7 @@ export interface RouteFareBaseline {
   discountRate: number;
   minimumRegularFare: number | null;
   minimumDiscountFare: number | null;
+  minimumDistanceKm?: number | null;
 }
 
 export interface RouteFareRules {
@@ -27,6 +28,7 @@ export interface RouteFareRules {
   discountRate: number;
   minimumRegularFare: number | null;
   minimumDiscountFare: number | null;
+  minimumDistanceKm?: number | null;
   roundingMode?: 'legacy' | 'standard';
   previousFare?: RouteFareBaseline;
 }

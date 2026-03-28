@@ -1,6 +1,6 @@
 import type { AppSettings, RouteProfile, Stop } from './types';
 
-export const FARE_SETTINGS_VERSION = 9;
+export const FARE_SETTINGS_VERSION = 10;
 export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 export const VICE_VERSA = '\u2194';
 
@@ -1376,6 +1376,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
+      minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
   },
@@ -1390,6 +1391,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
+      minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
   },
@@ -1405,6 +1407,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
+      minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
   },
@@ -1419,6 +1422,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
+      minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
   },
@@ -1433,6 +1437,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
+      minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
   },
@@ -1447,6 +1452,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 100,
       minimumDiscountFare: 80,
+      minimumDistanceKm: 37,
       roundingMode: 'standard'
     }
   },
@@ -1457,8 +1463,8 @@ export const ROUTES: RouteProfile[] = [
     status: 'ready',
     stops: DAGUPAN_SAN_CARLOS_CUBAO_STOPS,
     fare: {
-      regularRate: 2.35,
-      discountRate: Number((2.35 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
+      regularRate: 2.7,
+      discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 60,
       minimumDiscountFare: 48,
       roundingMode: 'standard'

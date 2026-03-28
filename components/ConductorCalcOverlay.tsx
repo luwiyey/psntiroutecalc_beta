@@ -1,11 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import FloatingVoiceButton from "./FloatingVoiceButton";
 import type { BrowserSpeechRecognition } from "../utils/voice";
 import {
+  cancelVoiceReply,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
-  parseCalculatorVoiceTranscript
+  parseCalculatorVoiceTranscript,
+  parseCashVoiceTranscript,
+  speakVoiceReply
 } from "../utils/voice";
+
+export interface VoiceChangePreset {
+  fareAmount: number;
+  cashAmount: number;
+  changeAmount: number;
+  summary: string;
+}
 
 interface Props {
   isOpen: boolean;
@@ -13,6 +24,7 @@ interface Props {
   initialValue: number;
   title?: string;
   showQuickBills?: boolean;
+  assistantPreset?: VoiceChangePreset | null;
 }
 
 const ConductorCalcOverlay: React.FC<Props> = ({
@@ -21,6 +33,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   initialValue,
   title = "Conductor Calc",
   showQuickBills = true,
+  assistantPreset = null,
 }) => {
   const [display, setDisplay] = useState(initialValue.toString());
   const [expression, setExpression] = useState("");
@@ -30,32 +43,54 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
-  const voiceRecognitionRef = React.useRef<BrowserSpeechRecognition | null>(null);
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const canUseVoiceRecognition = Boolean(getSpeechRecognitionCtor());
-  const formatExpressionText = (value: string) => value.replace(/\*/g, "×").replace(/\//g, "÷");
+
+  const formatExpressionText = (value: string) => value.replace(/\*/g, " x ").replace(/\//g, " / ");
+  const formatCalcNumber = (value: number) =>
+    Number.isInteger(value) ? value.toString() : Number(value.toFixed(2)).toString();
+  const baseFareDue = assistantPreset?.fareAmount ?? initialValue;
 
   useEffect(() => {
     if (!isOpen) return;
+
+    setIsVoiceListening(false);
+    setVoiceTranscript("");
+    setVoiceConfidence(null);
+
+    if (assistantPreset) {
+      setDisplay(formatCalcNumber(assistantPreset.changeAmount));
+      setExpression(`${formatCalcNumber(assistantPreset.cashAmount)} - ${formatCalcNumber(assistantPreset.fareAmount)} = `);
+      setLastOp("=");
+      setTypedFirst(false);
+      setVoiceFeedback(assistantPreset.summary);
+      return;
+    }
+
     setDisplay(initialValue.toString());
     setExpression("");
     setLastOp("");
     setTypedFirst(false);
-    setIsVoiceListening(false);
-    setVoiceTranscript("");
     setVoiceFeedback(null);
-    setVoiceConfidence(null);
-  }, [initialValue, isOpen]);
+  }, [assistantPreset, initialValue, isOpen]);
 
   useEffect(() => {
     return () => {
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
+      cancelVoiceReply();
     };
   }, []);
 
   if (!isOpen) return null;
 
-  /* ---------------- SAFE CALCULATION (NO EVAL) ---------------- */
+  const handleClose = () => {
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+    cancelVoiceReply();
+    setIsVoiceListening(false);
+    onClose();
+  };
 
   const parseBinaryExpression = (expr: string) => {
     const parts = expr.trim().split(/\s+/);
@@ -65,11 +100,13 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     const op = parts[1];
     const b = Number(parts[2]);
 
-    if (!Number.isFinite(a) || !Number.isFinite(b))
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
       throw new Error("Invalid number");
+    }
 
-    if (!["+", "-", "*", "/"].includes(op))
+    if (!["+", "-", "*", "/"].includes(op)) {
       throw new Error("Invalid operator");
+    }
 
     return { a, op, b };
   };
@@ -89,8 +126,6 @@ const ConductorCalcOverlay: React.FC<Props> = ({
         throw new Error("Invalid operator");
     }
   };
-
-  /* ---------------- INPUT HANDLERS ---------------- */
 
   const handleNumber = (num: string) => {
     if (display === "Error") {
@@ -231,6 +266,24 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setTypedFirst(true);
   };
 
+  const applyVoiceCashTender = (cashAmount: number, shouldSpeak = true) => {
+    const changeAmount = Number((cashAmount - baseFareDue).toFixed(2));
+    const summary =
+      changeAmount >= 0
+        ? `Passenger money is ${formatCalcNumber(cashAmount)}. Change is ${formatCalcNumber(changeAmount)} pesos.`
+        : `Passenger money is ${formatCalcNumber(cashAmount)}. Still lacking ${formatCalcNumber(Math.abs(changeAmount))} pesos.`;
+
+    setDisplay(formatCalcNumber(changeAmount));
+    setExpression(`${formatCalcNumber(cashAmount)} - ${formatCalcNumber(baseFareDue)} = `);
+    setLastOp("=");
+    setTypedFirst(false);
+    setVoiceFeedback(summary);
+
+    if (shouldSpeak) {
+      speakVoiceReply(summary);
+    }
+  };
+
   const startVoiceCalculator = () => {
     if (isVoiceListening) {
       voiceRecognitionRef.current?.stop();
@@ -239,12 +292,15 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
     const RecognitionCtor = getSpeechRecognitionCtor();
     if (!RecognitionCtor) {
-      setVoiceFeedback("Voice command is not available in this browser. Use Chrome on Android for the best result.");
+      const message = "Voice command is not available in this browser. Use Chrome on Android for the best result.";
+      setVoiceFeedback(message);
+      speakVoiceReply(message);
       return;
     }
 
+    cancelVoiceReply();
     setVoiceTranscript("");
-    setVoiceFeedback("Listening... say something like 12 plus 45.");
+    setVoiceFeedback("Listening... say something like 12 plus 45 or one thousand pesos.");
     setVoiceConfidence(null);
 
     const recognition = new RecognitionCtor();
@@ -255,25 +311,41 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     recognition.maxAlternatives = 1;
     recognition.onstart = () => setIsVoiceListening(true);
     recognition.onerror = event => {
-      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      const message = getSpeechRecognitionErrorMessage(event.error);
+      setVoiceFeedback(message);
       setIsVoiceListening(false);
+      speakVoiceReply(message);
     };
     recognition.onresult = event => {
       const recognitionResult = event.results[event.results.length - 1];
       const alternative = recognitionResult?.[0];
       const transcript = alternative?.transcript?.trim() ?? "";
       const confidence = typeof alternative?.confidence === "number" ? alternative.confidence : null;
-      const parsed = parseCalculatorVoiceTranscript(transcript);
+      const parsedExpression = parseCalculatorVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
 
-      if (parsed.status === "match") {
-        applyVoiceExpression(parsed.expression);
-        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Tap = when ready.`);
-      } else {
-        setVoiceFeedback(parsed.message);
+      if (parsedExpression.status === "match") {
+        applyVoiceExpression(parsedExpression.expression);
+        const summary = `Loaded ${parsedExpression.prettyExpression}. Tap equals when ready.`;
+        setVoiceFeedback(summary);
+        speakVoiceReply(summary);
+        return;
       }
+
+      const cashResult = parseCashVoiceTranscript(transcript);
+      if (cashResult.status === "match") {
+        applyVoiceCashTender(cashResult.amount);
+        return;
+      }
+
+      const fallbackMessage =
+        parsedExpression.status === "empty"
+          ? cashResult.message
+          : parsedExpression.message;
+      setVoiceFeedback(fallbackMessage);
+      speakVoiceReply(fallbackMessage);
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -283,12 +355,12 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     try {
       recognition.start();
     } catch {
-      setVoiceFeedback("Voice recognition could not start. Please try again.");
+      const message = "Voice recognition could not start. Please try again.";
+      setVoiceFeedback(message);
       setIsVoiceListening(false);
+      speakVoiceReply(message);
     }
   };
-
-  /* ---------------- STYLES ---------------- */
 
   const keyBase =
     "rounded-2xl select-none active:scale-[0.98] transition-transform";
@@ -299,17 +371,14 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const keyOp = "bg-primary text-white text-2xl font-black";
   const keyEq = "bg-[#0f172a] text-white text-2xl font-black";
 
-  /* ---------------- UI ---------------- */
-
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
-        {/* Header */}
         <div className="px-6 pt-6 pb-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
@@ -320,28 +389,14 @@ const ConductorCalcOverlay: React.FC<Props> = ({
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={startVoiceCalculator}
-              className={`flex h-8 min-w-[40px] items-center justify-center rounded-full px-2 active:scale-90 ${
-                isVoiceListening
-                  ? "bg-primary text-white"
-                  : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300"
-              }`}
-              title={canUseVoiceRecognition ? "Voice calculator" : "Voice not available in this browser"}
-            >
-              <span className="material-icons text-sm">{isVoiceListening ? "mic" : "mic_none"}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 active:scale-90"
-            >
-              <span className="material-icons text-sm">close</span>
-            </button>
-          </div>
+          <button
+            onClick={handleClose}
+            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 active:scale-90"
+          >
+            <span className="material-icons text-sm">close</span>
+          </button>
         </div>
 
-        {/* Display */}
         <div className="px-6 mb-3 shrink-0">
           <div className="bg-[#0f172a] dark:bg-black rounded-[2rem] p-6 text-right shadow-inner">
             <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest h-4 mb-1">
@@ -356,7 +411,6 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex flex-col flex-1 min-h-0">
           {(voiceFeedback || voiceTranscript) && (
             <div className="px-6 mb-3 shrink-0">
@@ -382,7 +436,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           {showQuickBills && (
             <div className="px-6 mb-3 shrink-0">
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
-                Quick Bills (₱)
+                Quick Bills (PHP)
               </p>
               <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
                 {quickBills.map((bill) => (
@@ -392,7 +446,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
                     className="flex-shrink-0 min-w-[60px] py-2 bg-white dark:bg-white/5 border border-slate-100 dark:border-white/10 rounded-2xl shadow-sm active:bg-slate-50 transition-all"
                   >
                     <span className="text-base font-900 text-primary">
-                      ₱{bill}
+                      P{bill}
                     </span>
                   </button>
                 ))}
@@ -400,7 +454,6 @@ const ConductorCalcOverlay: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Keypad */}
           <div className="px-6 pb-4 grid grid-cols-4 gap-2 flex-1 auto-rows-fr">
             <button onClick={handleClear} className={`${keyBase} ${keyFunc} py-3`}>
               AC
@@ -409,22 +462,22 @@ const ConductorCalcOverlay: React.FC<Props> = ({
               %
             </button>
             <button onClick={handleBackspace} className={`${keyBase} ${keyFunc} py-3`}>
-              ⌫
+              <span className="material-icons text-base">backspace</span>
             </button>
             <button onClick={() => handleOperator("/")} className={`${keyBase} ${keyOp} py-3`}>
-              ÷
+              /
             </button>
 
-            {[7,8,9].map(n => (
+            {[7, 8, 9].map((n) => (
               <button key={n} onClick={() => handleNumber(String(n))} className={`${keyBase} ${keyLight} py-3`}>
                 {n}
               </button>
             ))}
             <button onClick={() => handleOperator("*")} className={`${keyBase} ${keyOp} py-3`}>
-              ×
+              x
             </button>
 
-            {[4,5,6].map(n => (
+            {[4, 5, 6].map((n) => (
               <button key={n} onClick={() => handleNumber(String(n))} className={`${keyBase} ${keyLight} py-3`}>
                 {n}
               </button>
@@ -433,7 +486,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
               -
             </button>
 
-            {[1,2,3].map(n => (
+            {[1, 2, 3].map((n) => (
               <button key={n} onClick={() => handleNumber(String(n))} className={`${keyBase} ${keyLight} py-3`}>
                 {n}
               </button>
@@ -454,6 +507,14 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      <FloatingVoiceButton
+        active={isVoiceListening}
+        disabled={!canUseVoiceRecognition}
+        label="Voice calculator"
+        title={canUseVoiceRecognition ? "Voice calculator" : "Voice not available in this browser"}
+        onActivate={startVoiceCalculator}
+      />
     </div>
   );
 };

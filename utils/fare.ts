@@ -17,7 +17,7 @@ export const formatFareRate = (value: number) => {
 
 export const calculateFare = (
   distance: number,
-  fareRules: Pick<RouteFareRules, 'regularRate' | 'discountRate' | 'minimumRegularFare' | 'minimumDiscountFare' | 'roundingMode'>
+  fareRules: Pick<RouteFareRules, 'regularRate' | 'discountRate' | 'minimumRegularFare' | 'minimumDiscountFare' | 'minimumDistanceKm' | 'roundingMode'>
 ): FareCalculation => {
   if (distance <= 0) {
     return {
@@ -34,6 +34,23 @@ export const calculateFare = (
   const roundFare = fareRules.roundingMode === 'standard' ? roundToStandardPeso : roundToNearestPeso;
   const roundedReg = roundFare(rawReg);
   const roundedDisc = roundFare(rawDisc);
+  const insideMinimumWindow =
+    typeof fareRules.minimumDistanceKm === 'number' && distance <= fareRules.minimumDistanceKm;
+
+  if (
+    insideMinimumWindow &&
+    typeof fareRules.minimumRegularFare === 'number' &&
+    typeof fareRules.minimumDiscountFare === 'number'
+  ) {
+    return {
+      reg: fareRules.minimumRegularFare,
+      disc: fareRules.minimumDiscountFare,
+      rawReg,
+      rawDisc,
+      isMinApplied: true
+    };
+  }
+
   const reg =
     typeof fareRules.minimumRegularFare === 'number'
       ? Math.max(roundedReg, fareRules.minimumRegularFare)

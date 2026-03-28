@@ -1,4 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { BrowserSpeechRecognition } from '../utils/voice';
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseTallyVoiceTranscript
+} from '../utils/voice';
 
 interface Props {
   isOpen: boolean;
@@ -14,6 +21,12 @@ const BACKSPACE = '\u232B';
 interface ExpressionSnapshot {
   expression: string;
   caretPos: number;
+}
+
+interface ThresholdNotice {
+  type: 'block' | 'sheet';
+  count: number;
+  total: number;
 }
 
 const sanitizeExpression = (value: string) => value.replace(/[^\d+ ]/g, '').replace(/\s{2,}/g, ' ');
@@ -48,9 +61,17 @@ const TallyCalcOverlay: React.FC<Props> = ({
   onApplyEntries
 }) => {
   const expressionRef = useRef<HTMLInputElement>(null);
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const previousEntryCountRef = useRef(0);
   const [expression, setExpression] = useState('');
   const [caretPos, setCaretPos] = useState(0);
   const [history, setHistory] = useState<ExpressionSnapshot[]>([]);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [thresholdNotice, setThresholdNotice] = useState<ThresholdNotice | null>(null);
+  const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,6 +80,12 @@ const TallyCalcOverlay: React.FC<Props> = ({
     setExpression(initialExpression);
     setCaretPos(initialExpression.length);
     setHistory([]);
+    setIsVoiceListening(false);
+    setVoiceTranscript('');
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
+    setThresholdNotice(null);
+    previousEntryCountRef.current = initialExpression ? 1 : 0;
   }, [initialInput, isOpen]);
 
   useEffect(() => {
@@ -69,6 +96,13 @@ const TallyCalcOverlay: React.FC<Props> = ({
     expressionRef.current.setSelectionRange(nextPos, nextPos);
   }, [caretPos, expression, isOpen]);
 
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
+
   const entries = useMemo(() => parseEntries(expression), [expression]);
   const runningTotal = useMemo(() => entries.reduce((sum, value) => sum + value, 0), [entries]);
   const blockStart = useMemo(() => (entries.length === 0 ? 0 : Math.floor((entries.length - 1) / 25) * 25), [entries.length]);
@@ -78,6 +112,29 @@ const TallyCalcOverlay: React.FC<Props> = ({
   const blockTotal = useMemo(() => blockEntries.reduce((sum, value) => sum + value, 0), [blockEntries]);
   const sheetTotal = useMemo(() => sheetEntries.reduce((sum, value) => sum + value, 0), [sheetEntries]);
   const currentToken = useMemo(() => getTokenAtCaret(expression, caretPos) || '0', [caretPos, expression]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousCount = previousEntryCountRef.current;
+    if (entries.length > previousCount) {
+      if (entries.length % 100 === 0) {
+        setThresholdNotice({
+          type: 'sheet',
+          count: entries.length,
+          total: sheetTotal
+        });
+      } else if (entries.length % 25 === 0) {
+        setThresholdNotice({
+          type: 'block',
+          count: entries.length,
+          total: blockTotal
+        });
+      }
+    }
+
+    previousEntryCountRef.current = entries.length;
+  }, [blockTotal, entries.length, isOpen, sheetTotal]);
 
   if (!isOpen) return null;
 
@@ -175,6 +232,64 @@ const TallyCalcOverlay: React.FC<Props> = ({
     onClose();
   };
 
+  const startVoiceTally = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      return;
+    }
+
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback('Listening... say something like "657 plus 20 plus 20" or "657 plus n plus n".');
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-PH';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onerror = event => {
+      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      setIsVoiceListening(false);
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? '';
+      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const parsed = parseTallyVoiceTranscript(transcript);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+
+      if (parsed.status === 'match') {
+        saveHistory();
+        applyExpression(parsed.expression, parsed.expression.length);
+        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Review it, then tap Add To Tally Sheet when ready.`);
+      } else {
+        setVoiceFeedback(parsed.message);
+      }
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceFeedback('Voice recognition could not start. Please try again.');
+      setIsVoiceListening(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
@@ -194,16 +309,48 @@ const TallyCalcOverlay: React.FC<Props> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-          >
-            <span className="material-icons text-base">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={startVoiceTally}
+              className={`flex h-9 min-w-[44px] items-center justify-center rounded-full px-3 text-[10px] font-black uppercase tracking-widest active:scale-90 ${
+                isVoiceListening
+                  ? 'bg-primary text-white'
+                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
+              }`}
+              title={canUseVoiceRecognition ? 'Voice tally calculator' : 'Voice not available in this browser'}
+            >
+              <span className="material-icons text-base">{isVoiceListening ? 'mic' : 'mic_none'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+            >
+              <span className="material-icons text-base">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
           <div className="space-y-2">
+            {(voiceFeedback || voiceTranscript) && (
+              <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/20">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Tally</p>
+                    <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {formatVoiceConfidence(voiceConfidence)}
+                  </p>
+                </div>
+                {voiceTranscript && (
+                  <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                    Heard: "{voiceTranscript}"
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="rounded-[1.75rem] bg-[#0f172a] p-3.5 shadow-inner dark:bg-black sm:rounded-[2rem] sm:p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current Number</p>
 
@@ -334,6 +481,29 @@ const TallyCalcOverlay: React.FC<Props> = ({
           </div>
         )}
       </div>
+
+      {thresholdNotice && (
+        <div className="absolute inset-0 z-[150] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setThresholdNotice(null)} />
+          <div className="relative w-full max-w-sm rounded-[2rem] bg-white p-6 text-center shadow-2xl dark:bg-night-charcoal">
+            <h3 className="text-lg font-900 uppercase tracking-tight text-slate-900 dark:text-white">
+              {thresholdNotice.type === 'sheet' ? '100 Entries Reached' : '25 Entries Reached'}
+            </h3>
+            <p className="mt-3 text-[11px] font-black uppercase tracking-widest text-slate-500">
+              {thresholdNotice.type === 'sheet'
+                ? `You now have ${thresholdNotice.count} numbers in this sheet group.`
+                : `You now have ${thresholdNotice.count} numbers in this block group.`}
+            </p>
+            <p className="mt-4 text-3xl font-900 text-primary">{peso}{thresholdNotice.total}</p>
+            <button
+              onClick={() => setThresholdNotice(null)}
+              className="mt-5 w-full rounded-[1.25rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

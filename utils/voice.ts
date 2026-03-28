@@ -91,6 +91,49 @@ export type CalculatorVoiceParseResult =
       prettyExpression: string;
     };
 
+export type TallyVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      expression: string;
+      prettyExpression: string;
+      entries: number[];
+    };
+
+export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
+
+export type CashVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      amount: number;
+      spokenAmount: string;
+    };
+
 const DIGIT_WORDS: Record<string, string> = {
   zero: '0',
   oh: '0',
@@ -174,6 +217,57 @@ const normalizeCalculatorText = (value: string) =>
       .replace(/point/g, ' point ')
       .replace(/dot/g, ' point ')
       .replace(/[^a-z0-9+*/.\-\s]/g, ' ')
+  );
+
+const normalizeCashText = (value: string) =>
+  cleanWhitespace(
+    value
+      .toLowerCase()
+      .replace(/\ba hundred\b/g, 'one hundred')
+      .replace(/\ban hundred\b/g, 'one hundred')
+      .replace(/\bhow much\b/g, ' ')
+      .replace(/\btheir money is\b/g, ' ')
+      .replace(/\bthe money is\b/g, ' ')
+      .replace(/\btheir cash is\b/g, ' ')
+      .replace(/\bthe cash is\b/g, ' ')
+      .replace(/\bthe passenger gave\b/g, ' ')
+      .replace(/\bpassenger gave\b/g, ' ')
+      .replace(/\bthey gave\b/g, ' ')
+      .replace(/\bhe gave\b/g, ' ')
+      .replace(/\bshe gave\b/g, ' ')
+      .replace(/\bgave\b/g, ' ')
+      .replace(/\bpaid with\b/g, ' ')
+      .replace(/\bpaid\b/g, ' ')
+      .replace(/\bcash\b/g, ' ')
+      .replace(/\bmoney\b/g, ' ')
+      .replace(/\bamount\b/g, ' ')
+      .replace(/\bphp\b/g, ' ')
+      .replace(/\bpesos?\b/g, ' ')
+      .replace(/\bpeso\b/g, ' ')
+      .replace(/\bplease\b/g, ' ')
+      .replace(/\bjust\b/g, ' ')
+      .replace(/\bwith\b/g, ' ')
+      .replace(/\bpaying\b/g, ' ')
+      .replace(/\bbayad\b/g, ' ')
+      .replace(/\bpera\b/g, ' ')
+      .replace(/point/g, ' point ')
+      .replace(/dot/g, ' point ')
+      .replace(/[^a-z0-9.\s]/g, ' ')
+  );
+
+const normalizeTallyVoiceText = (value: string) =>
+  cleanWhitespace(
+    value
+      .toLowerCase()
+      .replace(/and then/g, ' + ')
+      .replace(/\band\b/g, ' + ')
+      .replace(/plus/g, ' + ')
+      .replace(/add/g, ' + ')
+      .replace(/same again/g, ' repeat ')
+      .replace(/again/g, ' repeat ')
+      .replace(/repeat/g, ' repeat ')
+      .replace(/\bn\b/g, ' repeat ')
+      .replace(/[^a-z0-9+.\s]/g, ' ')
   );
 
 const isBoundary = (value: string | undefined) => !value || value === ' ';
@@ -428,6 +522,60 @@ export const getSpeechRecognitionErrorMessage = (errorCode?: string) => {
   }
 };
 
+export const canUseSpeechSynthesis = () =>
+  typeof window !== 'undefined' && typeof window.speechSynthesis !== 'undefined';
+
+export const cancelVoiceReply = () => {
+  if (!canUseSpeechSynthesis()) return;
+  window.speechSynthesis.cancel();
+};
+
+export const speakVoiceReply = (
+  message: string,
+  options?: {
+    lang?: string;
+    rate?: number;
+    pitch?: number;
+    volume?: number;
+    onEnd?: () => void;
+    onError?: () => void;
+  }
+) => {
+  if (!message.trim() || !canUseSpeechSynthesis()) {
+    return false;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.lang = options?.lang ?? 'en-PH';
+    utterance.rate = options?.rate ?? 0.98;
+    utterance.pitch = options?.pitch ?? 1;
+    utterance.volume = options?.volume ?? 1;
+    utterance.onend = () => options?.onEnd?.();
+    utterance.onerror = () => options?.onError?.();
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const parseFareTypeVoiceAnswer = (transcript: string): FareTypeVoiceAnswer | null => {
+  const normalized = normalizeStopText(transcript);
+  if (!normalized) return null;
+
+  if (/\b(discount|discounted|student|senior|pwd|sc)\b/.test(normalized)) {
+    return 'discounted';
+  }
+
+  if (/\bregular\b/.test(normalized)) {
+    return 'regular';
+  }
+
+  return null;
+};
+
 export const parseFareVoiceTranscript = (
   transcript: string,
   route: RouteProfile
@@ -578,6 +726,151 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
     transcript,
     normalized,
     expression,
-    prettyExpression
+    prettyExpression: expression
+      .replace(/\*/g, ' x ')
+      .replace(/\//g, ' / ')
+      .replace(/\+/g, ' + ')
+      .replace(/-/g, ' - ')
+  };
+};
+
+export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResult => {
+  const normalized = normalizeCashText(transcript);
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Please say the passenger money clearly, like "one thousand pesos".'
+    };
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const spokenAmount = parseNumberPhrase(tokens);
+
+  if (!spokenAmount) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'I heard the response, but I could not safely read the passenger money amount.'
+    };
+  }
+
+  const amount = Number(spokenAmount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'The passenger money needs to be greater than zero.'
+    };
+  }
+
+  return {
+    status: 'match',
+    transcript,
+    normalized,
+    amount,
+    spokenAmount
+  };
+};
+
+export const parseTallyVoiceTranscript = (transcript: string): TallyVoiceParseResult => {
+  const normalized = normalizeTallyVoiceText(transcript);
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Try saying something like "657 plus 20 plus 20" or "657 plus repeat plus repeat".'
+    };
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const entries: number[] = [];
+  let currentNumberTokens: string[] = [];
+  let expectValue = true;
+
+  const flushNumber = () => {
+    if (currentNumberTokens.length === 0) return true;
+
+    const parsedNumber = parseNumberPhrase(currentNumberTokens);
+    if (!parsedNumber) return false;
+
+    entries.push(Number(parsedNumber));
+    currentNumberTokens = [];
+    return true;
+  };
+
+  for (const token of tokens) {
+    if (token === '+') {
+      if (!flushNumber() || expectValue) {
+        return {
+          status: 'invalid',
+          transcript,
+          normalized,
+          message: 'I heard a plus sign before a number. Please say the full tally again.'
+        };
+      }
+
+      expectValue = true;
+      continue;
+    }
+
+    if (token === 'repeat') {
+      if (!flushNumber()) {
+        return {
+          status: 'invalid',
+          transcript,
+          normalized,
+          message: 'I could not safely read the number before the repeat command.'
+        };
+      }
+
+      const lastEntry = entries[entries.length - 1];
+      if (typeof lastEntry !== 'number') {
+        return {
+          status: 'invalid',
+          transcript,
+          normalized,
+          message: 'Repeat only works after the first spoken number. Start with a fare amount first.'
+        };
+      }
+
+      entries.push(lastEntry);
+      expectValue = false;
+      continue;
+    }
+
+    currentNumberTokens.push(token);
+    expectValue = false;
+  }
+
+  if (!flushNumber()) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'I could not turn that spoken tally into numbers.'
+    };
+  }
+
+  if (entries.length === 0) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'I did not hear any tally amounts. Try again with clear numbers.'
+    };
+  }
+
+  const expression = entries.join(' + ');
+
+  return {
+    status: 'match',
+    transcript,
+    normalized,
+    expression,
+    prettyExpression: expression,
+    entries
   };
 };

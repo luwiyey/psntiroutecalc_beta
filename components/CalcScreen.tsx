@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import StopPickerOverlay from './StopPickerOverlay';
 import ManualKMOverlay from './ManualKMOverlay';
-import ConductorCalcOverlay from './ConductorCalcOverlay';
+import ConductorCalcOverlay, { type VoiceChangePreset } from './ConductorCalcOverlay';
+import FloatingVoiceButton from './FloatingVoiceButton';
 import LocationAssistOverlay from './LocationAssistOverlay';
 import { calculateFare, formatFareRate } from '../utils/fare';
 import { useAuth } from '../context/AuthContext';
@@ -22,17 +23,27 @@ import {
   queryLocationPermissionState,
   requestBestCurrentLocation
 } from '../utils/location';
-import type { BrowserSpeechRecognition, FareVoiceParseResult } from '../utils/voice';
+import type {
+  BrowserSpeechRecognition,
+  FareTypeVoiceAnswer,
+  FareVoiceParseResult
+} from '../utils/voice';
 import {
+  cancelVoiceReply,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
-  parseFareVoiceTranscript
+  parseCashVoiceTranscript,
+  parseFareTypeVoiceAnswer,
+  parseFareVoiceTranscript,
+  speakVoiceReply
 } from '../utils/voice';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 const peso = '\u20B1';
 const RECENT_FARE_LIMIT = 4;
+type VoiceAssistantStep = 'fare' | 'fare-type' | 'cash';
+type MatchedFareVoiceResult = Extract<FareVoiceParseResult, { status: 'match' }>;
 
 const CalcScreen: React.FC = () => {
   const {
@@ -65,7 +76,13 @@ const CalcScreen: React.FC = () => {
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceResult, setVoiceResult] = useState<FareVoiceParseResult | null>(null);
+  const [voiceStep, setVoiceStep] = useState<VoiceAssistantStep>('fare');
+  const [pendingVoiceFare, setPendingVoiceFare] = useState<MatchedFareVoiceResult | null>(null);
+  const [voiceCashAmount, setVoiceCashAmount] = useState<number | null>(null);
+  const [voiceChangePreset, setVoiceChangePreset] = useState<VoiceChangePreset | null>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const queuedVoicePromptRef = useRef<{ message: string; nextStep: VoiceAssistantStep | null } | null>(null);
+  const queuedVoiceTimeoutRef = useRef<number | null>(null);
   const inAppBrowser = useMemo(() => isLikelyInAppBrowser(), []);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
@@ -108,13 +125,29 @@ const CalcScreen: React.FC = () => {
     setVoiceConfidence(null);
     setVoiceFeedback(null);
     setVoiceResult(null);
+    setVoiceStep('fare');
+    setPendingVoiceFare(null);
+    setVoiceCashAmount(null);
+    setVoiceChangePreset(null);
     setIsVoiceListening(false);
+    cancelVoiceReply();
+    if (queuedVoiceTimeoutRef.current) {
+      window.clearTimeout(queuedVoiceTimeoutRef.current);
+      queuedVoiceTimeoutRef.current = null;
+    }
+    queuedVoicePromptRef.current = null;
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
   }, [activeRoute.id]);
 
   useEffect(() => {
     return () => {
+      cancelVoiceReply();
+      if (queuedVoiceTimeoutRef.current) {
+        window.clearTimeout(queuedVoiceTimeoutRef.current);
+        queuedVoiceTimeoutRef.current = null;
+      }
+      queuedVoicePromptRef.current = null;
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
     };
@@ -255,31 +288,201 @@ const CalcScreen: React.FC = () => {
     showToast(`Loaded ${nextOrigin} to ${nextDestination}`);
   };
 
+  const clearQueuedVoicePrompt = () => {
+    queuedVoicePromptRef.current = null;
+    if (queuedVoiceTimeoutRef.current) {
+      window.clearTimeout(queuedVoiceTimeoutRef.current);
+      queuedVoiceTimeoutRef.current = null;
+    }
+  };
+
+  const queueVoicePrompt = (message: string, nextStep: VoiceAssistantStep | null) => {
+    clearQueuedVoicePrompt();
+    queuedVoicePromptRef.current = { message, nextStep };
+  };
+
+  const applyVoiceRouteSelection = (matchedFare: MatchedFareVoiceResult) => {
+    setOrigin(matchedFare.originStop.name);
+    setDestination(matchedFare.destinationStop.name);
+  };
+
+  const getResolvedFareAmount = (matchedFare: MatchedFareVoiceResult) =>
+    matchedFare.fareType === 'discounted' ? matchedFare.discountedFare : matchedFare.regularFare;
+
+  const getResolvedFareLabel = (matchedFare: MatchedFareVoiceResult) =>
+    matchedFare.fareType === 'discounted' ? 'Discounted' : 'Regular';
+
+  const resolveVoiceFareType = (
+    matchedFare: MatchedFareVoiceResult,
+    nextFareType: FareTypeVoiceAnswer
+  ): MatchedFareVoiceResult => ({
+    ...matchedFare,
+    fareType: nextFareType
+  });
+
+  const speakPromptAndListen = (message: string, nextStep: VoiceAssistantStep) => {
+    setVoiceFeedback(message);
+    setVoiceStep(nextStep);
+    clearQueuedVoicePrompt();
+
+    const beginListening = () => {
+      queuedVoiceTimeoutRef.current = null;
+      startFareVoiceRecognition(nextStep);
+    };
+
+    cancelVoiceReply();
+    const started = speakVoiceReply(message, {
+      onEnd: beginListening,
+      onError: beginListening
+    });
+
+    if (!started) {
+      queuedVoiceTimeoutRef.current = window.setTimeout(beginListening, 250);
+    }
+  };
+
+  const flushQueuedVoicePrompt = () => {
+    const queuedPrompt = queuedVoicePromptRef.current;
+    clearQueuedVoicePrompt();
+    if (!queuedPrompt) return;
+
+    if (!queuedPrompt.nextStep) {
+      setVoiceFeedback(queuedPrompt.message);
+      cancelVoiceReply();
+      void speakVoiceReply(queuedPrompt.message);
+      return;
+    }
+
+    speakPromptAndListen(queuedPrompt.message, queuedPrompt.nextStep);
+  };
+
+  const beginCashFollowUp = (
+    matchedFare: MatchedFareVoiceResult,
+    mode: 'queued' | 'immediate' = 'queued'
+  ) => {
+    applyVoiceRouteSelection(matchedFare);
+    setVoiceResult(matchedFare);
+    setPendingVoiceFare(matchedFare);
+    setVoiceCashAmount(null);
+    setVoiceChangePreset(null);
+    setVoiceStep('cash');
+
+    const fareAmount = getResolvedFareAmount(matchedFare);
+    const nextMessage = `${getResolvedFareLabel(matchedFare)} fare from ${matchedFare.originStop.name} to ${matchedFare.destinationStop.name} is ${fareAmount} pesos. How much is their money?`;
+
+    if (mode === 'queued') {
+      setVoiceFeedback(nextMessage);
+      queueVoicePrompt(nextMessage, 'cash');
+      return;
+    }
+
+    speakPromptAndListen(nextMessage, 'cash');
+  };
+
+  const finishVoiceChangeFlow = (matchedFare: MatchedFareVoiceResult, cashAmount: number) => {
+    applyVoiceRouteSelection(matchedFare);
+    setVoiceResult(matchedFare);
+    setPendingVoiceFare(matchedFare);
+    setVoiceCashAmount(cashAmount);
+
+    const fareAmount = getResolvedFareAmount(matchedFare);
+    const changeAmount = Number((cashAmount - fareAmount).toFixed(2));
+    const summary =
+      changeAmount >= 0
+        ? `${getResolvedFareLabel(matchedFare)} fare is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Change is ${changeAmount} pesos.`
+        : `${getResolvedFareLabel(matchedFare)} fare is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Still lacking ${Math.abs(changeAmount)} pesos.`;
+
+    setVoiceFeedback(summary);
+    setVoiceChangePreset({
+      fareAmount,
+      cashAmount,
+      changeAmount,
+      summary
+    });
+    setIsConductorCalcOpen(true);
+    queueVoicePrompt(summary, null);
+    showToast('Voice change result ready.', 'success');
+  };
+
+  const handleMatchedFare = (matchedFare: MatchedFareVoiceResult, mode: 'queued' | 'immediate' = 'queued') => {
+    if (matchedFare.fareType === 'either') {
+      applyVoiceRouteSelection(matchedFare);
+      setVoiceResult(matchedFare);
+      setPendingVoiceFare(matchedFare);
+      setVoiceCashAmount(null);
+      setVoiceChangePreset(null);
+      setVoiceStep('fare-type');
+      const nextMessage = `I heard ${matchedFare.originStop.name} to ${matchedFare.destinationStop.name}. Do you want regular or discounted fare?`;
+
+      if (mode === 'queued') {
+        setVoiceFeedback(nextMessage);
+        queueVoicePrompt(nextMessage, 'fare-type');
+      } else {
+        speakPromptAndListen(nextMessage, 'fare-type');
+      }
+
+      showToast('Voice route heard. Clarify regular or discounted.', 'info');
+      return;
+    }
+
+    beginCashFollowUp(matchedFare, mode);
+    showToast('Voice fare heard. Asking for passenger money.', 'success');
+  };
+
   const applyVoiceFare = () => {
     if (!voiceResult || voiceResult.status !== 'match') return;
 
-    setOrigin(voiceResult.originStop.name);
-    setDestination(voiceResult.destinationStop.name);
-    showToast(`Voice set ${voiceResult.originStop.name} to ${voiceResult.destinationStop.name}`);
+    if (voiceResult.fareType === 'either') {
+      handleMatchedFare(voiceResult, 'immediate');
+      return;
+    }
+
+    beginCashFollowUp(voiceResult, 'immediate');
   };
 
-  const startFareVoiceRecognition = () => {
+  const applyVoiceFareTypeChoice = (nextFareType: FareTypeVoiceAnswer) => {
+    const baseFare =
+      pendingVoiceFare ??
+      (voiceResult?.status === 'match' ? voiceResult : null);
+
+    if (!baseFare) {
+      const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
+      setVoiceFeedback(nextMessage);
+      speakPromptAndListen(nextMessage, 'fare');
+      return;
+    }
+
+    beginCashFollowUp(resolveVoiceFareType(baseFare, nextFareType), 'immediate');
+  };
+
+  const startFareVoiceRecognition = (requestedStep: VoiceAssistantStep = 'fare') => {
     if (isVoiceListening) {
+      clearQueuedVoicePrompt();
+      cancelVoiceReply();
       voiceRecognitionRef.current?.stop();
       return;
     }
 
     const RecognitionCtor = getSpeechRecognitionCtor();
     if (!RecognitionCtor) {
-      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      const nextMessage = 'Voice command is not available in this browser. Use Chrome on Android for the best result.';
+      setVoiceFeedback(nextMessage);
       showToast('Voice command needs Chrome on Android or a supported browser.', 'info');
+      void speakVoiceReply(nextMessage);
       return;
     }
 
+    clearQueuedVoicePrompt();
+    cancelVoiceReply();
+    setVoiceStep(requestedStep);
     setVoiceTranscript('');
     setVoiceConfidence(null);
-    setVoiceFeedback(null);
-    setVoiceResult(null);
+    if (requestedStep === 'fare') {
+      setVoiceResult(null);
+      setPendingVoiceFare(null);
+      setVoiceCashAmount(null);
+      setVoiceChangePreset(null);
+    }
 
     const recognition = new RecognitionCtor();
     voiceRecognitionRef.current = recognition;
@@ -289,36 +492,107 @@ const CalcScreen: React.FC = () => {
     recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       setIsVoiceListening(true);
-      setVoiceFeedback('Listening... say a fare like "Bayambang to Baguio discounted".');
+      setVoiceFeedback(
+        requestedStep === 'fare'
+          ? 'Listening... say a fare like "Bayambang to Baguio discounted".'
+          : requestedStep === 'fare-type'
+            ? 'Listening... say regular or discounted.'
+            : 'Listening... say the passenger money, like "one thousand pesos".'
+      );
     };
     recognition.onerror = event => {
       const nextMessage = getSpeechRecognitionErrorMessage(event.error);
       setVoiceFeedback(nextMessage);
       setIsVoiceListening(false);
       showToast(nextMessage, 'info');
+      void speakVoiceReply(nextMessage);
     };
     recognition.onresult = event => {
       const recognitionResult = event.results[event.results.length - 1];
       const alternative = recognitionResult?.[0];
       const transcript = alternative?.transcript?.trim() ?? '';
       const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
-      const parsed = parseFareVoiceTranscript(transcript, activeRoute);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
-      setVoiceResult(parsed);
-      setVoiceFeedback(
-        parsed.status === 'match'
-          ? 'Review the heard route below, then tap Use Voice Fare.'
-          : parsed.message
-      );
-      if (parsed.status === 'match') {
-        showToast('Voice fare ready. Review it before using.', 'success');
+
+      if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(transcript)) {
+        setVoiceStep('fare');
+        setVoiceResult(null);
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        setVoiceChangePreset(null);
+        setVoiceFeedback('Voice assistant cancelled.');
+        queueVoicePrompt('Voice assistant cancelled.', null);
+        return;
       }
+
+      if (requestedStep === 'fare') {
+        const parsed = parseFareVoiceTranscript(transcript, activeRoute);
+        setVoiceResult(parsed);
+
+        if (parsed.status === 'match') {
+          handleMatchedFare(parsed, 'queued');
+          return;
+        }
+
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        setVoiceFeedback(parsed.message);
+        queueVoicePrompt(parsed.message, 'fare');
+        return;
+      }
+
+      if (requestedStep === 'fare-type') {
+        const parsedFareType = parseFareTypeVoiceAnswer(transcript);
+        const baseFare =
+          pendingVoiceFare ??
+          (voiceResult?.status === 'match' ? voiceResult : null);
+
+        if (!parsedFareType) {
+          const nextMessage = 'Please say regular or discounted fare.';
+          setVoiceFeedback(nextMessage);
+          queueVoicePrompt(nextMessage, 'fare-type');
+          return;
+        }
+
+        if (!baseFare) {
+          const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
+          setVoiceFeedback(nextMessage);
+          queueVoicePrompt(nextMessage, 'fare');
+          return;
+        }
+
+        beginCashFollowUp(resolveVoiceFareType(baseFare, parsedFareType), 'queued');
+        return;
+      }
+
+      const fareContext =
+        pendingVoiceFare ??
+        (voiceResult?.status === 'match' && voiceResult.fareType !== 'either'
+          ? voiceResult
+          : null);
+
+      if (!fareContext) {
+        const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
+        setVoiceFeedback(nextMessage);
+        queueVoicePrompt(nextMessage, 'fare');
+        return;
+      }
+
+      const cashResult = parseCashVoiceTranscript(transcript);
+      if (cashResult.status === 'match') {
+        finishVoiceChangeFlow(fareContext, cashResult.amount);
+        return;
+      }
+
+      setVoiceFeedback(cashResult.message);
+      queueVoicePrompt(cashResult.message, 'cash');
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
       voiceRecognitionRef.current = null;
+      flushQueuedVoicePrompt();
     };
 
     try {
@@ -505,7 +779,10 @@ const CalcScreen: React.FC = () => {
           </div>
         </div>
         <button
-          onClick={() => setIsConductorCalcOpen(true)}
+          onClick={() => {
+            setVoiceChangePreset(null);
+            setIsConductorCalcOpen(true);
+          }}
           className="bg-white text-primary px-4 py-2 rounded-xl flex items-center gap-2 shadow-md active:scale-95 transition-all"
         >
           <span className="text-lg font-black leading-none">{peso}</span>
@@ -522,19 +799,6 @@ const CalcScreen: React.FC = () => {
             <span className="material-icons text-sm text-primary">my_location</span>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
               Use Current Location
-            </span>
-          </button>
-          <button
-            onClick={startFareVoiceRecognition}
-            className={`px-5 py-2 rounded-full border shadow-sm active:scale-95 transition-all flex items-center gap-2 ${
-              isVoiceListening
-                ? 'border-primary bg-primary text-white'
-                : 'border-primary/10 bg-white text-primary dark:bg-night-charcoal'
-            }`}
-          >
-            <span className="material-icons text-sm">{isVoiceListening ? 'mic' : 'mic_none'}</span>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">
-              {isVoiceListening ? 'Listening' : 'Voice Fare'}
             </span>
           </button>
         </div>
@@ -564,9 +828,16 @@ const CalcScreen: React.FC = () => {
           <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Voice Fare</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Voice Assistant</p>
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   {voiceFeedback ?? 'Voice command ready.'}
+                </p>
+                <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {voiceStep === 'fare'
+                    ? 'Step: Route and fare'
+                    : voiceStep === 'fare-type'
+                      ? 'Step: Regular or discounted'
+                      : 'Step: Passenger money'}
                 </p>
               </div>
               <div className="text-right">
@@ -592,35 +863,60 @@ const CalcScreen: React.FC = () => {
                       {voiceResult.originStop.name} to {voiceResult.destinationStop.name}
                     </p>
                     <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      {voiceResult.distance.toFixed(1).replace(/\.0$/, '')} km • {voiceResult.fareType}
+                      {voiceResult.distance.toFixed(1).replace(/\.0$/, '')} km / {voiceResult.fareType}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Answer</p>
                     <p className="mt-1 text-xl font-900 text-primary">
-                      {peso}{voiceResult.fareType === 'discounted' ? voiceResult.discountedFare : voiceResult.regularFare}
+                      {voiceResult.fareType === 'either'
+                        ? `${peso}${voiceResult.regularFare} / ${peso}${voiceResult.discountedFare}`
+                        : `${peso}${voiceResult.fareType === 'discounted' ? voiceResult.discountedFare : voiceResult.regularFare}`}
                     </p>
                   </div>
                 </div>
-                {voiceResult.fareType === 'either' && (
+                {voiceCashAmount !== null && (
                   <div className="rounded-[1.5rem] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:bg-black/30 dark:text-slate-300">
-                    Regular {peso}{voiceResult.regularFare} • Discounted {peso}{voiceResult.discountedFare}
+                    Passenger Money: {peso}{voiceCashAmount}
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={applyVoiceFare}
-                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
-                  >
-                    Use Voice Fare
-                  </button>
-                  <button
-                    onClick={startFareVoiceRecognition}
-                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                  >
-                    Speak Again
-                  </button>
-                </div>
+                {voiceResult.fareType === 'either' ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => applyVoiceFareTypeChoice('regular')}
+                      className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                    >
+                      Regular
+                    </button>
+                    <button
+                      onClick={() => applyVoiceFareTypeChoice('discounted')}
+                      className="rounded-[1.5rem] bg-[#0f172a] py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                    >
+                      Discounted
+                    </button>
+                    <button
+                      onClick={() => startFareVoiceRecognition('fare-type')}
+                      className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                    >
+                      Ask Again
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={applyVoiceFare}
+                      className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                    >
+                      Ask For Money
+                    </button>
+                    <button
+                      onClick={() => startFareVoiceRecognition('fare')}
+                      className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                    >
+                      Speak Again
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -841,6 +1137,18 @@ const CalcScreen: React.FC = () => {
         </button>
       </div>
 
+      <FloatingVoiceButton
+        active={isVoiceListening}
+        disabled={!canUseVoiceRecognition}
+        label="Voice Assistant"
+        title={
+          canUseVoiceRecognition
+            ? 'Voice assistant'
+            : 'Voice command is not available in this browser'
+        }
+        onActivate={() => startFareVoiceRecognition(voiceStep)}
+      />
+
       <StopPickerOverlay isOpen={isOriginPickerOpen} onClose={() => setIsOriginPickerOpen(false)} onSelect={(name) => { setOrigin(name); setIsOriginPickerOpen(false); }} title="Pickup" />
       <StopPickerOverlay isOpen={isDestPickerOpen} onClose={() => setIsDestPickerOpen(false)} onSelect={(name) => { setDestination(name); setIsDestPickerOpen(false); }} title="Destination" />
       <ManualKMOverlay
@@ -852,7 +1160,15 @@ const CalcScreen: React.FC = () => {
         initialPickupKm={manualPrefill?.pickupKm ?? null}
         initialDestKm={manualPrefill?.destKm ?? null}
       />
-      <ConductorCalcOverlay isOpen={isConductorCalcOpen} onClose={() => setIsConductorCalcOpen(false)} initialValue={calculation.reg} />
+      <ConductorCalcOverlay
+        isOpen={isConductorCalcOpen}
+        onClose={() => {
+          setIsConductorCalcOpen(false);
+          setVoiceChangePreset(null);
+        }}
+        initialValue={calculation.reg}
+        assistantPreset={voiceChangePreset}
+      />
       <LocationAssistOverlay
         isOpen={isLocationAssistOpen}
         isLoading={isLocating}
