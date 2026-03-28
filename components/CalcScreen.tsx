@@ -18,6 +18,7 @@ import {
   findNearestMappedSegment,
   findNearestMappedStop,
   getLocationErrorMessage,
+  getLocationReliabilityMessage,
   hasRouteCoordinates,
   isLikelyInAppBrowser,
   openCurrentPageInChrome,
@@ -66,6 +67,7 @@ const CalcScreen: React.FC = () => {
   const [isLocationAssistOpen, setIsLocationAssistOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationWarning, setLocationWarning] = useState<string | null>(null);
   const [locationPermission, setLocationPermission] = useState<LocationPermissionState>('unknown');
   const [currentLocation, setCurrentLocation] = useState<CurrentLocationSnapshot | null>(null);
   const [nearestStopMatch, setNearestStopMatch] = useState<StopMatch | null>(null);
@@ -100,7 +102,6 @@ const CalcScreen: React.FC = () => {
       ? `Northbound (Toward ${routeEnd.name})`
       : `Southbound (Toward ${routeStart.name})`;
   }, [destStop.km, originStop.km, routeEnd.name, routeStart.name]);
-
   const calculation = useMemo(
     () => calculateFare(distance, activeRoute.fare),
     [activeRoute.fare, distance]
@@ -608,6 +609,7 @@ const CalcScreen: React.FC = () => {
     setIsLocationAssistOpen(true);
     setIsLocating(true);
     setLocationError(null);
+    setLocationWarning(null);
     setLocationPermission(await queryLocationPermissionState());
     void trackAnalyticsEvent({
       eventType: 'gps_requested',
@@ -630,6 +632,7 @@ const CalcScreen: React.FC = () => {
       setNearestStopMatch(null);
       setNearestSegmentMatch(null);
       setLocationError('This device or browser does not support GPS location.');
+      setLocationWarning(null);
       void trackAnalyticsEvent({
         eventType: 'gps_failed',
         employeeId: authState.employeeId,
@@ -654,6 +657,7 @@ const CalcScreen: React.FC = () => {
         setNearestStopMatch(null);
         setNearestSegmentMatch(null);
         setLocationError(getLocationErrorMessage(new Error('Permission denied'), permissionState, inAppBrowser));
+        setLocationWarning(null);
         void trackAnalyticsEvent({
           eventType: 'gps_failed',
           employeeId: authState.employeeId,
@@ -674,9 +678,12 @@ const CalcScreen: React.FC = () => {
       const nextLocation: CurrentLocationSnapshot = await requestBestCurrentLocation();
       const nextNearestStop = findNearestMappedStop(activeRoute.stops, nextLocation);
       const nextSegmentMatch = findNearestMappedSegment(activeRoute.stops, nextLocation);
+      const nextLocationWarning = getLocationReliabilityMessage(nextLocation);
       setCurrentLocation(nextLocation);
       setNearestStopMatch(nextNearestStop);
       setNearestSegmentMatch(nextSegmentMatch);
+      setLocationError(null);
+      setLocationWarning(nextLocationWarning);
       void trackAnalyticsEvent({
         eventType: 'gps_succeeded',
         employeeId: authState.employeeId,
@@ -687,6 +694,7 @@ const CalcScreen: React.FC = () => {
         appSurface: 'fare',
         metadata: {
           accuracy: nextLocation.accuracy,
+          reliabilityWarning: nextLocationWarning,
           nearestStop: nextNearestStop?.stop.name ?? null,
           nearestStopKm: nextNearestStop?.stop.km ?? null,
           segmentStart: nextSegmentMatch?.startStop.name ?? null,
@@ -700,6 +708,7 @@ const CalcScreen: React.FC = () => {
       setCurrentLocation(null);
       setNearestStopMatch(null);
       setNearestSegmentMatch(null);
+      setLocationWarning(null);
       setLocationError(
         getLocationErrorMessage(
           error instanceof Error || (typeof error === 'object' && error !== null && 'code' in error)
@@ -1200,6 +1209,7 @@ const CalcScreen: React.FC = () => {
         permissionState={locationPermission}
         inAppBrowser={inAppBrowser}
         error={locationError}
+        warning={locationWarning}
         onClose={() => setIsLocationAssistOpen(false)}
         onOpenInChrome={handleOpenInChrome}
         onRetry={requestCurrentLocation}

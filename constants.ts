@@ -23,6 +23,8 @@ interface StopSeed {
   latitude?: number;
   longitude?: number;
   isTerminal?: boolean;
+  googlePlaceId?: string;
+  googleMapsQuery?: string;
   aliases?: string[];
 }
 
@@ -33,6 +35,8 @@ const buildStops = (seeds: StopSeed[]): Stop[] =>
     coverageRange: seed.coverageRange,
     ...(typeof seed.latitude === 'number' ? { latitude: seed.latitude } : {}),
     ...(typeof seed.longitude === 'number' ? { longitude: seed.longitude } : {}),
+    ...(seed.googlePlaceId ? { googlePlaceId: seed.googlePlaceId } : {}),
+    ...(seed.googleMapsQuery ? { googleMapsQuery: seed.googleMapsQuery } : {}),
     distanceToBaguio: Math.max(0, BAGUIO_KM - seed.km),
     ...(seed.isTerminal ? { isTerminal: true } : {}),
     ...(seed.aliases?.length ? { aliases: seed.aliases } : {})

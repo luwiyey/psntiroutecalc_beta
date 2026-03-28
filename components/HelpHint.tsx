@@ -60,8 +60,9 @@ const HelpHint: React.FC<Props> = ({
         }}
         className={
           triggerClassName ??
-          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary underline decoration-dotted underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
+          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
         }
+        style={{ textDecoration: 'none' }}
       >
         {children ?? 'How it works'}
       </span>

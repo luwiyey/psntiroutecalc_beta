@@ -4,6 +4,10 @@ import { getDistanceMeters } from './location';
 
 const DEFAULT_STOP_RADIUS_METERS = 60;
 const MAX_STOP_RADIUS_METERS = 180;
+const MIN_TRUSTED_STOP_CONFIDENCE = 0.55;
+const MIN_TRUSTED_STOP_SUBMISSIONS = 2;
+const MIN_TRUSTED_STOP_SAMPLES = 4;
+const MAX_PROVISIONAL_OVERRIDE_DISTANCE_METERS = 250;
 
 const getStopKey = (routeId: string, stopName: string) => `${routeId}::${stopName}`.toLowerCase();
 
@@ -225,8 +229,20 @@ export const buildVerifiedStopsFromSubmissions = (
     const confidenceFromSubmissions = Math.min(matchedSubmissions.length / 4, 1) * 0.45;
     const confidenceFromSamples = Math.min(sampleCount / 10, 1) * 0.3;
     const confidenceFromAccuracy = Math.max(0, 1 - averageAccuracy / 120) * 0.25;
+    const deviationFromSeededStop =
+      typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
+        ? getDistanceMeters(stop.latitude, stop.longitude, latitude, longitude)
+        : 0;
+    const confidencePenaltyFromDrift =
+      typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
+        ? Math.min(deviationFromSeededStop / 500, 0.18)
+        : 0;
     const confidenceScore = Number(
-      clamp(confidenceFromSubmissions + confidenceFromSamples + confidenceFromAccuracy, 0.2, 0.99).toFixed(2)
+      clamp(
+        confidenceFromSubmissions + confidenceFromSamples + confidenceFromAccuracy - confidencePenaltyFromDrift,
+        0.2,
+        0.99
+      ).toFixed(2)
     );
 
     return [{
@@ -250,6 +266,40 @@ export const buildVerifiedStopsFromSubmissions = (
   });
 };
 
+export const isVerifiedStopTrusted = (verifiedStop: VerifiedStop, seedStop?: Stop) => {
+  if (verifiedStop.source === 'manual') {
+    return true;
+  }
+
+  const hasEnoughEvidence =
+    verifiedStop.submissionCount >= MIN_TRUSTED_STOP_SUBMISSIONS ||
+    verifiedStop.sampleCount >= MIN_TRUSTED_STOP_SAMPLES;
+
+  if (!hasEnoughEvidence || verifiedStop.confidenceScore < MIN_TRUSTED_STOP_CONFIDENCE) {
+    return false;
+  }
+
+  if (
+    seedStop &&
+    typeof seedStop.latitude === 'number' &&
+    typeof seedStop.longitude === 'number' &&
+    verifiedStop.submissionCount < 3
+  ) {
+    const driftMeters = getDistanceMeters(
+      seedStop.latitude,
+      seedStop.longitude,
+      verifiedStop.latitude,
+      verifiedStop.longitude
+    );
+
+    if (driftMeters > MAX_PROVISIONAL_OVERRIDE_DISTANCE_METERS) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const mergeStopsWithVerifiedStops = (
   routeId: string,
   stops: Stop[],
@@ -267,7 +317,7 @@ export const mergeStopsWithVerifiedStops = (
   return stops.map(stop => {
     const verifiedStop = grouped.get(getStopKey(routeId, stop.name));
 
-    if (!verifiedStop) {
+    if (!verifiedStop || !isVerifiedStopTrusted(verifiedStop, stop)) {
       return stop;
     }
 

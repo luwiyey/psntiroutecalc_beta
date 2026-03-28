@@ -16,7 +16,6 @@ import {
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 type EditorMode = 'standard' | 'batch';
-type EditorSection = 'totals' | 'details' | 'tape';
 type PendingActionType =
   | 'trip'
   | 'sheet'
@@ -116,11 +115,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
   const [pendingVoiceNavAction, setPendingVoiceNavAction] = useState<PendingVoiceNavigationAction | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Record<EditorSection, boolean>>({
-    totals: false,
-    details: false,
-    tape: false
-  });
+  const [isEntryTapeExpanded, setIsEntryTapeExpanded] = useState(false);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
@@ -428,50 +423,18 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     selectedBatchItems.length > 0
       ? selectedBatchItems.slice(0, 3).map(([fare, count]) => `${count} x ${peso}${fare}`).join(' / ')
       : 'No batch fares selected yet.';
-  const activeTapeSummary = editorMode === 'batch' ? batchTapeSummary : standardTapeSummary;
   const currentTripLabel = `${activeTrip.name} • Sheet ${tallyNav.sheetIdx + 1}`;
   const blockSlotsLeftLabel =
     blockSlotsLeft === 1 ? '1 slot left in this block' : `${blockSlotsLeft} slots left in this block`;
-  const remainingSlotsSummary = `${blockSlotsLeft} block left | ${sheetSlotsLeft} sheet left`;
-  const toggleSection = (section: EditorSection) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-  const renderAccordion = (
-    section: EditorSection,
-    label: string,
-    summary: string,
-    children: React.ReactNode,
-    helpText?: string
-  ) => {
-    const isOpen = expandedSections[section];
-
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-black/30">
-        <button
-          onClick={() => toggleSection(section)}
-          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
-        >
-          <div>
-            {helpText ? (
-              <HelpHint
-                label={helpText}
-                triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500 underline decoration-dotted underline-offset-4"
-              >
-                {label}
-              </HelpHint>
-            ) : (
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">{label}</p>
-            )}
-            <p className="mt-1 text-[11px] font-bold text-slate-500">{summary}</p>
-          </div>
-          <span className={`material-icons text-base text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
-            expand_more
-          </span>
-        </button>
-        {isOpen && <div className="border-t border-slate-100 px-4 py-4 dark:border-white/10">{children}</div>}
-      </div>
-    );
-  };
+  const remainingSlotsSummary = `${blockSlotsLeft} left in block • ${sheetSlotsLeft} left in sheet`;
+  const displayedPunchAmount =
+    editorMode === 'batch'
+      ? batchTotalGross
+      : isFlashing
+        ? lastPunched ?? 0
+        : currentTypingValue > 0
+          ? currentTypingValue
+          : stagedStandardEntries[stagedStandardEntries.length - 1] ?? 0;
 
   const handleAddTrip = () => {
     const lastTrip = activeSession.trips[activeSession.trips.length - 1];
@@ -563,7 +526,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setLastPunched(null);
     setBlockAlert(null);
     setIsFooterCollapsed(true);
-    setExpandedSections({ totals: false, details: false, tape: false });
+    setIsEntryTapeExpanded(false);
   };
 
   const openNextSheet = (savedSheetNumber: number) => {
@@ -618,6 +581,8 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
     const savedSheetNumber = tallyNav.sheetIdx + 1;
     const fillsSheet = selectedSlotIdx + finalEntries.length >= SLOTS_PER_SHEET;
+    const nextSlotIdx = clampSlotIndex(selectedSlotIdx + finalEntries.length);
+    const nextBlockIdx = Math.floor(nextSlotIdx / SLOTS_PER_BLOCK);
 
     setSessions(prev => prev.map(s => s.id === activeSession.id ? {
       ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
@@ -657,6 +622,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     }
 
     resetEditorDraft();
+    setSelectedSlotIdx(nextSlotIdx);
+    setTallyNav(prev => ({
+      ...prev,
+      blockIdx: nextBlockIdx
+    }));
     if (options?.closeEditor ?? true) {
       setIsEditorOpen(false);
     }
@@ -1077,16 +1047,16 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         <div className="flex gap-2 border-t border-slate-200 bg-slate-100 p-2 dark:border-white/10 dark:bg-[#05070b]">
           {[0, 1, 2, 3].map(b => (
             <div key={b} className="flex-1 flex flex-col items-stretch">
-               <button onClick={() => jumpToBlock(b)}
+               <button type="button" onClick={() => jumpToBlock(b)}
                  className={`w-full rounded-xl border py-2 font-black transition-all active:scale-[0.99] ${
                    tallyNav.blockIdx === b
                      ? 'border-primary/25 bg-white text-primary shadow-sm dark:border-primary/30 dark:bg-night-charcoal'
                      : 'border-slate-200 bg-white text-slate-500 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200'
                  }`}>
-                 <span className="text-[8px] uppercase tracking-tighter opacity-70">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
-                 <span className="mt-1 text-[10px]">{peso}{blockTotals[b]}</span>
+                 <span className="block text-[8px] uppercase tracking-tighter opacity-70">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
+                 <span className="mt-1 block text-[10px]">{peso}{blockTotals[b]}</span>
                </button>
-                <button onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="mt-1 flex items-center justify-center gap-1 text-slate-400 transition-colors hover:text-red-500 dark:text-slate-300">
+                <button type="button" onClick={() => setPendingAction({ type: 'reset-block', blockIdx: b })} className="mt-1 flex items-center justify-center gap-1 text-slate-400 transition-colors hover:text-red-500 dark:text-slate-300">
                   <span className="material-icons text-xs">refresh</span>
                   <span className="text-[8px] font-bold uppercase tracking-wider">reset</span>
                 </button>
@@ -1101,35 +1071,35 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
           return (
             <div
               key={idx}
-              role="button"
-              tabIndex={0}
-              onClick={() => handleSlotClick(idx)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  handleSlotClick(idx);
-                }
-              }}
-              className={`relative aspect-square cursor-pointer rounded-[1.25rem] border transition-all ${
-                val > 0
-                  ? 'border-primary bg-primary text-white shadow-md'
-                  : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-primary/40 hover:bg-slate-50 dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-100 dark:hover:border-primary/40 dark:hover:bg-white/[0.08]'
-              } flex flex-col items-center justify-center`}
+              className={`relative aspect-square ${
+                val > 0 ? 'text-white' : 'text-slate-500 dark:text-slate-100'
+              }`}
             >
+              <button
+                type="button"
+                onClick={() => handleSlotClick(idx)}
+                className={`h-full w-full cursor-pointer touch-manipulation select-none rounded-[1.25rem] border transition-all ${
+                  val > 0
+                    ? 'border-primary bg-primary text-white shadow-md'
+                    : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-primary/40 hover:bg-slate-50 dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-100 dark:hover:border-primary/40 dark:hover:bg-white/[0.08]'
+                } flex flex-col items-center justify-center`}
+              >
               <span className={`absolute left-2 top-2 text-[7px] font-black ${val > 0 ? 'opacity-40' : 'opacity-60 dark:text-slate-400'}`}>{idx + 1}</span>
+              <span className="font-900 text-lg leading-none">{val || ''}</span>
+              </button>
               {val > 0 && (
                 <button
+                  type="button"
                   onClick={(event) => {
                     event.stopPropagation();
                     handleClearSavedSlot(idx);
                   }}
-                  className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-slate-500 active:scale-90 dark:bg-black/50"
+                  className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-slate-500 active:scale-90 dark:bg-black/50"
                   title={`Clear box ${idx + 1}`}
                 >
                   <span className="material-icons text-[11px] leading-none">close</span>
                 </button>
               )}
-              <span className="font-900 text-lg leading-none">{val || ''}</span>
             </div>
           );
         })}
@@ -1195,18 +1165,18 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 >
                   Current Entry
                 </HelpHint>
-                <div className="mt-3 flex items-start justify-between gap-4">
+                <div className="mt-3 flex items-start justify-between gap-4 max-[380px]:flex-col max-[380px]:items-start">
                   <div className="min-w-0">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
-                    <p className="mt-2 text-xl font-900 leading-none text-slate-900 dark:text-white">{compactCurrentBoxLabel}</p>
-                    <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <p className="text-[8px] font-black uppercase tracking-[0.18em] text-primary/70">Now Filling</p>
+                    <p className="mt-2 text-lg font-900 leading-none text-slate-900 dark:text-white sm:text-xl">{compactCurrentBoxLabel}</p>
+                    <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
                       Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
                     </p>
                   </div>
-                  <div className="min-w-0 text-right">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Then Next</p>
-                    <p className="mt-2 text-base font-900 leading-none text-slate-800 dark:text-white">{compactNextBoxLabel}</p>
-                    <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <div className="min-w-0 text-right max-[380px]:text-left">
+                    <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Then Next</p>
+                    <p className="mt-2 text-sm font-900 leading-none text-slate-800 dark:text-white sm:text-base">{compactNextBoxLabel}</p>
+                    <p className="mt-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 sm:text-[10px]">
                       {remainingSlotsSummary}
                     </p>
                   </div>
@@ -1220,10 +1190,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'
                 }`}
               >
-                <div className="flex items-center justify-center gap-3">
+                <div className="grid grid-cols-3 items-center gap-2 max-[380px]:gap-1">
                   <button
                     onClick={() => setEditorMode('standard')}
-                    className={`min-w-[104px] rounded-full px-4 py-2 text-[10px] font-900 uppercase tracking-[0.2em] transition-colors ${
+                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[380px]:px-2 max-[380px]:text-[8px] ${
                       editorMode === 'standard'
                         ? 'bg-primary text-white shadow-sm'
                         : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
@@ -1233,13 +1203,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <HelpHint
                     label="Standard is for tapping one fare into the current slot. Batch Mode is for counting several passengers with the same fare. The center box shows what will be saved next."
-                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400 underline decoration-dotted underline-offset-4"
+                    triggerClassName="inline-flex cursor-help justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[380px]:text-[7px]"
                   >
                     Punch Amount
                   </HelpHint>
                   <button
                     onClick={() => setEditorMode('batch')}
-                    className={`min-w-[104px] rounded-full px-4 py-2 text-[10px] font-900 uppercase tracking-[0.2em] transition-colors ${
+                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[380px]:px-2 max-[380px]:text-[8px] ${
                       editorMode === 'batch'
                         ? 'bg-primary text-white shadow-sm'
                         : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
@@ -1249,7 +1219,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex items-center gap-2 sm:gap-3">
                   <button
                     onClick={handlePreviousTarget}
                     disabled={!hasPreviousTargetSlot}
@@ -1260,18 +1230,18 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <button
                     onClick={handlePunchBoxPress}
-                    className="flex min-h-[132px] flex-1 flex-col rounded-[1.75rem] bg-white/80 px-4 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30"
+                    className="flex min-h-[132px] flex-1 flex-col rounded-[1.75rem] bg-white/80 px-3 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30 sm:px-4"
                   >
                     <div className="mt-2 flex items-end justify-center gap-2 text-center">
                       <span className="text-2xl font-900 leading-none text-slate-400">{peso}</span>
-                      <h3 className={`text-5xl font-900 leading-none tracking-tight transition-colors ${
-                        isFlashing ? 'text-neon-green' : (editValue ? 'text-primary' : 'text-slate-900 dark:text-white')
+                      <h3 className={`text-4xl font-900 leading-none tracking-tight transition-colors sm:text-5xl ${
+                        isFlashing ? 'text-neon-green' : ((currentTypingValue > 0 || stagedStandardEntries.length > 0 || batchTotalGross > 0) ? 'text-primary' : 'text-slate-900 dark:text-white')
                       }`}>
-                        {editorMode === 'batch' ? batchTotalGross : (isFlashing ? lastPunched : (editValue || '0'))}
+                        {displayedPunchAmount}
                       </h3>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 sm:gap-x-3 sm:text-[10px]">
                       <span>Block {peso}{projectedBlockTotals[auditBlockIdx]}</span>
                       <span className="text-slate-300">|</span>
                       <span>Sheet {peso}{projectedSheetTotal}</span>
@@ -1279,7 +1249,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                       <span>{previewEntryCount} pending</span>
                     </div>
 
-                    <p className="mt-3 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    <p className="mt-3 text-center text-[8px] font-black uppercase tracking-[0.14em] text-slate-400 sm:text-[9px]">
                       Tap fares below or type directly
                     </p>
                   </button>
@@ -1293,21 +1263,111 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                  <span />
+                <div className="mt-3 flex items-center justify-between gap-3 max-[380px]:flex-wrap">
                   <HelpHint
                     label="When you press Enter on the keyboard or use the save flow, the current punch amount is staged into the active slot. Next Block saves first, then jumps to the next block."
-                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 max-[380px]:text-[8px]"
                   >
                     Enter saves current amount
                   </HelpHint>
                   <button
                     onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
                     disabled={!hasNextBlock}
-                    className="justify-self-end rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-sm disabled:bg-slate-300 dark:disabled:bg-white/10"
+                    className="rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-sm disabled:bg-slate-300 dark:disabled:bg-white/10"
                   >
                     Next Block
                   </button>
+                </div>
+
+                <div className="mt-3 rounded-[1.5rem] border border-slate-200 bg-white/85 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/30">
+                  <div className="flex items-center justify-between gap-3">
+                    <HelpHint
+                      label={
+                        editorMode === 'batch'
+                          ? 'Queued batch fares stay here until you finalize. Expand the list to remove any wrong count before saving.'
+                          : 'Queued fare taps stay here until you finalize. Expand the list to remove a wrong fare before it is saved into the sheet.'
+                      }
+                      triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500 underline decoration-dotted underline-offset-4"
+                    >
+                      Queued Entries
+                    </HelpHint>
+                    <button
+                      type="button"
+                      onClick={() => setIsEntryTapeExpanded(current => !current)}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:bg-white/10 dark:text-slate-200"
+                    >
+                      {isEntryTapeExpanded ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-[11px] font-bold text-slate-500 dark:text-slate-300">
+                    {editorMode === 'batch' ? batchTapeSummary : standardTapeSummary}
+                  </p>
+
+                  {isEntryTapeExpanded && (
+                    <div className="mt-3">
+                      {editorMode === 'batch' ? (
+                        selectedBatchItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {selectedBatchItems.map(([fare, count]) => (
+                              <div
+                                key={`${fare}-${count}`}
+                                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20"
+                              >
+                                <div>
+                                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Queued Fare</p>
+                                  <p className="mt-1 text-base font-900 text-slate-900 dark:text-white">{count} x {peso}{fare}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setBatchCounts(prev => ({ ...prev, [fare]: '0' }))}
+                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-90 dark:bg-black/40"
+                                  title={`Remove ${fare}`}
+                                >
+                                  <span className="material-icons text-sm leading-none">close</span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm font-bold text-slate-500">No batch fares selected yet.</p>
+                        )
+                      ) : stagedStandardEntries.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {stagedStandardEntries.map((fare, i) => (
+                            <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
+                              <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveStagedEntry(i)}
+                                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
+                                title={`Delete slot ${selectedSlotIdx + i + 1}`}
+                              >
+                                <span className="material-icons text-[11px] leading-none">close</span>
+                              </button>
+                              <div className="flex h-full items-center justify-center pt-2">
+                                <span className="text-[11px] font-black">{peso}{fare}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : currentTypingValue > 0 ? (
+                        <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/[0.06] px-4 py-3 text-center">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Current Draft</p>
+                          <p className="mt-2 text-lg font-900 text-primary">{peso}{currentTypingValue}</p>
+                          <button
+                            type="button"
+                            onClick={() => setEditValue('')}
+                            className="mt-3 rounded-full bg-white px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm dark:bg-black/40 dark:text-slate-300"
+                          >
+                            Clear Draft
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1346,80 +1406,20 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               )}
 
-              {renderAccordion(
-                'tape',
-                'Entry Tape',
-                activeTapeSummary,
-                editorMode === 'batch'
-                  ? 'Entry Tape lists the fares currently queued in batch mode. Remove any wrong fare here before finalizing.'
-                  : 'Entry Tape lists the staged fares waiting to be saved into the sheet. Use the X buttons to remove mistakes before finalizing.',
-                editorMode === 'batch' ? (
-                  selectedBatchItems.length > 0 ? (
-                    <div className="space-y-2">
-                      {selectedBatchItems.map(([fare, count]) => (
-                        <div
-                          key={`${fare}-${count}`}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20"
-                        >
-                          <div>
-                            <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Queued Fare</p>
-                            <p className="mt-1 text-base font-900 text-slate-900 dark:text-white">{peso}{fare}</p>
-                          </div>
-                          <button
-                            onClick={() => setBatchCounts(prev => ({ ...prev, [fare]: '0' }))}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-90 dark:bg-black/40"
-                            title={`Remove ${fare}`}
-                          >
-                            <span className="material-icons text-sm leading-none">close</span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm font-bold text-slate-500">No batch fares selected yet.</p>
-                  )
-                ) : stagedStandardEntries.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {stagedStandardEntries.map((fare, i) => (
-                      <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
-                        <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
-                        <button
-                          onClick={() => handleRemoveStagedEntry(i)}
-                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
-                          title={`Delete slot ${selectedSlotIdx + i + 1}`}
-                        >
-                          <span className="material-icons text-[11px] leading-none">close</span>
-                        </button>
-                        <div className="flex h-full items-center justify-center pt-2">
-                          <span className="text-[11px] font-black">{peso}{fare}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : currentTypingValue > 0 ? (
-                  <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/[0.06] px-4 py-3 text-center">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Current Draft</p>
-                    <p className="mt-2 text-lg font-900 text-primary">{peso}{currentTypingValue}</p>
-                    <button
-                      onClick={() => setEditValue('')}
-                      className="mt-3 rounded-full bg-white px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm dark:bg-black/40 dark:text-slate-300"
-                    >
-                      Clear Draft
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
-                )
-              )}
             </div>
 
             {/* DYNAMIC SCROLLABLE BODY */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 touch-pan-y">
               {editorMode === 'standard' ? (
                 <div className="pb-4">
-                  <div className="grid grid-cols-3 gap-2.5">
+                  <div className="relative z-10 grid grid-cols-3 gap-2.5">
                     {smartQuickFares.map(f => (
-                      <button key={f} onClick={() => commitStandardEntry(f, true)} className="aspect-square bg-primary text-white rounded-[1.5rem] font-black text-2xl shadow-md active:scale-90 transition-transform">
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => commitStandardEntry(f, true)}
+                        className="relative z-10 aspect-square touch-manipulation select-none rounded-[1.5rem] bg-primary text-2xl font-black text-white shadow-md transition-transform active:scale-90"
+                      >
                         {f}
                       </button>
                     ))}
@@ -1439,7 +1439,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                           value={batchSearch}
                           onChange={(e) => setBatchSearch(e.target.value)}
                         />
-                        {batchSearch && <button onClick={() => setBatchSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><span className="material-icons text-xs">close</span></button>}
+                        {batchSearch && <button type="button" onClick={() => setBatchSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"><span className="material-icons text-xs">close</span></button>}
                       </div>
                       
                       {/* VIEW ONLY SELECTED TOGGLE */}
@@ -1464,7 +1464,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                       {batchFilterPresets.map(({ label, value }) => {
                         return (
-                          <button key={label} onClick={() => setBatchSearch(value)} className={`px-3 py-1.5 rounded-full font-black text-[7px] uppercase tracking-widest border whitespace-nowrap ${batchSearch === value ? 'bg-primary border-primary text-white' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/5 text-slate-400'}`}>
+                          <button type="button" key={label} onClick={() => setBatchSearch(value)} className={`px-3 py-1.5 rounded-full font-black text-[7px] uppercase tracking-widest border whitespace-nowrap ${batchSearch === value ? 'bg-primary border-primary text-white' : 'bg-white dark:bg-night-charcoal border-slate-200 dark:border-white/5 text-slate-400'}`}>
                             {label}
                           </button>
                         );
@@ -1481,9 +1481,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                             {batchCounts[f] && <span className="w-1 h-1 rounded-full bg-neon-green shadow-sm animate-pulse"></span>}
                           </div>
                           <div className="flex items-center gap-2">
-                            <button onClick={() => setBatchCounts(p => ({...p, [f]: Math.max(0, parseInt(p[f] || '0') - 1).toString()}))} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">remove</span></button>
+                            <button type="button" onClick={() => setBatchCounts(p => ({...p, [f]: Math.max(0, parseInt(p[f] || '0') - 1).toString()}))} className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">remove</span></button>
                             <input type="number" inputMode="numeric" className="w-12 h-8 bg-white dark:bg-black border rounded-lg text-center font-900 text-sm" value={batchCounts[f] || ''} placeholder="0" onChange={e => setBatchCounts(p => ({...p, [f]: e.target.value}))} />
-                            <button onClick={() => setBatchCounts(p => ({...p, [f]: (parseInt(p[f] || '0') + 1).toString()}))} className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">add</span></button>
+                            <button type="button" onClick={() => setBatchCounts(p => ({...p, [f]: (parseInt(p[f] || '0') + 1).toString()}))} className="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center active:scale-90 transition-transform"><span className="material-icons text-xs">add</span></button>
                           </div>
                         </div>
                       ))

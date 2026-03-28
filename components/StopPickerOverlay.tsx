@@ -9,6 +9,7 @@ import {
   getSpeechRecognitionErrorMessage,
   parseStopVoiceTranscript
 } from '../utils/voice';
+import { buildGoogleMapsSearchUrl, openGoogleMapsUrl } from '../utils/google-maps';
 
 interface Props {
   isOpen: boolean;
@@ -156,6 +157,18 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
           />
         </div>
 
+        <button
+          type="button"
+          onClick={() =>
+            openGoogleMapsUrl(
+              buildGoogleMapsSearchUrl(search.trim() || `${title} ${activeRoute.label} Philippines`)
+            )
+          }
+          className="mb-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-600 active:scale-95 dark:border-white/10 dark:bg-black/30 dark:text-slate-200"
+        >
+          Search In Google Maps
+        </button>
+
         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Quick Access Terminals</p>
         {(voiceFeedback || voiceTranscript || voiceStopResult) && (
           <div className="mb-4 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/30">
@@ -222,7 +235,7 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
                 <span className="text-xl font-800 text-slate-800 dark:text-white text-left leading-tight block">{stop.name}</span>
                 <p className="mt-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
                   {stop.coverageRange}
-                  {stop.coverageRange ? ' â€¢ ' : ''}
+                  {stop.coverageRange ? ' • ' : ''}
                   {formatRouteEndpointSummary(stop.km, routeStartKm, routeEndKm, routeStartName, routeEndName)}
                 </p>
               </div>
@@ -260,3 +273,4 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
 };
 
 export default StopPickerOverlay;
+

@@ -6,6 +6,12 @@ import {
   formatMeters,
   getLocationErrorMessage
 } from '../utils/location';
+import { snapLocationToRoad, hasGoogleMapsAssistConfig } from '../utils/google-maps-assist';
+import {
+  openDirectionsToStop,
+  openPointInGoogleMaps,
+  openStopInGoogleMaps
+} from '../utils/google-maps';
 
 interface Props {
   isOpen: boolean;
@@ -21,6 +27,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [notes, setNotes] = useState('');
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [mapsAssistNote, setMapsAssistNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -32,6 +39,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setRadiusInput(String(defaultStop?.radiusMeters ?? 60));
     setNotes('');
     setCaptureError(null);
+    setMapsAssistNote(null);
   }, [activeRoute.id, activeRoute.stops, isOpen]);
 
   const selectedStop = useMemo(
@@ -57,6 +65,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const handleCapture = async () => {
     setIsCapturing(true);
     setCaptureError(null);
+    setMapsAssistNote(null);
 
     try {
       const snapshot = await collectLocationSamples({
@@ -65,7 +74,25 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         enableHighAccuracy: true
       });
 
-      setCapturedLocation(snapshot);
+      let finalSnapshot = snapshot;
+
+      if (hasGoogleMapsAssistConfig()) {
+        try {
+          const snappedPoint = await snapLocationToRoad([snapshot]);
+          if (snappedPoint) {
+            finalSnapshot = {
+              ...snapshot,
+              latitude: snappedPoint.latitude,
+              longitude: snappedPoint.longitude
+            };
+            setMapsAssistNote('Road-snapped with Google Maps for a cleaner stop point.');
+          }
+        } catch {
+          setMapsAssistNote('Google road snap was unavailable, so the app kept the phone GPS reading.');
+        }
+      }
+
+      setCapturedLocation(finalSnapshot);
       setRadiusInput(String(Math.max(selectedStop?.radiusMeters ?? 60, Math.min(180, Math.round(snapshot.accuracy + 20)))));
       showToast('Phone GPS captured for this stop', 'info');
     } catch (error) {
@@ -75,6 +102,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         false
       );
       setCaptureError(message);
+      setMapsAssistNote(null);
       showToast('Unable to capture stop location', 'info');
     } finally {
       setIsCapturing(false);
@@ -198,7 +226,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                     <div>
                       <p className="text-sm font-black">{stop.name}</p>
                       <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        KM {stop.km} â€¢ {stop.calibrationSamples ?? 0} learned samples
+                        KM {stop.km} • {stop.calibrationSamples ?? 0} learned samples
                       </p>
                     </div>
                     {isSelected && (
@@ -216,13 +244,30 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <p className="text-[10px] font-black uppercase tracking-widest text-primary">Selected Stop</p>
             <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{selectedStop.name}</h2>
             <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-              KM {selectedStop.km} â€¢ Radius {selectedStop.radiusMeters ?? 60}m
+              KM {selectedStop.km} • Radius {selectedStop.radiusMeters ?? 60}m
             </p>
             {selectedStop.latitude && selectedStop.longitude && (
               <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                 Current mapped point: {selectedStop.latitude.toFixed(6)}, {selectedStop.longitude.toFixed(6)}
               </p>
             )}
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => openStopInGoogleMaps(selectedStop, activeRoute.label)}
+                className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600 active:scale-95 dark:border-white/10 dark:bg-black/30 dark:text-slate-200"
+              >
+                Search In Maps
+              </button>
+              <button
+                type="button"
+                onClick={() => openDirectionsToStop(selectedStop, activeRoute.label)}
+                className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+              >
+                Navigate
+              </button>
+            </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button
@@ -264,8 +309,18 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                   {capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  Accuracy {formatMeters(capturedLocation.accuracy)} â€¢ {capturedLocation.sampleCount ?? 1} samples â€¢ {capturedLocation.source === 'native' ? 'Phone GPS' : 'Browser GPS'}
+                  Accuracy {formatMeters(capturedLocation.accuracy)} • {capturedLocation.sampleCount ?? 1} samples • {capturedLocation.source === 'native' ? 'Phone GPS' : 'Browser GPS'}
                 </p>
+                {mapsAssistNote && (
+                  <p className="mt-2 text-xs font-semibold text-primary">{mapsAssistNote}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openPointInGoogleMaps(capturedLocation)}
+                  className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-600 active:scale-95 dark:border-white/10 dark:bg-black/40 dark:text-slate-200"
+                >
+                  Open Captured Point In Maps
+                </button>
                 <button
                   onClick={() => void handleSave()}
                   className="mt-4 w-full rounded-[1.5rem] bg-slate-900 py-4 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 dark:bg-white dark:text-slate-900"
@@ -282,3 +337,4 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 };
 
 export default StopCalibrationOverlay;
+

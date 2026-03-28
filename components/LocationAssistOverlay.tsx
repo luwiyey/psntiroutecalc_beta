@@ -8,6 +8,11 @@ import type {
 } from '../utils/location';
 import { formatMeters } from '../utils/location';
 import { formatRouteEndpointSummary } from '../utils/route-distance';
+import {
+  openDirectionsToStop,
+  openPointInGoogleMaps,
+  openStopInGoogleMaps
+} from '../utils/google-maps';
 
 interface Props {
   isOpen: boolean;
@@ -24,6 +29,7 @@ interface Props {
   permissionState: LocationPermissionState;
   inAppBrowser: boolean;
   error: string | null;
+  warning: string | null;
   onClose: () => void;
   onOpenInChrome: () => void;
   onRetry: () => void;
@@ -49,6 +55,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
   permissionState,
   inAppBrowser,
   error,
+  warning,
   onClose,
   onOpenInChrome,
   onRetry,
@@ -110,28 +117,37 @@ const LocationAssistOverlay: React.FC<Props> = ({
                   <p className="text-sm font-black uppercase tracking-widest text-white/80">Reading GPS...</p>
                 </div>
               ) : location ? (
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl bg-white/5 px-4 py-3">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Latitude</p>
-                    <p className="mt-2 text-xl font-900">{formatCoordinate(location.latitude)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white/5 px-4 py-3">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Longitude</p>
-                    <p className="mt-2 text-xl font-900">{formatCoordinate(location.longitude)}</p>
-                  </div>
-                  <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-                    <div>
-                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Accuracy</p>
-                      <p className="mt-2 text-xl font-900">{formatMeters(location.accuracy)}</p>
+                <>
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-2xl bg-white/5 px-4 py-3">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Latitude</p>
+                      <p className="mt-2 text-xl font-900">{formatCoordinate(location.latitude)}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Updated</p>
-                      <p className="mt-2 text-xs font-black text-white/80">
-                        {new Date(location.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                    <div className="rounded-2xl bg-white/5 px-4 py-3">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Longitude</p>
+                      <p className="mt-2 text-xl font-900">{formatCoordinate(location.longitude)}</p>
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Accuracy</p>
+                        <p className="mt-2 text-xl font-900">{formatMeters(location.accuracy)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Updated</p>
+                        <p className="mt-2 text-xs font-black text-white/80">
+                          {new Date(location.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                  <button
+                    type="button"
+                    onClick={() => openPointInGoogleMaps(location)}
+                    className="mt-4 w-full rounded-[1.5rem] border border-white/10 bg-white/5 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                  >
+                    Open Current Point In Google Maps
+                  </button>
+                </>
               ) : (
                 <p className="mt-4 text-sm font-black uppercase tracking-widest text-white/70">Tap retry to request location.</p>
               )}
@@ -141,6 +157,16 @@ const LocationAssistOverlay: React.FC<Props> = ({
               <div className="rounded-[2rem] border border-red-200 bg-red-50 px-5 py-4 dark:border-red-500/20 dark:bg-red-500/10">
                 <p className="text-[9px] font-black uppercase tracking-widest text-red-500">Location Error</p>
                 <p className="mt-2 text-sm font-bold text-red-600 dark:text-red-300">{error}</p>
+              </div>
+            )}
+
+            {!error && warning && (
+              <div className="rounded-[2rem] border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-400/20 dark:bg-amber-400/10">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">GPS Confidence</p>
+                <p className="mt-2 text-sm font-bold text-amber-700 dark:text-amber-200">{warning}</p>
+                <p className="mt-2 text-xs font-semibold text-amber-700/80 dark:text-amber-100/80">
+                  The app will avoid guessing an exact pickup stop until the reading becomes tighter.
+                </p>
               </div>
             )}
 
@@ -185,7 +211,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Nearest Mapped Stop</p>
                 <h3 className="mt-2 text-2xl font-900 text-slate-900 dark:text-white">{nearestMatch.stop.name}</h3>
                 <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                  KM {nearestMatch.stop.km} â€¢ {formatMeters(nearestMatch.distanceMeters)} away
+                  KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                   {formatRouteEndpointSummary(nearestMatch.stop.km, routeStartKm, routeEndKm, routeStartName, routeEndName)}
@@ -197,6 +223,20 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
                   >
                     Use Stop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDirectionsToStop(nearestMatch.stop, routeLabel)}
+                    className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+                  >
+                    Navigate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openStopInGoogleMaps(nearestMatch.stop, routeLabel)}
+                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                  >
+                    Open In Maps
                   </button>
                   <button
                     onClick={onRetry}
@@ -223,6 +263,13 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     >
                       Use Manual KM
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => openPointInGoogleMaps(location)}
+                      className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+                    >
+                      Open In Maps
+                    </button>
                   </div>
                 )}
               </div>
@@ -247,6 +294,13 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     Use Manual KM
                   </button>
                   <button
+                    type="button"
+                    onClick={() => openPointInGoogleMaps(location)}
+                    className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+                  >
+                    Open In Maps
+                  </button>
+                  <button
                     onClick={onRetry}
                     className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                   >
@@ -261,7 +315,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Stop Match</p>
                 <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-300">
                   {hasMappedStops
-                    ? 'No mapped stop was close enough to use safely. You can retry or choose the pickup manually.'
+                    ? warning
+                      ? 'The GPS reading is too broad to trust an exact stop right now. Retry or switch to Manual KM.'
+                      : 'No mapped stop was close enough to use safely. You can retry or choose the pickup manually.'
                     : 'This route does not have GPS stop coordinates yet, so the app cannot auto-pick a stop safely. Manual stop selection stays available.'}
                 </p>
                 <button
@@ -269,6 +325,13 @@ const LocationAssistOverlay: React.FC<Props> = ({
                   className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                 >
                   Retry Location
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openPointInGoogleMaps(location)}
+                  className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+                >
+                  Open Current Point In Maps
                 </button>
               </div>
             )}
@@ -280,3 +343,4 @@ const LocationAssistOverlay: React.FC<Props> = ({
 };
 
 export default LocationAssistOverlay;
+

@@ -8,6 +8,8 @@ export interface Stop {
   latitude?: number;
   longitude?: number;
   radiusMeters?: number;
+  googlePlaceId?: string;
+  googleMapsQuery?: string;
   coverageRange?: string;
   distanceToBaguio?: number;
   aliases?: string[];
@@ -41,6 +43,27 @@ export interface RouteProfile {
   lockedReason?: string;
   stops: Stop[];
   fare: RouteFareRules;
+}
+
+export interface StopOverride {
+  name?: string;
+  km?: number;
+  coverageRange?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusMeters?: number;
+  googlePlaceId?: string;
+  googleMapsQuery?: string;
+  aliases?: string[];
+}
+
+export interface RouteOverride {
+  fare?: Partial<RouteFareRules>;
+  stops?: Record<string, StopOverride>;
+}
+
+export interface RouteOverridesMap {
+  [routeId: string]: RouteOverride;
 }
 
 export interface StopSubmission {
@@ -86,6 +109,8 @@ export interface StopSyncState {
   remoteCount: number;
   verifiedCount: number;
 }
+
+export type MicrophonePermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported' | 'unknown';
 
 export interface ReminderSettings {
   enabled: boolean;
@@ -171,10 +196,26 @@ export interface AppSettings {
   conductorMode: boolean;
 }
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface RecentActionEntry {
+  id: string;
+  title: string;
+  detail?: string;
+  createdAt: number;
+}
+
 export interface AppContextType {
   routes: RouteProfile[];
   activeRoute: RouteProfile;
   selectRoute: (routeId: string) => void;
+  routeOverrides: RouteOverridesMap;
+  saveRouteFareOverride: (routeId: string, fareOverride: Partial<RouteFareRules>) => void;
+  saveStopOverride: (routeId: string, stopName: string, stopOverride: StopOverride) => void;
+  resetRouteOverrides: (routeId: string) => void;
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   origin: string;
@@ -213,5 +254,8 @@ export interface AppContextType {
   setStopReminders: React.Dispatch<React.SetStateAction<StopReminder[]>>;
   reminderSettings: ReminderSettings;
   setReminderSettings: React.Dispatch<React.SetStateAction<ReminderSettings>>;
-  showToast: (msg: string, type?: 'info' | 'success') => void;
+  recentActions: RecentActionEntry[];
+  recordRecentAction: (title: string, detail?: string) => void;
+  clearRecentActions: () => void;
+  showToast: (msg: string, type?: 'info' | 'success', action?: ToastAction | null) => void;
 }

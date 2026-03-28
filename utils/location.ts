@@ -28,6 +28,9 @@ export type LocationPermissionState = 'granted' | 'denied' | 'prompt' | 'unsuppo
 const EARTH_RADIUS_METERS = 6371000;
 const DEFAULT_MAX_STOP_DISTANCE_METERS = 350;
 const DEFAULT_MAX_SEGMENT_DISTANCE_METERS = 900;
+const MAX_STOP_MATCH_ACCURACY_METERS = 180;
+const MAX_SEGMENT_MATCH_ACCURACY_METERS = 320;
+const MAX_SAMPLE_CLUSTER_DISTANCE_METERS = 220;
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
@@ -88,6 +91,36 @@ export const formatMeters = (distanceMeters: number) => {
   return `${Math.round(distanceMeters)} m`;
 };
 
+export const isAccurateEnoughForStopMatch = (location: CurrentLocationSnapshot) =>
+  Number.isFinite(location.accuracy) &&
+  location.accuracy > 0 &&
+  location.accuracy <= MAX_STOP_MATCH_ACCURACY_METERS;
+
+export const isAccurateEnoughForSegmentMatch = (location: CurrentLocationSnapshot) =>
+  Number.isFinite(location.accuracy) &&
+  location.accuracy > 0 &&
+  location.accuracy <= MAX_SEGMENT_MATCH_ACCURACY_METERS;
+
+export const getLocationReliabilityMessage = (location: CurrentLocationSnapshot | null) => {
+  if (!location) {
+    return null;
+  }
+
+  if (location.accuracy > 1000) {
+    return 'GPS is too broad right now, so pickup assist will not guess a stop safely.';
+  }
+
+  if (location.accuracy > MAX_SEGMENT_MATCH_ACCURACY_METERS) {
+    return 'GPS is still too wide for route matching. Retry in an open area before using pickup assist.';
+  }
+
+  if (location.accuracy > MAX_STOP_MATCH_ACCURACY_METERS) {
+    return 'GPS can estimate the corridor, but it is not accurate enough for an exact stop yet.';
+  }
+
+  return null;
+};
+
 export const hasRouteCoordinates = (stops: Stop[]) =>
   stops.some(stop => typeof stop.latitude === 'number' && typeof stop.longitude === 'number');
 
@@ -110,6 +143,8 @@ export const getDistanceMeters = (
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getAccuracyWeight = (accuracy: number) => 1 / Math.max(accuracy, 5);
 
 const toPlanarPoint = (latitude: number, longitude: number, referenceLatitude: number) => ({
   x: EARTH_RADIUS_METERS * toRadians(longitude) * Math.cos(toRadians(referenceLatitude)),
@@ -439,10 +474,34 @@ export const collectLocationSamples = async ({
       }
 
       const rankedSamples = [...samples].sort((left, right) => left.accuracy - right.accuracy);
-      const bestSamples = rankedSamples.slice(0, Math.min(rankedSamples.length, 3));
+      const anchorSample = rankedSamples[0];
+      const clusterRadius = Math.max(
+        70,
+        Math.min(MAX_SAMPLE_CLUSTER_DISTANCE_METERS, Math.round(anchorSample.accuracy * 1.8))
+      );
+      const clusteredSamples = rankedSamples.filter(sample => {
+        const distanceFromAnchor = getDistanceMeters(
+          anchorSample.latitude,
+          anchorSample.longitude,
+          sample.latitude,
+          sample.longitude
+        );
+        return distanceFromAnchor <= clusterRadius;
+      });
+      const bestSamples = (clusteredSamples.length > 0 ? clusteredSamples : rankedSamples).slice(
+        0,
+        Math.min((clusteredSamples.length > 0 ? clusteredSamples : rankedSamples).length, 3)
+      );
       const latitude = bestSamples.reduce((sum, sample) => sum + sample.latitude, 0) / bestSamples.length;
       const longitude = bestSamples.reduce((sum, sample) => sum + sample.longitude, 0) / bestSamples.length;
-      const accuracy = bestSamples[0].accuracy;
+      const weightedAccuracy =
+        bestSamples.reduce((sum, sample) => sum + sample.accuracy * getAccuracyWeight(sample.accuracy), 0) /
+        bestSamples.reduce((sum, sample) => sum + getAccuracyWeight(sample.accuracy), 0);
+      const sampleSpread = bestSamples.reduce((widestDistance, sample) => {
+        const distanceFromCenter = getDistanceMeters(latitude, longitude, sample.latitude, sample.longitude);
+        return Math.max(widestDistance, distanceFromCenter);
+      }, 0);
+      const accuracy = Math.max(bestSamples[0].accuracy, Math.round(Math.max(weightedAccuracy, sampleSpread + 15)));
       const latestTimestamp = bestSamples.reduce((latest, sample) => Math.max(latest, sample.timestamp), 0);
 
       resolve({
@@ -566,6 +625,16 @@ export const findNearestMappedStop = (
   location: CurrentLocationSnapshot,
   maxDistanceMeters = DEFAULT_MAX_STOP_DISTANCE_METERS
 ): StopMatch | null => {
+  if (
+    !Number.isFinite(location.latitude) ||
+    !Number.isFinite(location.longitude) ||
+    !Number.isFinite(location.accuracy) ||
+    location.accuracy <= 0 ||
+    !isAccurateEnoughForStopMatch(location)
+  ) {
+    return null;
+  }
+
   const mappedStops = stops.filter(
     stop => typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
   );
@@ -593,9 +662,13 @@ export const findNearestMappedStop = (
     return null;
   }
 
+  const baseRadius = nearest.stop.radiusMeters ?? 60;
   const allowedDistance = Math.max(
-    Math.min(maxDistanceMeters, (nearest.stop.radiusMeters ?? maxDistanceMeters) + Math.round(location.accuracy)),
-    nearest.stop.radiusMeters ?? 60
+    baseRadius,
+    Math.min(
+      maxDistanceMeters,
+      baseRadius + Math.min(90, Math.round(location.accuracy * 0.45))
+    )
   );
 
   if (nearest.distanceMeters > allowedDistance) {
@@ -610,6 +683,16 @@ export const findNearestMappedSegment = (
   location: CurrentLocationSnapshot,
   maxDistanceMeters = DEFAULT_MAX_SEGMENT_DISTANCE_METERS
 ): SegmentMatch | null => {
+  if (
+    !Number.isFinite(location.latitude) ||
+    !Number.isFinite(location.longitude) ||
+    !Number.isFinite(location.accuracy) ||
+    location.accuracy <= 0 ||
+    !isAccurateEnoughForSegmentMatch(location)
+  ) {
+    return null;
+  }
+
   const mappedStops = stops
     .filter(stop => typeof stop.latitude === 'number' && typeof stop.longitude === 'number')
     .sort((left, right) => left.km - right.km);
@@ -657,7 +740,10 @@ export const findNearestMappedSegment = (
     return bestMatch;
   }, null);
 
-  const allowedDistance = Math.max(220, Math.min(maxDistanceMeters, Math.round(location.accuracy * 2)));
+  const allowedDistance = Math.max(
+    140,
+    Math.min(maxDistanceMeters, Math.round(location.accuracy * 1.2))
+  );
 
   if (!nearestSegment || nearestSegment.distanceMeters > allowedDistance) {
     return null;
