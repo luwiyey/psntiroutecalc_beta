@@ -3,6 +3,7 @@ import type { Stop } from '../types';
 
 const MAPS_BASE_URL = 'https://www.google.com/maps';
 const APP_UTM_SOURCE = 'psnti_routecalc';
+const MAPS_RETURN_REFRESH_KEY = 'psnti_maps_return_refresh';
 
 const addUtm = (params: URLSearchParams, campaign: string) => {
   params.set('utm_source', APP_UTM_SOURCE);
@@ -71,7 +72,25 @@ export const buildGoogleMapsDirectionsUrl = ({
 
 export const openGoogleMapsUrl = (url: string) => {
   if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(MAPS_RETURN_REFRESH_KEY, `${Date.now()}`);
+  } catch {
+    // Ignore storage failures; map opening should still work.
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
+};
+
+export const consumePendingMapsReturnRefresh = () => {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const value = window.sessionStorage.getItem(MAPS_RETURN_REFRESH_KEY);
+    if (!value) return false;
+    window.sessionStorage.removeItem(MAPS_RETURN_REFRESH_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 export const openStopInGoogleMaps = (stop: Stop, routeLabel: string) => {

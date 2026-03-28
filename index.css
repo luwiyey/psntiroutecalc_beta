@@ -19,3 +19,37 @@ button,
 [role="button"] {
   touch-action: manipulation;
 }
+
+.psnti-map-picker-icon {
+  background: transparent;
+  border: 0;
+}
+
+.psnti-map-picker-pin {
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px 9999px 9999px 0;
+  transform: rotate(-45deg);
+  background: #c91629;
+  border: 3px solid #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.28);
+}
+
+.psnti-map-picker-pin::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 9999px;
+  background: #fff;
+}
+
+.leaflet-container {
+  font: inherit;
+  background: #e2e8f0;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px;
+}

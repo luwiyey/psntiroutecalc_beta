@@ -225,6 +225,37 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }, [allBatchFares, fareBounds.minimumFare]);
 
   useEffect(() => {
+    if (currentShift?.routeId === activeRoute.id) return;
+    if (routeSessions.length > 0) return;
+
+    setSessions(prev => {
+      if (prev.some(session => session.id === fallbackSession.id)) {
+        return prev;
+      }
+
+      return [fallbackSession, ...prev];
+    });
+
+    setTallyNav(prev =>
+      prev.sessionId === fallbackSession.id
+        ? prev
+        : {
+            sessionId: fallbackSession.id,
+            tripIdx: 0,
+            sheetIdx: 0,
+            blockIdx: 0
+          }
+    );
+  }, [
+    activeRoute.id,
+    currentShift,
+    fallbackSession,
+    routeSessions.length,
+    setSessions,
+    setTallyNav
+  ]);
+
+  useEffect(() => {
     if (routeSessions.length === 0) return;
 
     if (tallyNav.sessionId !== activeSession.id) {
@@ -1106,10 +1137,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       </div>
 
       {isEditorOpen && (
-        <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-[100] flex h-[100svh] flex-col overflow-hidden">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setIsEditorOpen(false)} />
           
-          <div className="relative bg-white dark:bg-night-charcoal rounded-t-[3.5rem] shadow-2xl h-full mt-2 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
+          <div className="relative mt-2 flex h-[calc(100svh-0.5rem)] max-h-[calc(100svh-0.5rem)] min-h-0 flex-col overflow-hidden rounded-t-[3.5rem] bg-white shadow-2xl animate-in slide-in-from-bottom duration-300 dark:bg-night-charcoal">
             <input 
               ref={inputRef} 
               type="number" 
@@ -1165,21 +1196,21 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 >
                   Current Entry
                 </HelpHint>
-                <div className="mt-3 flex items-start justify-between gap-4 max-[380px]:flex-col max-[380px]:items-start">
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 max-[360px]:gap-x-3">
                   <div className="min-w-0">
                     <p className="text-[8px] font-black uppercase tracking-[0.18em] text-primary/70">Now Filling</p>
-                    <p className="mt-2 text-lg font-900 leading-none text-slate-900 dark:text-white sm:text-xl">{compactCurrentBoxLabel}</p>
-                    <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                    <p className="mt-2 text-lg font-900 leading-none text-slate-900 max-[360px]:text-base dark:text-white sm:text-xl">{compactCurrentBoxLabel}</p>
+                    <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 max-[360px]:text-[9px]">
                       Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
                     </p>
                   </div>
-                  <div className="min-w-0 text-right max-[380px]:text-left">
+                  <div className="min-w-0 text-right">
                     <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Then Next</p>
-                    <p className="mt-2 text-sm font-900 leading-none text-slate-800 dark:text-white sm:text-base">{compactNextBoxLabel}</p>
-                    <p className="mt-3 text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 sm:text-[10px]">
-                      {remainingSlotsSummary}
-                    </p>
+                    <p className="mt-2 text-sm font-900 leading-none text-slate-800 max-[360px]:text-[13px] dark:text-white sm:text-base">{compactNextBoxLabel}</p>
                   </div>
+                  <p className="col-span-2 text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 max-[360px]:text-[8px] sm:text-[10px]">
+                    {remainingSlotsSummary}
+                  </p>
                 </div>
               </div>
 
@@ -1190,10 +1221,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'
                 }`}
               >
-                <div className="grid grid-cols-3 items-center gap-2 max-[380px]:gap-1">
+                <div className="grid grid-cols-3 items-center gap-2 max-[360px]:gap-1">
                   <button
                     onClick={() => setEditorMode('standard')}
-                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[380px]:px-2 max-[380px]:text-[8px] ${
+                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[360px]:px-2 max-[360px]:text-[8px] ${
                       editorMode === 'standard'
                         ? 'bg-primary text-white shadow-sm'
                         : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
@@ -1203,13 +1234,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <HelpHint
                     label="Standard is for tapping one fare into the current slot. Batch Mode is for counting several passengers with the same fare. The center box shows what will be saved next."
-                    triggerClassName="inline-flex cursor-help justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[380px]:text-[7px]"
+                    triggerClassName="inline-flex cursor-help justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[360px]:text-[7px]"
                   >
                     Punch Amount
                   </HelpHint>
                   <button
                     onClick={() => setEditorMode('batch')}
-                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[380px]:px-2 max-[380px]:text-[8px] ${
+                    className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[360px]:px-2 max-[360px]:text-[8px] ${
                       editorMode === 'batch'
                         ? 'bg-primary text-white shadow-sm'
                         : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
@@ -1219,7 +1250,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 flex items-center gap-2 sm:gap-3">
+                <div className="mt-3 grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-2 sm:gap-3">
                   <button
                     onClick={handlePreviousTarget}
                     disabled={!hasPreviousTargetSlot}
@@ -1230,18 +1261,18 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <button
                     onClick={handlePunchBoxPress}
-                    className="flex min-h-[132px] flex-1 flex-col rounded-[1.75rem] bg-white/80 px-3 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30 sm:px-4"
+                    className="mx-auto flex min-h-[124px] w-full max-w-[18.5rem] flex-col rounded-[1.75rem] bg-white/80 px-3 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30 sm:min-h-[132px] sm:px-4"
                   >
                     <div className="mt-2 flex items-end justify-center gap-2 text-center">
                       <span className="text-2xl font-900 leading-none text-slate-400">{peso}</span>
-                      <h3 className={`text-4xl font-900 leading-none tracking-tight transition-colors sm:text-5xl ${
+                      <h3 className={`text-4xl font-900 leading-none tracking-tight transition-colors max-[360px]:text-[2.5rem] sm:text-5xl ${
                         isFlashing ? 'text-neon-green' : ((currentTypingValue > 0 || stagedStandardEntries.length > 0 || batchTotalGross > 0) ? 'text-primary' : 'text-slate-900 dark:text-white')
                       }`}>
                         {displayedPunchAmount}
                       </h3>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 sm:gap-x-3 sm:text-[10px]">
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 max-[360px]:text-[8px] sm:gap-x-3 sm:text-[10px]">
                       <span>Block {peso}{projectedBlockTotals[auditBlockIdx]}</span>
                       <span className="text-slate-300">|</span>
                       <span>Sheet {peso}{projectedSheetTotal}</span>
@@ -1263,10 +1294,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between gap-3 max-[380px]:flex-wrap">
+                <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:justify-between sm:gap-3">
                   <HelpHint
                     label="When you press Enter on the keyboard or use the save flow, the current punch amount is staged into the active slot. Next Block saves first, then jumps to the next block."
-                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 max-[380px]:text-[8px]"
+                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 max-[360px]:text-[8px]"
                   >
                     Enter saves current amount
                   </HelpHint>
@@ -1279,96 +1310,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 rounded-[1.5rem] border border-slate-200 bg-white/85 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/30">
-                  <div className="flex items-center justify-between gap-3">
-                    <HelpHint
-                      label={
-                        editorMode === 'batch'
-                          ? 'Queued batch fares stay here until you finalize. Expand the list to remove any wrong count before saving.'
-                          : 'Queued fare taps stay here until you finalize. Expand the list to remove a wrong fare before it is saved into the sheet.'
-                      }
-                      triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500 underline decoration-dotted underline-offset-4"
-                    >
-                      Queued Entries
-                    </HelpHint>
-                    <button
-                      type="button"
-                      onClick={() => setIsEntryTapeExpanded(current => !current)}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:bg-white/10 dark:text-slate-200"
-                    >
-                      {isEntryTapeExpanded ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-
-                  <p className="mt-2 text-[11px] font-bold text-slate-500 dark:text-slate-300">
-                    {editorMode === 'batch' ? batchTapeSummary : standardTapeSummary}
-                  </p>
-
-                  {isEntryTapeExpanded && (
-                    <div className="mt-3">
-                      {editorMode === 'batch' ? (
-                        selectedBatchItems.length > 0 ? (
-                          <div className="space-y-2">
-                            {selectedBatchItems.map(([fare, count]) => (
-                              <div
-                                key={`${fare}-${count}`}
-                                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20"
-                              >
-                                <div>
-                                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Queued Fare</p>
-                                  <p className="mt-1 text-base font-900 text-slate-900 dark:text-white">{count} x {peso}{fare}</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setBatchCounts(prev => ({ ...prev, [fare]: '0' }))}
-                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-90 dark:bg-black/40"
-                                  title={`Remove ${fare}`}
-                                >
-                                  <span className="material-icons text-sm leading-none">close</span>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm font-bold text-slate-500">No batch fares selected yet.</p>
-                        )
-                      ) : stagedStandardEntries.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-2">
-                          {stagedStandardEntries.map((fare, i) => (
-                            <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
-                              <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveStagedEntry(i)}
-                                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
-                                title={`Delete slot ${selectedSlotIdx + i + 1}`}
-                              >
-                                <span className="material-icons text-[11px] leading-none">close</span>
-                              </button>
-                              <div className="flex h-full items-center justify-center pt-2">
-                                <span className="text-[11px] font-black">{peso}{fare}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : currentTypingValue > 0 ? (
-                        <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/[0.06] px-4 py-3 text-center">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Current Draft</p>
-                          <p className="mt-2 text-lg font-900 text-primary">{peso}{currentTypingValue}</p>
-                          <button
-                            type="button"
-                            onClick={() => setEditValue('')}
-                            className="mt-3 rounded-full bg-white px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm dark:bg-black/40 dark:text-slate-300"
-                          >
-                            Clear Draft
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
               </div>
 
               {(voiceFeedback || voiceTranscript || pendingVoiceNavAction) && (
@@ -1409,7 +1350,100 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
             </div>
 
             {/* DYNAMIC SCROLLABLE BODY */}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 touch-pan-y">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 touch-pan-y"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="mb-3 rounded-[1.5rem] border border-slate-200 bg-white/85 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/30">
+                <div className="flex items-center justify-between gap-3">
+                  <HelpHint
+                    label={
+                      editorMode === 'batch'
+                        ? 'Queued batch fares stay here until you finalize. Expand the list to remove any wrong count before saving.'
+                        : 'Queued fare taps stay here until you finalize. Expand the list to remove a wrong fare before it is saved into the sheet.'
+                    }
+                    triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500"
+                  >
+                    Queued Entries
+                  </HelpHint>
+                  <button
+                    type="button"
+                    onClick={() => setIsEntryTapeExpanded(current => !current)}
+                    className="rounded-full bg-slate-100 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:bg-white/10 dark:text-slate-200"
+                  >
+                    {isEntryTapeExpanded ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+
+                <p className="mt-2 text-[11px] font-bold text-slate-500 dark:text-slate-300">
+                  {editorMode === 'batch' ? batchTapeSummary : standardTapeSummary}
+                </p>
+
+                {isEntryTapeExpanded && (
+                  <div className="mt-3">
+                    {editorMode === 'batch' ? (
+                      selectedBatchItems.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedBatchItems.map(([fare, count]) => (
+                            <div
+                              key={`${fare}-${count}`}
+                              className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-black/20"
+                            >
+                              <div>
+                                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Queued Fare</p>
+                                <p className="mt-1 text-base font-900 text-slate-900 dark:text-white">{count} x {peso}{fare}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setBatchCounts(prev => ({ ...prev, [fare]: '0' }))}
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-90 dark:bg-black/40"
+                                title={`Remove ${fare}`}
+                              >
+                                <span className="material-icons text-sm leading-none">close</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-500">No batch fares selected yet.</p>
+                      )
+                    ) : stagedStandardEntries.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {stagedStandardEntries.map((fare, i) => (
+                          <div key={`${fare}-${i}`} className={`relative min-h-[56px] rounded-xl border px-3 py-2 shadow-sm ${getTapeHighlight(selectedSlotIdx + i + 1)}`}>
+                            <span className="absolute left-2 top-2 text-[7px] font-black opacity-60">#{selectedSlotIdx + i + 1}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStagedEntry(i)}
+                              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-500 active:scale-90 dark:bg-black/60"
+                              title={`Delete slot ${selectedSlotIdx + i + 1}`}
+                            >
+                              <span className="material-icons text-[11px] leading-none">close</span>
+                            </button>
+                            <div className="flex h-full items-center justify-center pt-2">
+                              <span className="text-[11px] font-black">{peso}{fare}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : currentTypingValue > 0 ? (
+                      <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/[0.06] px-4 py-3 text-center">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Current Draft</p>
+                        <p className="mt-2 text-lg font-900 text-primary">{peso}{currentTypingValue}</p>
+                        <button
+                          type="button"
+                          onClick={() => setEditValue('')}
+                          className="mt-3 rounded-full bg-white px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-500 shadow-sm dark:bg-black/40 dark:text-slate-300"
+                        >
+                          Clear Draft
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm font-bold text-slate-500">No staged fares yet. Tap a fare square to start filling boxes.</p>
+                    )}
+                  </div>
+                )}
+              </div>
               {editorMode === 'standard' ? (
                 <div className="pb-4">
                   <div className="relative z-10 grid grid-cols-3 gap-2.5">

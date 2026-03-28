@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import StopPickerOverlay from './StopPickerOverlay';
 import ManualKMOverlay from './ManualKMOverlay';
@@ -7,6 +7,8 @@ import FloatingVoiceButton from './FloatingVoiceButton';
 import LocationAssistOverlay from './LocationAssistOverlay';
 import HelpHint from './HelpHint';
 import { calculateFare, formatFareRate } from '../utils/fare';
+import { consumePendingMapsReturnRefresh } from '../utils/google-maps';
+import type { MapPickerPoint } from './MapPickerOverlay';
 import { useAuth } from '../context/AuthContext';
 import type {
   CurrentLocationSnapshot,
@@ -17,6 +19,7 @@ import type {
 import {
   findNearestMappedSegment,
   findNearestMappedStop,
+  getDistanceMeters,
   getLocationErrorMessage,
   getLocationReliabilityMessage,
   hasRouteCoordinates,
@@ -25,6 +28,10 @@ import {
   queryLocationPermissionState,
   requestBestCurrentLocation
 } from '../utils/location';
+import {
+  hasGoogleMapsAssistConfig,
+  snapLocationToRoad
+} from '../utils/google-maps-assist';
 import type {
   BrowserSpeechRecognition,
   FareTypeVoiceAnswer,
@@ -46,6 +53,7 @@ const peso = '\u20B1';
 const RECENT_FARE_LIMIT = 4;
 type VoiceAssistantStep = 'fare' | 'fare-type' | 'cash';
 type MatchedFareVoiceResult = Extract<FareVoiceParseResult, { status: 'match' }>;
+const MapPickerOverlay = React.lazy(() => import('./MapPickerOverlay'));
 
 const CalcScreen: React.FC = () => {
   const {
@@ -65,6 +73,7 @@ const CalcScreen: React.FC = () => {
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isConductorCalcOpen, setIsConductorCalcOpen] = useState(false);
   const [isLocationAssistOpen, setIsLocationAssistOpen] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationWarning, setLocationWarning] = useState<string | null>(null);
@@ -244,6 +253,76 @@ const CalcScreen: React.FC = () => {
 
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toFixed(0) : km.toFixed(1);
+  };
+
+  const routeMapSeed = useMemo<MapPickerPoint>(() => {
+    const mappedStops = activeRoute.stops.filter(
+      stop => typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
+    );
+    const seededStop = mappedStops[0] ?? routeStart;
+
+    return {
+      latitude: typeof seededStop.latitude === 'number' ? seededStop.latitude : 16.4023,
+      longitude: typeof seededStop.longitude === 'number' ? seededStop.longitude : 120.596,
+      placeId: seededStop.googlePlaceId ?? null,
+      label: seededStop.name,
+      source: 'manual'
+    };
+  }, [activeRoute.stops, routeStart]);
+
+  const applyResolvedLocation = (nextLocation: CurrentLocationSnapshot) => {
+    const nextNearestStop = findNearestMappedStop(activeRoute.stops, nextLocation);
+    const nextSegmentMatch = findNearestMappedSegment(activeRoute.stops, nextLocation);
+    const nextLocationWarning = getLocationReliabilityMessage(nextLocation);
+
+    setCurrentLocation(nextLocation);
+    setNearestStopMatch(nextNearestStop);
+    setNearestSegmentMatch(nextSegmentMatch);
+    setLocationError(null);
+    setLocationWarning(nextLocationWarning);
+
+    return {
+      nextNearestStop,
+      nextSegmentMatch,
+      nextLocationWarning
+    };
+  };
+
+  const buildSnapEligibleLocation = async (location: CurrentLocationSnapshot) => {
+    if (!hasGoogleMapsAssistConfig() || location.accuracy > 150) {
+      return location;
+    }
+
+    try {
+      const snappedPoint = await snapLocationToRoad([location]);
+      if (!snappedPoint) {
+        return location;
+      }
+
+      const driftMeters = getDistanceMeters(
+        location.latitude,
+        location.longitude,
+        snappedPoint.latitude,
+        snappedPoint.longitude
+      );
+
+      if (driftMeters > 180) {
+        return location;
+      }
+
+      return {
+        ...location,
+        latitude: snappedPoint.latitude,
+        longitude: snappedPoint.longitude
+      };
+    } catch {
+      return location;
+    }
+  };
+
+  const openLocationMapPicker = () => {
+    setIsLocationAssistOpen(true);
+    setIsMapPickerOpen(true);
   };
 
   const handleSwap = () => {
@@ -675,15 +754,8 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      const nextLocation: CurrentLocationSnapshot = await requestBestCurrentLocation();
-      const nextNearestStop = findNearestMappedStop(activeRoute.stops, nextLocation);
-      const nextSegmentMatch = findNearestMappedSegment(activeRoute.stops, nextLocation);
-      const nextLocationWarning = getLocationReliabilityMessage(nextLocation);
-      setCurrentLocation(nextLocation);
-      setNearestStopMatch(nextNearestStop);
-      setNearestSegmentMatch(nextSegmentMatch);
-      setLocationError(null);
-      setLocationWarning(nextLocationWarning);
+      const nextLocation = await buildSnapEligibleLocation(await requestBestCurrentLocation());
+      const { nextNearestStop, nextSegmentMatch, nextLocationWarning } = applyResolvedLocation(nextLocation);
       void trackAnalyticsEvent({
         eventType: 'gps_succeeded',
         employeeId: authState.employeeId,
@@ -774,6 +846,87 @@ const CalcScreen: React.FC = () => {
       }
     });
     openCurrentPageInChrome();
+  };
+
+  const handleOpenManualKmWithoutEstimate = () => {
+    setIsLocationAssistOpen(false);
+    setManualPrefill({
+      destKm: destStop.km
+    });
+    setIsManualOpen(true);
+    showToast('Manual KM opened. Enter the pickup KM directly.');
+  };
+
+  const handleUseCurrentPoint = () => {
+    if (nearestSegmentMatch) {
+      handleUseManualKmFromLocation(nearestSegmentMatch.estimatedKm);
+      return;
+    }
+
+    if (nearestStopMatch) {
+      handleUseDetectedStop(nearestStopMatch.stop.name);
+      return;
+    }
+
+    handleOpenManualKmWithoutEstimate();
+  };
+
+  useEffect(() => {
+    if (!isLocationAssistOpen) return undefined;
+
+    const maybeRefreshFromMapsReturn = () => {
+      if (isLocating) return;
+      if (!consumePendingMapsReturnRefresh()) return;
+      showToast('Back from Google Maps. Refreshing GPS...');
+      void requestCurrentLocation();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        maybeRefreshFromMapsReturn();
+      }
+    };
+
+    window.addEventListener('focus', maybeRefreshFromMapsReturn);
+    window.addEventListener('pageshow', maybeRefreshFromMapsReturn);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', maybeRefreshFromMapsReturn);
+      window.removeEventListener('pageshow', maybeRefreshFromMapsReturn);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isLocationAssistOpen, isLocating, showToast, destStop.km]);
+
+  const handleConfirmMapPoint = async (point: MapPickerPoint) => {
+    setIsMapPickerOpen(false);
+
+    const baseSnapshot: CurrentLocationSnapshot = {
+      latitude: point.latitude,
+      longitude: point.longitude,
+      accuracy: point.source === 'google-place' ? 15 : 20,
+      timestamp: Date.now(),
+      source: 'browser',
+      sampleCount: 1
+    };
+
+    const nextLocation = point.source === 'manual'
+      ? await buildSnapEligibleLocation(baseSnapshot)
+      : baseSnapshot;
+
+    const { nextNearestStop, nextSegmentMatch } = applyResolvedLocation(nextLocation);
+
+    if (nextNearestStop) {
+      showToast(`Map point updated near ${nextNearestStop.stop.name}. Review the match before using it.`);
+      return;
+    }
+
+    if (nextSegmentMatch) {
+      showToast(`Map point updated near KM ${nextSegmentMatch.estimatedKm.toFixed(2).replace(/\.?0+$/, '')}.`);
+      return;
+    }
+
+    showToast('Map point updated. Use Manual KM if this is not an exact tariff stop.');
   };
 
   return (
@@ -1215,7 +1368,40 @@ const CalcScreen: React.FC = () => {
         onRetry={requestCurrentLocation}
         onUseStop={(stop) => handleUseDetectedStop(stop.name)}
         onUseManualKm={handleUseManualKmFromLocation}
+        onOpenManualKm={handleOpenManualKmWithoutEstimate}
+        onUseCurrentPoint={handleUseCurrentPoint}
+        onOpenMapPicker={openLocationMapPicker}
       />
+      <Suspense fallback={null}>
+        <MapPickerOverlay
+          isOpen={isMapPickerOpen}
+          title="Map Point Picker"
+          subtitle={activeRoute.label}
+          initialPoint={
+            currentLocation
+              ? {
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  label: 'Current GPS',
+                  source: 'gps'
+                }
+              : nearestStopMatch
+                ? {
+                    latitude: nearestStopMatch.stop.latitude ?? routeMapSeed.latitude,
+                    longitude: nearestStopMatch.stop.longitude ?? routeMapSeed.longitude,
+                    placeId: nearestStopMatch.stop.googlePlaceId ?? null,
+                    label: nearestStopMatch.stop.name,
+                    source: 'google-place'
+                  }
+                : routeMapSeed
+          }
+          confirmLabel="Use This Map Point"
+          onClose={() => setIsMapPickerOpen(false)}
+          onConfirm={point => {
+            void handleConfirmMapPoint(point);
+          }}
+        />
+      </Suspense>
     </div>
   );
 };

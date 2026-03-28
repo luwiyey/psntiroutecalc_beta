@@ -1,17 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import HelpHint from './HelpHint';
+import type { MapPickerPoint } from './MapPickerOverlay';
 import {
   collectLocationSamples,
   formatMeters,
   getLocationErrorMessage
 } from '../utils/location';
-import { snapLocationToRoad, hasGoogleMapsAssistConfig } from '../utils/google-maps-assist';
+import {
+  hasGoogleMapsAssistConfig,
+  snapLocationToRoad
+} from '../utils/google-maps-assist';
 import {
   openDirectionsToStop,
   openPointInGoogleMaps,
   openStopInGoogleMaps
 } from '../utils/google-maps';
+
+const MapPickerOverlay = React.lazy(() => import('./MapPickerOverlay'));
 
 interface Props {
   isOpen: boolean;
@@ -28,6 +34,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [mapsAssistNote, setMapsAssistNote] = useState<string | null>(null);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,6 +47,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setNotes('');
     setCaptureError(null);
     setMapsAssistNote(null);
+    setIsMapPickerOpen(false);
   }, [activeRoute.id, activeRoute.stops, isOpen]);
 
   const selectedStop = useMemo(
@@ -134,6 +142,46 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   };
 
+  const handleConfirmMapPoint = async (point: MapPickerPoint) => {
+    setIsMapPickerOpen(false);
+    setCaptureError(null);
+
+    let finalPoint = point;
+    let nextNote =
+      point.source === 'google-place'
+        ? 'Picked from Google Places inside the app.'
+        : 'Pinned manually on the in-app map.';
+
+    if (hasGoogleMapsAssistConfig()) {
+      try {
+        const snappedPoint = await snapLocationToRoad([point]);
+        if (snappedPoint) {
+          finalPoint = {
+            ...finalPoint,
+            latitude: snappedPoint.latitude,
+            longitude: snappedPoint.longitude,
+            placeId: snappedPoint.placeId ?? finalPoint.placeId ?? null,
+            source: 'manual'
+          };
+          nextNote = 'Map point snapped to the nearest road with Google Roads.';
+        }
+      } catch {
+        // Keep the manually picked point when Google Roads is unavailable.
+      }
+    }
+
+    setCapturedLocation({
+      latitude: finalPoint.latitude,
+      longitude: finalPoint.longitude,
+      accuracy: point.source === 'google-place' ? 15 : 20,
+      timestamp: Date.now(),
+      sampleCount: 1,
+      source: 'browser'
+    });
+    setMapsAssistNote(nextNote);
+    showToast('Map point selected for this stop', 'info');
+  };
+
   return (
     <div className="fixed inset-0 z-[160] bg-white dark:bg-black flex flex-col animate-fade-in">
       <header
@@ -165,7 +213,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           <div>
             <HelpHint
               label="If Supabase is connected, saved stop samples can sync across devices instead of staying only on this phone."
-              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-slate-400"
             >
               Shared Sync
             </HelpHint>
@@ -186,7 +234,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="mt-4 rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-black/30">
           <HelpHint
             label="Calibration improves the saved stop location. Passenger counts are not entered here. Those belong in Drop-Off Alerts."
-            triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary underline decoration-dotted underline-offset-4"
+            triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary"
           >
             Calibration Only
           </HelpHint>
@@ -199,8 +247,8 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="rounded-[2rem] bg-white p-4 shadow-sm dark:bg-night-charcoal">
           <HelpHint
-            label="Pick the stop you are physically near, then capture the phone GPS so the app learns a better stop point."
-            triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+            label="Pick the stop you are physically near, then capture the phone GPS or choose the point on the in-app map so the app learns a better stop point."
+            triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
           >
             Choose Stop
           </HelpHint>
@@ -226,7 +274,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                     <div>
                       <p className="text-sm font-black">{stop.name}</p>
                       <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        KM {stop.km} • {stop.calibrationSamples ?? 0} learned samples
+                        KM {stop.km} â€¢ {stop.calibrationSamples ?? 0} learned samples
                       </p>
                     </div>
                     {isSelected && (
@@ -244,7 +292,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <p className="text-[10px] font-black uppercase tracking-widest text-primary">Selected Stop</p>
             <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">{selectedStop.name}</h2>
             <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-              KM {selectedStop.km} • Radius {selectedStop.radiusMeters ?? 60}m
+              KM {selectedStop.km} â€¢ Radius {selectedStop.radiusMeters ?? 60}m
             </p>
             {selectedStop.latitude && selectedStop.longitude && (
               <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
@@ -277,16 +325,24 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               >
                 {isCapturing ? 'Capturing GPS...' : 'Capture Current Location'}
               </button>
-              <input
-                type="number"
-                min="35"
-                max="180"
-                value={radiusInput}
-                onChange={event => setRadiusInput(event.target.value)}
-                className="rounded-[1.5rem] border border-slate-200 bg-white px-4 text-center text-sm font-black text-slate-700 outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
-                placeholder="Radius (m)"
-              />
+              <button
+                type="button"
+                onClick={() => setIsMapPickerOpen(true)}
+                className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-4 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+              >
+                Pick On Map
+              </button>
             </div>
+
+            <input
+              type="number"
+              min="35"
+              max="180"
+              value={radiusInput}
+              onChange={event => setRadiusInput(event.target.value)}
+              className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-center text-sm font-black text-slate-700 outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+              placeholder="Radius (m)"
+            />
 
             <textarea
               value={notes}
@@ -309,7 +365,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                   {capturedLocation.latitude.toFixed(6)}, {capturedLocation.longitude.toFixed(6)}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  Accuracy {formatMeters(capturedLocation.accuracy)} • {capturedLocation.sampleCount ?? 1} samples • {capturedLocation.source === 'native' ? 'Phone GPS' : 'Browser GPS'}
+                  Accuracy {formatMeters(capturedLocation.accuracy)} â€¢ {capturedLocation.sampleCount ?? 1} samples â€¢ {capturedLocation.source === 'native' ? 'Phone GPS' : 'Browser GPS'}
                 </p>
                 {mapsAssistNote && (
                   <p className="mt-2 text-xs font-semibold text-primary">{mapsAssistNote}</p>
@@ -332,9 +388,37 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
         )}
       </div>
+
+      <React.Suspense fallback={null}>
+        <MapPickerOverlay
+          isOpen={isMapPickerOpen}
+          title="Pick Stop Point On Map"
+          subtitle={selectedStop ? `${selectedStop.name} â€¢ ${activeRoute.shortLabel}` : activeRoute.shortLabel}
+          initialPoint={
+            capturedLocation
+              ? {
+                  latitude: capturedLocation.latitude,
+                  longitude: capturedLocation.longitude,
+                  label: selectedStop?.name ?? 'Captured point',
+                  source: 'gps'
+                }
+              : {
+                  latitude: selectedStop?.latitude ?? activeRoute.stops[0]?.latitude ?? 16.4023,
+                  longitude: selectedStop?.longitude ?? activeRoute.stops[0]?.longitude ?? 120.596,
+                  placeId: selectedStop?.googlePlaceId ?? null,
+                  label: selectedStop?.name ?? activeRoute.shortLabel,
+                  source: 'manual'
+                }
+          }
+          confirmLabel="Use This Stop Point"
+          onClose={() => setIsMapPickerOpen(false)}
+          onConfirm={point => {
+            void handleConfirmMapPoint(point);
+          }}
+        />
+      </React.Suspense>
     </div>
   );
 };
 
 export default StopCalibrationOverlay;
-

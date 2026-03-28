@@ -59,8 +59,8 @@ const HelpHint: React.FC<Props> = ({
           }
         }}
         className={
-          triggerClassName ??
-          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
+          `${triggerClassName ??
+          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/30'} no-underline`
         }
         style={{ textDecoration: 'none' }}
       >

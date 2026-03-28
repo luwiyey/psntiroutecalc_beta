@@ -29,6 +29,14 @@ export interface SnappedRoadPoint {
   source: 'google-roads';
 }
 
+export interface GooglePlaceCandidate {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+}
+
 export const hasGoogleMapsAssistConfig = () => Boolean(getSupabaseConfig());
 
 export const snapLocationToRoad = async (
@@ -78,4 +86,57 @@ export const snapLocationToRoad = async (
     placeId: payload.snappedPoint.placeId ? String(payload.snappedPoint.placeId) : null,
     source: 'google-roads'
   };
+};
+
+export const searchGooglePlaceCandidates = async (
+  textQuery: string
+): Promise<GooglePlaceCandidate[]> => {
+  const config = getSupabaseConfig();
+  const trimmedQuery = textQuery.trim();
+
+  if (!config || !isBrowser() || !trimmedQuery) {
+    return [];
+  }
+
+  const response = await fetch(`${config.url}/functions/v1/google-maps-assist`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: config.anonKey,
+      Authorization: `Bearer ${config.anonKey}`
+    },
+    body: JSON.stringify({
+      action: 'search-place',
+      textQuery: trimmedQuery
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google place search failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    places?: Array<{
+      placeId?: string;
+      name?: string;
+      formattedAddress?: string;
+      latitude?: number;
+      longitude?: number;
+    }>;
+  };
+
+  return (payload.places ?? [])
+    .map(place => ({
+      placeId: String(place.placeId ?? ''),
+      name: String(place.name ?? ''),
+      formattedAddress: String(place.formattedAddress ?? ''),
+      latitude: Number(place.latitude ?? NaN),
+      longitude: Number(place.longitude ?? NaN)
+    }))
+    .filter(place =>
+      Boolean(place.placeId) &&
+      Boolean(place.name) &&
+      Number.isFinite(place.latitude) &&
+      Number.isFinite(place.longitude)
+    );
 };

@@ -8,6 +8,14 @@ interface LatLngSample {
   longitude: number;
 }
 
+interface GooglePlaceCandidate {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -36,6 +44,63 @@ const getCenterPoint = (samples: LatLngSample[]) => ({
   latitude: samples.reduce((sum, sample) => sum + sample.latitude, 0) / samples.length,
   longitude: samples.reduce((sum, sample) => sum + sample.longitude, 0) / samples.length
 });
+
+const handleSearchPlace = async (textQuery: string, apiKey: string) => {
+  const trimmedQuery = textQuery.trim();
+
+  if (!trimmedQuery) {
+    return json({ error: 'A place search query is required.' }, 400);
+  }
+
+  const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
+    },
+    body: JSON.stringify({
+      textQuery: trimmedQuery,
+      pageSize: 5
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    return json({ error: 'Google Places API request failed.', detail }, 502);
+  }
+
+  const payload = (await response.json()) as {
+    places?: Array<{
+      id?: string;
+      displayName?: {
+        text?: string;
+      };
+      formattedAddress?: string;
+      location?: {
+        latitude?: number;
+        longitude?: number;
+      };
+    }>;
+  };
+
+  const places: GooglePlaceCandidate[] = (payload.places ?? [])
+    .map(place => ({
+      placeId: String(place.id ?? ''),
+      name: String(place.displayName?.text ?? ''),
+      formattedAddress: String(place.formattedAddress ?? ''),
+      latitude: Number(place.location?.latitude ?? NaN),
+      longitude: Number(place.location?.longitude ?? NaN)
+    }))
+    .filter(place =>
+      Boolean(place.placeId) &&
+      Boolean(place.name) &&
+      Number.isFinite(place.latitude) &&
+      Number.isFinite(place.longitude)
+    );
+
+  return json({ places });
+};
 
 const handleSnapRoad = async (samples: LatLngSample[], apiKey: string) => {
   const uniqueSamples = samples
@@ -110,10 +175,15 @@ Deno.serve(async request => {
     const body = (await request.json()) as {
       action?: string;
       samples?: LatLngSample[];
+      textQuery?: string;
     };
 
     if (body.action === 'snap-road') {
       return await handleSnapRoad(body.samples ?? [], apiKey);
+    }
+
+    if (body.action === 'search-place') {
+      return await handleSearchPlace(body.textQuery ?? '', apiKey);
     }
 
     return json({ error: 'Unsupported action.' }, 400);

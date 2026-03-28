@@ -35,6 +35,9 @@ interface Props {
   onRetry: () => void;
   onUseStop: (stop: Stop) => void;
   onUseManualKm: (pickupKm: number) => void;
+  onOpenManualKm: () => void;
+  onUseCurrentPoint: () => void;
+  onOpenMapPicker: () => void;
 }
 
 const formatCoordinate = (value: number) => value.toFixed(6);
@@ -60,7 +63,10 @@ const LocationAssistOverlay: React.FC<Props> = ({
   onOpenInChrome,
   onRetry,
   onUseStop,
-  onUseManualKm
+  onUseManualKm,
+  onOpenManualKm,
+  onUseCurrentPoint,
+  onOpenMapPicker
 }) => {
   if (!isOpen) return null;
 
@@ -77,8 +83,44 @@ const LocationAssistOverlay: React.FC<Props> = ({
   );
 
   const segmentEndpointSummary = segmentMatch
-    ? formatRouteEndpointSummary(segmentMatch.estimatedKm, routeStartKm, routeEndKm, routeStartName, routeEndName)
+    ? formatRouteEndpointSummary(
+        segmentMatch.estimatedKm,
+        routeStartKm,
+        routeEndKm,
+        routeStartName,
+        routeEndName
+      )
     : null;
+
+  const renderActionRow = (
+    primaryLabel: string,
+    onPrimaryClick: () => void,
+    secondaryLabel: string,
+    onSecondaryClick: () => void,
+    retryLabel = 'Retry'
+  ) => (
+    <div className="mt-4 grid grid-cols-2 gap-2">
+      <button
+        onClick={onPrimaryClick}
+        className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+      >
+        {primaryLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onSecondaryClick}
+        className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+      >
+        {secondaryLabel}
+      </button>
+      <button
+        onClick={onRetry}
+        className="col-span-2 rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+      >
+        {retryLabel}
+      </button>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
@@ -140,16 +182,25 @@ const LocationAssistOverlay: React.FC<Props> = ({
                       </div>
                     </div>
                   </div>
+                  {renderActionRow(
+                    'Use This Point',
+                    onUseCurrentPoint,
+                    'Open In Maps',
+                    () => openPointInGoogleMaps(location),
+                    'Retry Location'
+                  )}
                   <button
                     type="button"
-                    onClick={() => openPointInGoogleMaps(location)}
-                    className="mt-4 w-full rounded-[1.5rem] border border-white/10 bg-white/5 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                    onClick={onOpenMapPicker}
+                    className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
                   >
-                    Open Current Point In Google Maps
+                    Pick On Map
                   </button>
                 </>
               ) : (
-                <p className="mt-4 text-sm font-black uppercase tracking-widest text-white/70">Tap retry to request location.</p>
+                <p className="mt-4 text-sm font-black uppercase tracking-widest text-white/70">
+                  Tap retry to request location.
+                </p>
               )}
             </div>
 
@@ -178,9 +229,9 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     ? 'This preview is not using HTTPS, so the browser may block GPS even if phone location is on.'
                     : permissionState === 'denied'
                       ? 'Location is blocked for this browser or this site.'
-                    : permissionState === 'prompt'
-                      ? 'This browser should ask for location permission when GPS is requested.'
-                      : 'Some in-app browsers do not return GPS reliably even when phone location is on.'}
+                      : permissionState === 'prompt'
+                        ? 'This browser should ask for location permission when GPS is requested.'
+                        : 'Some in-app browsers do not return GPS reliably even when phone location is on.'}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                   {!isSecureBrowserContext
@@ -211,10 +262,16 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="text-[9px] font-black uppercase tracking-widest text-primary">Nearest Mapped Stop</p>
                 <h3 className="mt-2 text-2xl font-900 text-slate-900 dark:text-white">{nearestMatch.stop.name}</h3>
                 <p className="mt-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                  KM {nearestMatch.stop.km} • {formatMeters(nearestMatch.distanceMeters)} away
+                  KM {nearestMatch.stop.km} â€¢ {formatMeters(nearestMatch.distanceMeters)} away
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  {formatRouteEndpointSummary(nearestMatch.stop.km, routeStartKm, routeEndKm, routeStartName, routeEndName)}
+                  {formatRouteEndpointSummary(
+                    nearestMatch.stop.km,
+                    routeStartKm,
+                    routeEndKm,
+                    routeStartName,
+                    routeEndName
+                  )}
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -240,7 +297,7 @@ const LocationAssistOverlay: React.FC<Props> = ({
                   </button>
                   <button
                     onClick={onRetry}
-                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                    className="col-span-2 rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                   >
                     Retry
                   </button>
@@ -257,18 +314,18 @@ const LocationAssistOverlay: React.FC<Props> = ({
                     <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                       Use Manual KM if the pickup was not at an exact tariff stop.
                     </p>
-                    <button
-                      onClick={() => onUseManualKm(segmentMatch.estimatedKm)}
-                      className="mt-4 w-full rounded-[1.5rem] bg-slate-900 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 dark:bg-white dark:text-slate-900"
-                    >
-                      Use Manual KM
-                    </button>
+                    {renderActionRow(
+                      'Use Manual KM',
+                      () => onUseManualKm(segmentMatch.estimatedKm),
+                      'Open In Maps',
+                      () => openPointInGoogleMaps(location)
+                    )}
                     <button
                       type="button"
-                      onClick={() => openPointInGoogleMaps(location)}
+                      onClick={onOpenMapPicker}
                       className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
                     >
-                      Open In Maps
+                      Pick On Map
                     </button>
                   </div>
                 )}
@@ -286,27 +343,19 @@ const LocationAssistOverlay: React.FC<Props> = ({
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
                   Stop picker only supports exact tariff stops. Manual KM is better for this pickup.
                 </p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => onUseManualKm(segmentMatch.estimatedKm)}
-                    className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
-                  >
-                    Use Manual KM
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openPointInGoogleMaps(location)}
-                    className="rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
-                  >
-                    Open In Maps
-                  </button>
-                  <button
-                    onClick={onRetry}
-                    className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                  >
-                    Retry
-                  </button>
-                </div>
+                {renderActionRow(
+                  'Use Manual KM',
+                  () => onUseManualKm(segmentMatch.estimatedKm),
+                  'Open In Maps',
+                  () => openPointInGoogleMaps(location)
+                )}
+                <button
+                  type="button"
+                  onClick={onOpenMapPicker}
+                  className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
+                >
+                  Pick On Map
+                </button>
               </div>
             )}
 
@@ -320,18 +369,19 @@ const LocationAssistOverlay: React.FC<Props> = ({
                       : 'No mapped stop was close enough to use safely. You can retry or choose the pickup manually.'
                     : 'This route does not have GPS stop coordinates yet, so the app cannot auto-pick a stop safely. Manual stop selection stays available.'}
                 </p>
-                <button
-                  onClick={onRetry}
-                  className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                >
-                  Retry Location
-                </button>
+                {renderActionRow(
+                  'Use Manual KM',
+                  onOpenManualKm,
+                  'Open In Maps',
+                  () => openPointInGoogleMaps(location),
+                  'Retry Location'
+                )}
                 <button
                   type="button"
-                  onClick={() => openPointInGoogleMaps(location)}
+                  onClick={onOpenMapPicker}
                   className="mt-2 w-full rounded-[1.5rem] border border-primary/20 bg-primary/5 py-3 text-[10px] font-black uppercase tracking-widest text-primary active:scale-95"
                 >
-                  Open Current Point In Maps
+                  Pick On Map
                 </button>
               </div>
             )}
@@ -343,4 +393,3 @@ const LocationAssistOverlay: React.FC<Props> = ({
 };
 
 export default LocationAssistOverlay;
-
