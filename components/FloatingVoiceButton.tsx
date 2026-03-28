@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useApp } from '../context/AppContext';
 
 interface Props {
   active?: boolean;
@@ -31,6 +32,7 @@ const FloatingVoiceButton: React.FC<Props> = ({
   title,
   onActivate
 }) => {
+  const { settings } = useApp();
   const [position, setPosition] = useState(getDefaultPosition);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -94,6 +96,10 @@ const FloatingVoiceButton: React.FC<Props> = ({
       onActivate();
     }
   };
+
+  if (!settings.floatingVoiceEnabled) {
+    return null;
+  }
 
   return (
     <button

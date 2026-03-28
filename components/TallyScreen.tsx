@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { TallyTrip, TallySheet, TallySession } from '../types';
 import { calculateFare } from '../utils/fare';
 import FloatingVoiceButton from './FloatingVoiceButton';
+import HelpHint from './HelpHint';
 import TallyCalcOverlay from './TallyCalcOverlay';
 import type { BrowserSpeechRecognition, TallyNavigationVoiceParseResult } from '../utils/voice';
 import {
@@ -435,7 +436,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const toggleSection = (section: EditorSection) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
-  const renderAccordion = (section: EditorSection, label: string, summary: string, children: React.ReactNode) => {
+  const renderAccordion = (
+    section: EditorSection,
+    label: string,
+    summary: string,
+    children: React.ReactNode,
+    helpText?: string
+  ) => {
     const isOpen = expandedSections[section];
 
     return (
@@ -445,7 +452,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
           className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
         >
           <div>
-            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">{label}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500">{label}</p>
+              {helpText && <HelpHint label={helpText} />}
+            </div>
             <p className="mt-1 text-[11px] font-bold text-slate-500">{summary}</p>
           </div>
           <span className={`material-icons text-base text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
@@ -1173,7 +1183,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
             <div className="shrink-0 px-5 pb-3 space-y-3">
               <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
-                <p className="text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">Current Entry</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">Current Entry</p>
+                  <HelpHint label="This card shows the slot you are filling now, the next slot after it, and which trip and sheet you are currently working on." />
+                </div>
                 <div className="mt-3 flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Now Filling</p>
@@ -1210,9 +1223,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   >
                     Standard
                   </button>
-                  <p className="text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">
-                    Punch Amount
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-center text-[8px] font-black uppercase tracking-[0.25em] text-slate-400">
+                      Punch Amount
+                    </p>
+                    <HelpHint label="Standard is for tapping one fare into the current slot. Batch Mode is for counting several passengers with the same fare. The center box shows what will be saved next." />
+                  </div>
                   <button
                     onClick={() => setEditorMode('batch')}
                     className={`min-w-[104px] rounded-full px-4 py-2 text-[10px] font-900 uppercase tracking-[0.2em] transition-colors ${
@@ -1271,9 +1287,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
                 <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                   <span />
-                  <p className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Enter saves current amount
-                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Enter saves current amount
+                    </p>
+                    <HelpHint label="When you press Enter on the keyboard or use the save flow, the current punch amount is staged into the active slot. Next Block saves first, then jumps to the next block." />
+                  </div>
                   <button
                     onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
                     disabled={!hasNextBlock}
@@ -1323,6 +1342,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 'tape',
                 'Entry Tape',
                 activeTapeSummary,
+                editorMode === 'batch'
+                  ? 'Entry Tape lists the fares currently queued in batch mode. Remove any wrong fare here before finalizing.'
+                  : 'Entry Tape lists the staged fares waiting to be saved into the sheet. Use the X buttons to remove mistakes before finalizing.',
                 editorMode === 'batch' ? (
                   selectedBatchItems.length > 0 ? (
                     <div className="space-y-2">

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import StopPickerOverlay from './StopPickerOverlay';
+import HelpHint from './HelpHint';
 import { formatEta } from '../utils/stop-data';
 
 interface Props {
@@ -37,6 +38,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleAddReminder = () => {
     if (!draftStopName) {
+      showToast('Pick a stop first before queueing passengers.', 'info');
       return;
     }
 
@@ -149,25 +151,36 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               </button>
             ))}
           </div>
-          <p className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-300">
+          <div className="mt-4 flex items-start gap-2">
+            <HelpHint label="Alerts watch the selected stop while the app is open. Sound and vibration can be turned on or off separately." />
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">
             Alerts work best while the app is open and GPS is allowed on the phone.
-          </p>
+            </p>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Add Stop</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Add Stop</p>
+                  <HelpHint label="Step 1: pick a stop. Step 2: enter how many passengers will go down there. Step 3: tap Queue to save the reminder." />
+                </div>
                 <h2 className="mt-2 text-xl font-black text-slate-900 dark:text-white">
                   {draftStopName || 'Choose a drop-off stop'}
                 </h2>
+                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                  {draftStopName
+                    ? 'Stop selected. Enter passengers, then tap Queue.'
+                    : 'Pick the stop first, then enter the passenger count.'}
+                </p>
               </div>
               <button
                 onClick={() => setIsStopPickerOpen(true)}
                 className="rounded-[1.5rem] bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
               >
-                Pick Stop
+                {draftStopName ? 'Change Stop' : 'Pick Stop'}
               </button>
             </div>
 
@@ -190,10 +203,13 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Queued Stops</p>
+            <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Queued Stops</p>
+                  <HelpHint label="These are the stops currently being watched for reminders. You can turn each one on or off, mark it done, or remove it." />
+                </div>
                 <h2 className="mt-2 text-xl font-black text-slate-900 dark:text-white">{routeReminders.length} saved</h2>
               </div>
               <span className="rounded-full bg-primary/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary">
@@ -287,6 +303,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         onSelect={name => {
           setDraftStopName(name);
           setIsStopPickerOpen(false);
+          showToast(`${name} selected. Enter passengers, then tap Queue.`, 'info');
         }}
         title="Drop-Off Stop"
       />

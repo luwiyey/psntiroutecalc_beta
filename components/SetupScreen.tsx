@@ -5,6 +5,7 @@ import NormalCalcOverlay from './NormalCalcOverlay';
 import StopCalibrationOverlay from './StopCalibrationOverlay';
 import StopReminderOverlay from './StopReminderOverlay';
 import SupportContactSheet from './SupportContactSheet';
+import HelpHint from './HelpHint';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 interface Props {
@@ -53,6 +54,10 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
 
   const toggleNightMode = () => {
     setSettings(prev => ({ ...prev, isNightMode: !prev.isNightMode }));
+  };
+
+  const toggleFloatingVoice = () => {
+    setSettings(prev => ({ ...prev, floatingVoiceEnabled: !prev.floatingVoiceEnabled }));
   };
 
   const activeShiftForRoute = currentShift?.routeId === activeRoute.id ? currentShift : null;
@@ -139,6 +144,11 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const routeReminderCount = stopReminders.filter(
     reminder => reminder.routeId === activeRoute.id && reminder.status !== 'done'
   ).length;
+  const lastClosedShiftForRoute = [...shiftHistory]
+    .filter(shift => shift.routeId === activeRoute.id && shift.status === 'closed' && shift.endedAt)
+    .sort((a, b) => b.endedAt - a.endedAt)[0];
+  const formatShiftTimestamp = (timestamp?: number | null) =>
+    timestamp ? new Date(timestamp).toLocaleString() : 'Not recorded yet';
 
   const handleExportAudit = async () => {
     if (auditScope === 'shift' && !activeShiftForRoute) {
@@ -235,34 +245,62 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       </header>
 
       <div className="space-y-5 p-4">
-        <div className="mt-4 flex items-center gap-4 rounded-[1.5rem] bg-white p-5 shadow-md dark:bg-night-charcoal">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white">
-            <span className="material-icons text-xl">badge</span>
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Active Conductor</p>
-            <p className="text-lg font-black leading-tight dark:text-white">{authState.employeeName}</p>
-            <p className="mt-1 text-[10px] font-bold text-slate-400">ID: {authState.employeeId}</p>
-          </div>
-        </div>
-
-        <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Assigned Route</h2>
-          <div className="rounded-[1.75rem] bg-primary p-5 text-white">
-            <div>
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/70">Current Route</p>
-                <h3 className="mt-2 text-lg font-900 leading-tight">{activeRoute.label}</h3>
-                <p className="mt-4 text-xs font-bold text-white/70">
-                  Route is assigned after login. Logout if you need to sign in with another conductor or choose a different route.
-                </p>
+        <section className="mt-4 overflow-hidden rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+          <div className="bg-primary p-5 text-white">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+                <span className="material-icons text-xl">badge</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Active Conductor</p>
+                <p className="mt-1 truncate text-lg font-black leading-tight">{authState.employeeName}</p>
+                <p className="mt-1 text-[10px] font-bold text-white/80">ID: {authState.employeeId}</p>
               </div>
             </div>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Current Route</p>
+              <h2 className="mt-2 text-lg font-900 leading-tight text-slate-800 dark:text-white">{activeRoute.label}</h2>
+              <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                Route is assigned after login. Logout if you need to switch conductor or choose a different route.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-slate-100 px-4 py-4 dark:border-white/5">
+              <div className="pr-4">
+                <p className="font-bold dark:text-white">Remember Login</p>
+                <p className="text-xs text-slate-500 dark:text-slate-300">This phone keeps this conductor signed in until logout.</p>
+              </div>
+              <span className="shrink-0 rounded-2xl bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                Saved
+              </span>
+            </div>
+
+            <button
+              onClick={logout}
+              className="flex w-full items-center justify-between rounded-2xl border border-slate-100 px-4 py-4 transition-all active:scale-[0.99] dark:border-white/5"
+            >
+              <div className="flex items-center gap-4">
+                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                  <span className="material-icons">logout</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold dark:text-white">Logout</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">Switch to another conductor account on this phone</p>
+                </div>
+              </div>
+              <span className="material-icons text-slate-400">chevron_right</span>
+            </button>
           </div>
         </section>
 
         <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Shift Control</h2>
+          <div className="flex items-center gap-2 px-1">
+            <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shift Control</h2>
+            <HelpHint label="Start Shift opens a timed trip session for this route. End Shift closes it. The app records when it started and when it ended." />
+          </div>
           <div className="space-y-4 rounded-[1.75rem] bg-white p-6 shadow-md dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -272,7 +310,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 </p>
                 <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-300">
                   {activeShiftForRoute
-                    ? `Started ${new Date(activeShiftForRoute.startedAt).toLocaleString()}`
+                    ? 'This route is currently recording logs and tally totals inside one active shift.'
                     : 'Start a shift so remittance, logs, and tally totals only count this trip.'}
                 </p>
               </div>
@@ -283,6 +321,21 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               }`}>
                 {activeShiftForRoute ? 'Running' : 'Idle'}
               </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Started At</p>
+                <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                  {activeShiftForRoute ? formatShiftTimestamp(activeShiftForRoute.startedAt) : 'Tap Start Shift'}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Last Ended Shift</p>
+                <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                  {lastClosedShiftForRoute ? formatShiftTimestamp(lastClosedShiftForRoute.endedAt) : 'No closed shift yet'}
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -309,8 +362,18 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </section>
 
         <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Live Audit</h2>
-          <div className="space-y-5 rounded-[1.75rem] bg-white p-6 shadow-md dark:bg-night-charcoal">
+          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Live Audit</p>
+                  <HelpHint label="Audit shows totals from fare logs and tally sessions. Use the scope buttons inside to switch between current shift, today, this route, or all saved data." />
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open remittance totals only when you need them.</p>
+              </div>
+              <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
+            </summary>
+            <div className="space-y-5 border-t border-slate-100 p-6 dark:border-white/5">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {([
                 { id: 'shift', label: 'Current Shift' },
@@ -370,12 +433,23 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 {auditScope === 'shift' ? 'Generate Remittance Report' : 'Copy Audit Snapshot'}
               </button>
             </div>
-          </div>
+            </div>
+          </details>
         </section>
 
         <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Tools</h2>
-          <div className="rounded-2xl bg-white shadow-md dark:bg-night-charcoal">
+          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tools</p>
+                  <HelpHint label="Tools contains extra actions like the calculator, stop calibration, and drop-off alerts. These are not needed on every trip, so they stay collapsed until opened." />
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open extra tools only when you need them.</p>
+              </div>
+              <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
+            </summary>
+            <div className="border-t border-slate-100 dark:border-white/5">
             <button
               onClick={() => setIsCalculatorOpen(true)}
               className="flex w-full items-center justify-between border-b border-slate-100 p-5 transition-all active:scale-[0.99] dark:border-white/5"
@@ -435,12 +509,23 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 <span className="material-icons text-slate-400">chevron_right</span>
               </div>
             </button>
-          </div>
+            </div>
+          </details>
         </section>
 
         <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">GPS Stop Learning</h2>
-          <div className="rounded-2xl bg-white p-5 shadow-md dark:bg-night-charcoal">
+          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stops And GPS</p>
+                  <HelpHint label="This section is for learning better stop locations, syncing stop data, and checking reminder status. It is separate from passenger fare entry." />
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Keep GPS learning and sync controls tucked away until needed.</p>
+              </div>
+              <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
+            </summary>
+            <div className="border-t border-slate-100 p-5 dark:border-white/5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <p className="font-bold dark:text-white">Shared Stop Data</p>
@@ -500,12 +585,23 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             {stopSyncState.lastError && (
               <p className="mt-3 text-xs font-semibold text-red-500">{stopSyncState.lastError}</p>
             )}
-          </div>
+            </div>
+          </details>
         </section>
 
         <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">ID Check</h2>
-          <div className="rounded-2xl bg-white p-5 shadow-md dark:bg-night-charcoal">
+          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ID Check</p>
+                  <HelpHint label="Use this to open the official PWD verification website. The app cannot verify the result automatically because the official page must be checked directly." />
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open official verification tools only when needed.</p>
+              </div>
+              <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
+            </summary>
+            <div className="border-t border-slate-100 p-5 dark:border-white/5">
             <div className="flex items-start gap-4">
               <div className="rounded-xl bg-primary/10 p-3 text-primary">
                 <span className="material-icons">verified_user</span>
@@ -540,19 +636,23 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 Closed for now. Only the official PWD checker is available in this section.
               </p>
             </div>
-          </div>
+            </div>
+          </details>
         </section>
 
         <section className="space-y-3">
           <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Preferences</h2>
           <div className="rounded-2xl bg-white shadow-md dark:bg-night-charcoal">
-            <div className="flex items-center justify-between p-5">
+            <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-white/5">
               <div className="flex items-center gap-4">
                 <div className="rounded-xl bg-primary/10 p-3 text-primary">
                   <span className="material-icons">dark_mode</span>
                 </div>
                 <div>
-                  <p className="font-bold dark:text-white">Night Shift</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold dark:text-white">Night Shift</p>
+                    <HelpHint label="Turns on the dark theme for easier use at night or inside dim buses." />
+                  </div>
                   <p className="text-xs text-slate-500">Dark background mode</p>
                 </div>
               </div>
@@ -561,38 +661,28 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 <div className="h-6 w-11 rounded-full bg-slate-200 transition-all after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full dark:bg-slate-700" />
               </label>
             </div>
+
+            <div className="flex items-center justify-between p-5">
+              <div className="flex items-center gap-4">
+                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                  <span className="material-icons">mic</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold dark:text-white">Voice Assistant Bubble</p>
+                    <HelpHint label="Shows the movable floating microphone for voice fare lookup, voice calculator, stop picking, and tally navigation. Turn this off if it gets in the way." />
+                  </div>
+                  <p className="text-xs text-slate-500">Show or hide the floating microphone</p>
+                </div>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input type="checkbox" checked={settings.floatingVoiceEnabled} onChange={toggleFloatingVoice} className="peer sr-only" />
+                <div className="h-6 w-11 rounded-full bg-slate-200 transition-all after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full dark:bg-slate-700" />
+              </label>
+            </div>
           </div>
         </section>
 
-        <section className="space-y-3">
-          <h2 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Session</h2>
-          <div className="rounded-2xl bg-white shadow-md dark:bg-night-charcoal">
-            <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-white/5">
-              <div>
-                <p className="font-bold dark:text-white">Remember Login</p>
-                <p className="text-xs text-slate-500">This browser and phone will keep this conductor signed in until logout.</p>
-              </div>
-              <span className="rounded-2xl bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                Saved
-              </span>
-            </div>
-            <button
-              onClick={logout}
-              className="flex w-full items-center justify-between p-5 transition-all active:scale-[0.99]"
-            >
-              <div className="flex items-center gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                  <span className="material-icons">logout</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold dark:text-white">Logout</p>
-                  <p className="text-xs text-slate-500">Switch to another conductor account on this phone</p>
-                </div>
-              </div>
-              <span className="material-icons text-slate-400">chevron_right</span>
-            </button>
-          </div>
-        </section>
       </div>
 
       <footer className="px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-1">

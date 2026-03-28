@@ -1486,5 +1486,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   regularRate: DEFAULT_ROUTE.fare.regularRate,
   discountRate: DEFAULT_ROUTE.fare.discountRate,
   isNightMode: false,
+  floatingVoiceEnabled: true,
   conductorMode: true
 };

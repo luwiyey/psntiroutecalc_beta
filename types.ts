@@ -167,6 +167,7 @@ export interface AppSettings {
   regularRate: number;
   discountRate: number;
   isNightMode: boolean;
+  floatingVoiceEnabled: boolean;
   conductorMode: boolean;
 }
 

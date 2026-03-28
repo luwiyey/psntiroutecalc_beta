@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import HelpHint from './HelpHint';
 import {
   collectLocationSamples,
   formatMeters,
@@ -134,7 +135,10 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
         <div className="mt-4 flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-black/30">
           <div>
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shared Sync</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shared Sync</p>
+              <HelpHint label="If Supabase is connected, saved stop samples can sync across devices instead of staying only on this phone." />
+            </div>
             <p className="mt-1 text-sm font-black text-slate-800 dark:text-white">
               {stopSyncState.enabled ? 'Supabase Ready' : 'Local Device Only'}
             </p>
@@ -148,11 +152,24 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </button>
           )}
         </div>
+
+        <div className="mt-4 rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-black/30">
+          <div className="flex items-center gap-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-primary">Calibration Only</p>
+            <HelpHint label="Calibration improves the saved stop location. Passenger counts are not entered here. Those belong in Drop-Off Alerts." />
+          </div>
+          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
+            Save the stop location here. Passenger counts belong in Drop-Off Alerts, not in stop calibration.
+          </p>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="rounded-[2rem] bg-white p-4 shadow-sm dark:bg-night-charcoal">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Choose Stop</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Choose Stop</p>
+            <HelpHint label="Pick the stop you are physically near, then capture the phone GPS so the app learns a better stop point." />
+          </div>
           <div className="mt-3 grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-1">
             {filteredStops.map(stop => {
               const isSelected = selectedStop?.name === stop.name;
