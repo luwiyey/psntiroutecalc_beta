@@ -5,7 +5,9 @@ import {
   parseCashVoiceTranscript,
   parseCalculatorVoiceTranscript,
   parseFareTypeVoiceAnswer,
-  parseFareVoiceTranscript
+  parseFareVoiceTranscript,
+  parseStopVoiceTranscript,
+  parseTallyNavigationVoiceTranscript
 } from '../utils/voice';
 
 const cubaoBaguioRoute = ROUTES.find(route => route.id === CUBAO_BAGUIO_ROUTE_ID);
@@ -101,6 +103,45 @@ describe('parseCashVoiceTranscript', () => {
     const result = parseCashVoiceTranscript('maybe later');
 
     expect(result.status).toBe('invalid');
+  });
+});
+
+describe('parseStopVoiceTranscript', () => {
+  it('matches a spoken stop name for picker confirmation', () => {
+    const result = parseStopVoiceTranscript('set destination to Dau', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop result.');
+    }
+
+    expect(result.stop.name).toBe('Dau');
+  });
+});
+
+describe('parseTallyNavigationVoiceTranscript', () => {
+  it('matches next block as a confirmation-required action', () => {
+    const result = parseTallyNavigationVoiceTranscript('next block');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched tally command.');
+    }
+
+    expect(result.command).toBe('next-block');
+    expect(result.requiresConfirmation).toBe(true);
+  });
+
+  it('matches standard mode as an immediate safe action', () => {
+    const result = parseTallyNavigationVoiceTranscript('switch to standard mode');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched tally command.');
+    }
+
+    expect(result.command).toBe('standard-mode');
+    expect(result.requiresConfirmation).toBe(false);
   });
 });
 

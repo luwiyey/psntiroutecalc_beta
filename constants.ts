@@ -1,6 +1,6 @@
 import type { AppSettings, RouteProfile, Stop } from './types';
 
-export const FARE_SETTINGS_VERSION = 10;
+export const FARE_SETTINGS_VERSION = 12;
 export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 export const VICE_VERSA = '\u2194';
 
@@ -1374,8 +1374,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
@@ -1389,8 +1389,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
@@ -1405,8 +1405,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
@@ -1420,8 +1420,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
@@ -1435,8 +1435,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       minimumDistanceKm: 24,
       roundingMode: 'standard'
     }
@@ -1465,8 +1465,8 @@ export const ROUTES: RouteProfile[] = [
     fare: {
       regularRate: 2.7,
       discountRate: Number((2.7 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
-      minimumRegularFare: 60,
-      minimumDiscountFare: 48,
+      minimumRegularFare: 70,
+      minimumDiscountFare: 56,
       roundingMode: 'standard'
     }
   }

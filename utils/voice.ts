@@ -112,6 +112,55 @@ export type TallyVoiceParseResult =
       entries: number[];
     };
 
+export type StopVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      stop: Stop;
+    };
+
+export type TallyNavigationCommand =
+  | 'previous-box'
+  | 'next-box'
+  | 'next-block'
+  | 'standard-mode'
+  | 'batch-mode'
+  | 'open-calculator'
+  | 'finalize-session';
+
+export type TallyNavigationVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: TallyNavigationCommand;
+      label: string;
+      requiresConfirmation: boolean;
+    };
+
 export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
 
 export type CashVoiceParseResult =
@@ -268,6 +317,26 @@ const normalizeTallyVoiceText = (value: string) =>
       .replace(/repeat/g, ' repeat ')
       .replace(/\bn\b/g, ' repeat ')
       .replace(/[^a-z0-9+.\s]/g, ' ')
+  );
+
+const normalizeStopVoiceText = (value: string) =>
+  cleanWhitespace(
+    value
+      .toLowerCase()
+      .replace(/\bpick[\s-]?up\b/g, ' ')
+      .replace(/\bdestination\b/g, ' ')
+      .replace(/\bselect\b/g, ' ')
+      .replace(/\bchoose\b/g, ' ')
+      .replace(/\bset\b/g, ' ')
+      .replace(/\bplease\b/g, ' ')
+      .replace(/\bstop\b/g, ' ')
+      .replace(/\bpoint\b/g, ' ')
+      .replace(/\broute\b/g, ' ')
+      .replace(/\buse\b/g, ' ')
+      .replace(/\bgo to\b/g, ' ')
+      .replace(/\bto\b/g, ' ')
+      .replace(/\bfrom\b/g, ' ')
+      .replace(/[^a-z0-9\s]/g, ' ')
   );
 
 const isBoundary = (value: string | undefined) => !value || value === ' ';
@@ -646,6 +715,91 @@ export const parseFareVoiceTranscript = (
     distance,
     regularFare: fare.reg,
     discountedFare: fare.disc
+  };
+};
+
+export const parseStopVoiceTranscript = (
+  transcript: string,
+  route: RouteProfile
+): StopVoiceParseResult => {
+  const normalized = normalizeStopVoiceText(transcript);
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Try saying a stop name like "Bayambang" or "Baguio".'
+    };
+  }
+
+  const orderedStops = findOrderedStopsInTranscript(normalized, route);
+  const stop = orderedStops[0] ?? null;
+
+  if (!stop) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: `I couldn't match a stop on ${route.shortLabel}. Try saying the stop name again.`
+    };
+  }
+
+  return {
+    status: 'match',
+    transcript,
+    normalized,
+    stop
+  };
+};
+
+export const parseTallyNavigationVoiceTranscript = (
+  transcript: string
+): TallyNavigationVoiceParseResult => {
+  const normalized = cleanWhitespace(
+    transcript
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+  );
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Try saying next box, previous box, next block, standard mode, batch mode, or finalize session.'
+    };
+  }
+
+  const checks: Array<{
+    pattern: RegExp;
+    command: TallyNavigationCommand;
+    label: string;
+    requiresConfirmation: boolean;
+  }> = [
+    { pattern: /\b(previous|prev|back)\s+(box|slot)\b|\bgo back\b/, command: 'previous-box', label: 'Previous Box', requiresConfirmation: false },
+    { pattern: /\bnext\s+(box|slot)\b/, command: 'next-box', label: 'Next Box', requiresConfirmation: false },
+    { pattern: /\bnext\s+block\b|\bmove to next block\b|\bgo to next block\b/, command: 'next-block', label: 'Next Block', requiresConfirmation: true },
+    { pattern: /\bstandard\b/, command: 'standard-mode', label: 'Standard Mode', requiresConfirmation: false },
+    { pattern: /\bbatch\b/, command: 'batch-mode', label: 'Batch Mode', requiresConfirmation: false },
+    { pattern: /\b(open|show|use)\s+(calculator|calc)\b|\bcalculator\b/, command: 'open-calculator', label: 'Open Calculator', requiresConfirmation: false },
+    { pattern: /\bfinali[sz]e\b|\bsave and finali[sz]e\b/, command: 'finalize-session', label: 'Finalize Session', requiresConfirmation: true }
+  ];
+
+  const matched = checks.find(entry => entry.pattern.test(normalized));
+  if (!matched) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'I heard your voice, but not a safe tally command. Try next box, previous box, next block, standard mode, batch mode, or finalize session.'
+    };
+  }
+
+  return {
+    status: 'match',
+    transcript,
+    normalized,
+    command: matched.command,
+    label: matched.label,
+    requiresConfirmation: matched.requiresConfirmation
   };
 };
 

@@ -21,16 +21,16 @@ describe('calculateFare', () => {
   it('keeps the aircon minimum fare through 24 km', () => {
     const fare = calculateFare(24, getRouteFare(AIRCON_BAYAMBANG_ROUTE_ID));
 
-    expect(fare.reg).toBe(60);
-    expect(fare.disc).toBe(48);
+    expect(fare.reg).toBe(70);
+    expect(fare.disc).toBe(56);
     expect(fare.isMinApplied).toBe(true);
   });
 
-  it('uses the computed fare after the aircon minimum window', () => {
-    const fare = calculateFare(25, getRouteFare(TARLAC_ROUTE_ID));
+  it('uses the computed fare after the new aircon minimum window', () => {
+    const fare = calculateFare(27, getRouteFare(TARLAC_ROUTE_ID));
 
-    expect(fare.reg).toBe(68);
-    expect(fare.disc).toBe(54);
+    expect(fare.reg).toBe(73);
+    expect(fare.disc).toBe(58);
     expect(fare.isMinApplied).toBe(false);
   });
 
@@ -50,11 +50,11 @@ describe('calculateFare', () => {
     expect(fare.isMinApplied).toBe(false);
   });
 
-  it('uses the updated 2.70 rate for Dagupan / San Carlos to Cubao', () => {
-    const fare = calculateFare(25, getRouteFare(DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID));
+  it('uses the updated 2.70 rate for Dagupan / San Carlos to Cubao after the new minimum', () => {
+    const fare = calculateFare(27, getRouteFare(DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID));
 
-    expect(fare.reg).toBe(68);
-    expect(fare.disc).toBe(54);
+    expect(fare.reg).toBe(73);
+    expect(fare.disc).toBe(58);
     expect(fare.isMinApplied).toBe(false);
   });
 });

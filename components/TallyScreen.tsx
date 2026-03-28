@@ -3,7 +3,15 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { TallyTrip, TallySheet, TallySession } from '../types';
 import { calculateFare } from '../utils/fare';
+import FloatingVoiceButton from './FloatingVoiceButton';
 import TallyCalcOverlay from './TallyCalcOverlay';
+import type { BrowserSpeechRecognition, TallyNavigationVoiceParseResult } from '../utils/voice';
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseTallyNavigationVoiceTranscript
+} from '../utils/voice';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 type EditorMode = 'standard' | 'batch';
@@ -26,6 +34,8 @@ const peso = '\u20B1';
 const SLOTS_PER_BLOCK = 25;
 const SLOTS_PER_SHEET = 100;
 
+type PendingVoiceNavigationAction = Extract<TallyNavigationVoiceParseResult, { status: 'match' }>;
+
 const clampSlotIndex = (slotIdx: number) => Math.max(0, Math.min(slotIdx, SLOTS_PER_SHEET - 1));
 
 const getFirstEmptySlotIndex = (slots: number[]) => {
@@ -47,6 +57,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const { authState } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
 
   const routeSessions = useMemo(
     () =>
@@ -99,11 +110,17 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [showOnlySelected, setShowOnlySelected] = useState(false);
   const [isFooterCollapsed, setIsFooterCollapsed] = useState(true);
   const [isTallyCalcOpen, setIsTallyCalcOpen] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [pendingVoiceNavAction, setPendingVoiceNavAction] = useState<PendingVoiceNavigationAction | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<EditorSection, boolean>>({
     totals: false,
     details: false,
     tape: false
   });
+  const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ type: PendingActionType; blockIdx?: number; sheetIdx?: number } | null>(null);
@@ -229,6 +246,24 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setEditValue('');
     inputRef.current?.blur();
   }, [editorMode]);
+
+  useEffect(() => {
+    if (isEditorOpen) return;
+    setIsVoiceListening(false);
+    setVoiceTranscript('');
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
+    setPendingVoiceNavAction(null);
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+  }, [isEditorOpen]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
 
   const activeTrip = activeSession.trips[tallyNav.tripIdx] || activeSession.trips[0];
   const activeSheet = activeTrip.sheets[tallyNav.sheetIdx] || activeTrip.sheets[0];
@@ -751,6 +786,136 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     }
   };
 
+  const applyImmediateVoiceNavigation = (action: PendingVoiceNavigationAction) => {
+    switch (action.command) {
+      case 'previous-box':
+        handlePreviousTarget();
+        setVoiceFeedback('Moved to the previous box.');
+        showToast('Moved to the previous box', 'info');
+        break;
+      case 'next-box':
+        if (!hasNextTargetSlot) {
+          setVoiceFeedback('There is no next box left on this sheet.');
+          showToast('No next box left', 'info');
+          break;
+        }
+        setEditorTargetSlot(selectedSlotIdx + 1);
+        setVoiceFeedback('Moved to the next box.');
+        showToast('Moved to the next box', 'info');
+        break;
+      case 'standard-mode':
+        setEditorMode('standard');
+        inputRef.current?.focus();
+        setVoiceFeedback('Switched to Standard mode.');
+        showToast('Switched to Standard mode', 'info');
+        break;
+      case 'batch-mode':
+        setEditorMode('batch');
+        inputRef.current?.blur();
+        setVoiceFeedback('Switched to Batch mode.');
+        showToast('Switched to Batch mode', 'info');
+        break;
+      case 'open-calculator':
+        setIsTallyCalcOpen(true);
+        setVoiceFeedback('Opened the tally calculator.');
+        showToast('Opened the tally calculator', 'info');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const confirmVoiceNavigation = () => {
+    if (!pendingVoiceNavAction) return;
+
+    if (pendingVoiceNavAction.command === 'next-block') {
+      setPendingVoiceNavAction(null);
+      finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1);
+      return;
+    }
+
+    if (pendingVoiceNavAction.command === 'finalize-session') {
+      setPendingVoiceNavAction(null);
+      setPendingAction({ type: 'finalize-session' });
+    }
+  };
+
+  const startTallyNavigationVoice = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      return;
+    }
+
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback('Listening... say next box, previous box, next block, standard mode, batch mode, open calculator, or finalize session.');
+    setPendingVoiceNavAction(null);
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-PH';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onerror = event => {
+      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      setIsVoiceListening(false);
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? '';
+      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const parsed = parseTallyNavigationVoiceTranscript(transcript);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+
+      if (parsed.status !== 'match') {
+        setPendingVoiceNavAction(null);
+        setVoiceFeedback(parsed.message);
+        return;
+      }
+
+      if (parsed.command === 'next-block' && !hasNextBlock) {
+        setPendingVoiceNavAction(null);
+        setVoiceFeedback('There is no next block left on this sheet.');
+        return;
+      }
+
+      if (parsed.requiresConfirmation) {
+        setPendingVoiceNavAction(parsed);
+        setVoiceFeedback(
+          parsed.command === 'next-block'
+            ? `Heard ${parsed.label}. Review it, then confirm below because this may save the current entries.`
+            : `Heard ${parsed.label}. Review it, then confirm below before finalizing.`
+        );
+        return;
+      }
+
+      setPendingVoiceNavAction(null);
+      applyImmediateVoiceNavigation(parsed);
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceFeedback('Voice recognition could not start. Please try again.');
+      setIsVoiceListening(false);
+    }
+  };
+
   const handleClearSavedSlot = (slotIdx: number) => {
     const previousValue = activeSheet.slots[slotIdx];
     setSessions(prev =>
@@ -1119,6 +1284,41 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               </div>
 
+              {(voiceFeedback || voiceTranscript || pendingVoiceNavAction) && (
+                <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Navigation</p>
+                      <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      {formatVoiceConfidence(voiceConfidence)}
+                    </p>
+                  </div>
+                  {voiceTranscript && (
+                    <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                      Heard: "{voiceTranscript}"
+                    </p>
+                  )}
+                  {pendingVoiceNavAction && (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        onClick={confirmVoiceNavigation}
+                        className="rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                      >
+                        Confirm {pendingVoiceNavAction.label}
+                      </button>
+                      <button
+                        onClick={() => setPendingVoiceNavAction(null)}
+                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {renderAccordion(
                 'tape',
                 'Entry Tape',
@@ -1333,6 +1533,16 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
           </div>
         </div>
+      )}
+
+      {isEditorOpen && (
+        <FloatingVoiceButton
+          active={isVoiceListening}
+          disabled={!canUseVoiceRecognition}
+          label="Voice tally navigation"
+          title={canUseVoiceRecognition ? 'Voice tally navigation' : 'Voice not available in this browser'}
+          onActivate={startTallyNavigationVoice}
+        />
       )}
 
       {pendingAction && (

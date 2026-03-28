@@ -1,6 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import FloatingVoiceButton from './FloatingVoiceButton';
 import { formatRouteEndpointCompact, formatRouteEndpointSummary } from '../utils/route-distance';
+import type { BrowserSpeechRecognition, StopVoiceParseResult } from '../utils/voice';
+import {
+  formatVoiceConfidence,
+  getSpeechRecognitionCtor,
+  getSpeechRecognitionErrorMessage,
+  parseStopVoiceTranscript
+} from '../utils/voice';
 
 interface Props {
   isOpen: boolean;
@@ -11,7 +19,14 @@ interface Props {
 
 const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }) => {
   const [search, setSearch] = useState('');
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [voiceStopResult, setVoiceStopResult] = useState<StopVoiceParseResult | null>(null);
   const { activeRoute } = useApp();
+  const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   const routeStart = activeRoute.stops[0];
   const routeEnd = activeRoute.stops[activeRoute.stops.length - 1];
   const routeStartName = routeStart?.name ?? 'Route Start';
@@ -22,8 +37,20 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
   useEffect(() => {
     if (isOpen) {
       setSearch('');
+      setIsVoiceListening(false);
+      setVoiceTranscript('');
+      setVoiceFeedback(null);
+      setVoiceConfidence(null);
+      setVoiceStopResult(null);
     }
   }, [activeRoute.id, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -40,6 +67,68 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
 
   const formatKM = (km: number) => {
     return km % 1 === 0 ? km.toString() : km.toFixed(1);
+  };
+
+  const applyVoiceStop = () => {
+    if (!voiceStopResult || voiceStopResult.status !== 'match') return;
+    onSelect(voiceStopResult.stop.name);
+  };
+
+  const startVoiceStopPicker = () => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    const RecognitionCtor = getSpeechRecognitionCtor();
+    if (!RecognitionCtor) {
+      setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
+      return;
+    }
+
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback('Listening... say a stop name, then confirm it below.');
+    setVoiceStopResult(null);
+
+    const recognition = new RecognitionCtor();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'en-PH';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onerror = event => {
+      setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
+      setIsVoiceListening(false);
+    };
+    recognition.onresult = event => {
+      const recognitionResult = event.results[event.results.length - 1];
+      const alternative = recognitionResult?.[0];
+      const transcript = alternative?.transcript?.trim() ?? '';
+      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const parsed = parseStopVoiceTranscript(transcript, activeRoute);
+
+      setVoiceTranscript(transcript);
+      setVoiceConfidence(confidence);
+      setVoiceStopResult(parsed);
+      setVoiceFeedback(
+        parsed.status === 'match'
+          ? `Heard ${parsed.stop.name}. Tap Use Stop to confirm.`
+          : parsed.message
+      );
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setVoiceFeedback('Voice recognition could not start. Please try again.');
+      setIsVoiceListening(false);
+    }
   };
 
   return (
@@ -68,6 +157,40 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
         </div>
 
         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Quick Access Terminals</p>
+        {(voiceFeedback || voiceTranscript || voiceStopResult) && (
+          <div className="mb-4 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/30">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Stop Picker</p>
+                <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                {formatVoiceConfidence(voiceConfidence)}
+              </p>
+            </div>
+            {voiceTranscript && (
+              <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                Heard: "{voiceTranscript}"
+              </p>
+            )}
+            {voiceStopResult?.status === 'match' && (
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={applyVoiceStop}
+                  className="rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                >
+                  Use Stop
+                </button>
+                <button
+                  onClick={startVoiceStopPicker}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                >
+                  Speak Again
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-2">
           {activeRoute.stops.filter(stop => stop.isTerminal).map(terminal => (
             <button
@@ -124,6 +247,14 @@ const StopPickerOverlay: React.FC<Props> = ({ isOpen, onClose, onSelect, title }
       </div>
 
       <div style={{ height: 'calc(env(safe-area-inset-bottom) + 12px)' }} className="bg-white dark:bg-black shrink-0" />
+
+      <FloatingVoiceButton
+        active={isVoiceListening}
+        disabled={!canUseVoiceRecognition}
+        label={`Voice ${title}`}
+        title={canUseVoiceRecognition ? `Voice ${title}` : 'Voice not available in this browser'}
+        onActivate={startVoiceStopPicker}
+      />
     </div>
   );
 };
