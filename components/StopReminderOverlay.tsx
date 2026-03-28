@@ -152,10 +152,12 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             ))}
           </div>
           <div className="mt-4 flex items-start gap-2">
-            <HelpHint label="Alerts watch the selected stop while the app is open. Sound and vibration can be turned on or off separately." />
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-300">
-            Alerts work best while the app is open and GPS is allowed on the phone.
-            </p>
+            <HelpHint
+              label="Alerts watch the selected stop while the app is open. Sound and vibration can be turned on or off separately."
+              triggerClassName="inline-flex cursor-help rounded-md text-xs font-semibold text-slate-500 underline decoration-dotted underline-offset-4 dark:text-slate-300"
+            >
+              Alerts work best while the app is open and GPS is allowed on the phone.
+            </HelpHint>
           </div>
         </div>
 
@@ -163,10 +165,12 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Add Stop</p>
-                  <HelpHint label="Step 1: pick a stop. Step 2: enter how many passengers will go down there. Step 3: tap Queue to save the reminder." />
-                </div>
+                <HelpHint
+                  label="Step 1: pick a stop. Step 2: enter how many passengers will go down there. Step 3: tap Queue to save the reminder."
+                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                >
+                  Add Stop
+                </HelpHint>
                 <h2 className="mt-2 text-xl font-black text-slate-900 dark:text-white">
                   {draftStopName || 'Choose a drop-off stop'}
                 </h2>
@@ -206,10 +210,12 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Queued Stops</p>
-                  <HelpHint label="These are the stops currently being watched for reminders. You can turn each one on or off, mark it done, or remove it." />
-                </div>
+                <HelpHint
+                  label="These are the stops currently being watched for reminders. You can turn each one on or off, mark it done, or remove it."
+                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                >
+                  Queued Stops
+                </HelpHint>
                 <h2 className="mt-2 text-xl font-black text-slate-900 dark:text-white">{routeReminders.length} saved</h2>
               </div>
               <span className="rounded-full bg-primary/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary">

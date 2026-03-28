@@ -2,9 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface Props {
   label: string;
+  children?: React.ReactNode;
+  triggerClassName?: string;
+  align?: 'left' | 'right';
 }
 
-const HelpHint: React.FC<Props> = ({ label }) => {
+const HelpHint: React.FC<Props> = ({
+  label,
+  children,
+  triggerClassName,
+  align = 'left'
+}) => {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
 
@@ -24,23 +32,51 @@ const HelpHint: React.FC<Props> = ({ label }) => {
     };
   }, []);
 
+  const handleToggle = (event: React.MouseEvent | React.KeyboardEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(current => !current);
+  };
+
+  const handleClose = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+  };
+
+  const popupAlignmentClass = align === 'right' ? 'right-0' : 'left-0';
+
   return (
-    <span
-      ref={wrapperRef}
-      className="relative inline-flex"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button
-        type="button"
+    <span ref={wrapperRef} className="relative inline-flex max-w-full">
+      <span
+        role="button"
+        tabIndex={0}
         aria-label="How this works"
-        onClick={() => setOpen(current => !current)}
-        className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-all active:scale-95 dark:border-white/10 dark:bg-black/40 dark:text-slate-300"
+        onClick={handleToggle}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            handleToggle(event);
+          }
+        }}
+        className={
+          triggerClassName ??
+          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary underline decoration-dotted underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
+        }
       >
-        <span className="material-icons text-sm leading-none">help_outline</span>
-      </button>
+        {children ?? 'How it works'}
+      </span>
       {open && (
-        <span className="absolute right-0 top-8 z-[210] w-60 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-semibold leading-relaxed text-white shadow-2xl dark:bg-night-charcoal">
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={handleClose}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              handleToggle(event);
+            }
+          }}
+          className={`absolute top-[calc(100%+8px)] z-[210] w-[min(16rem,calc(100vw-2rem))] rounded-2xl bg-slate-900 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-white shadow-2xl outline-none dark:bg-night-charcoal ${popupAlignmentClass}`}
+        >
           {label}
         </span>
       )}

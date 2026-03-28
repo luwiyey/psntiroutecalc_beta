@@ -930,10 +930,12 @@ const CalcScreen: React.FC = () => {
           className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
           <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2">
-              <p className="text-[9px] font-black text-primary uppercase tracking-widest">Pickup Point</p>
-              <HelpHint label="Tap here to choose where the passenger rode the bus. This becomes the starting point for the fare." />
-            </div>
+            <HelpHint
+              label="Tap here to choose where the passenger rode the bus. This becomes the starting point for the fare."
+              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary underline decoration-dotted underline-offset-4"
+            >
+              Pickup Point
+            </HelpHint>
             <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight whitespace-normal break-words">
               KM {formatKM(originStop.km)} - {origin}
             </h2>
@@ -955,10 +957,12 @@ const CalcScreen: React.FC = () => {
           className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
           <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2">
-              <p className="text-[9px] font-black text-primary uppercase tracking-widest">Destination</p>
-              <HelpHint label="Tap here to choose where the passenger will get down. The fare is based on pickup point to destination." />
-            </div>
+            <HelpHint
+              label="Tap here to choose where the passenger will get down. The fare is based on pickup point to destination."
+              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary underline decoration-dotted underline-offset-4"
+            >
+              Destination
+            </HelpHint>
             <h2 className="text-3xl font-800 text-slate-800 dark:text-white leading-tight whitespace-normal break-words">
               KM {formatKM(destStop.km)} - {destination}
             </h2>
@@ -1054,10 +1058,12 @@ const CalcScreen: React.FC = () => {
           <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-white/10 dark:bg-night-charcoal">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">Recent Fares</h2>
-                  <HelpHint label="These are your latest fare combinations on this route. Tap one to load the same pickup and destination again." />
-                </div>
+                <HelpHint
+                  label="These are your latest fare combinations on this route. Tap one to load the same pickup and destination again."
+                  triggerClassName="inline-flex cursor-help rounded-md text-base font-semibold text-slate-900 underline decoration-dotted underline-offset-4 dark:text-white"
+                >
+                  Recent Fares
+                </HelpHint>
                 <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
                   Reuse the latest route selections without tapping all the stops again.
                 </p>

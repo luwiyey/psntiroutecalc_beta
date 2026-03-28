@@ -298,8 +298,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
 
         <section className="space-y-3">
           <div className="flex items-center gap-2 px-1">
-            <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shift Control</h2>
-            <HelpHint label="Start Shift opens a timed trip session for this route. End Shift closes it. The app records when it started and when it ended." />
+            <HelpHint
+              label="Start Shift opens a timed trip session for this route. End Shift closes it. The app records when it started and when it ended."
+              triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+            >
+              Shift Control
+            </HelpHint>
           </div>
           <div className="space-y-4 rounded-[1.75rem] bg-white p-6 shadow-md dark:bg-night-charcoal">
             <div className="flex items-start justify-between gap-4">
@@ -366,8 +370,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Live Audit</p>
-                  <HelpHint label="Audit shows totals from fare logs and tally sessions. Use the scope buttons inside to switch between current shift, today, this route, or all saved data." />
+                  <HelpHint
+                    label="Audit shows totals from fare logs and tally sessions. Use the scope buttons inside to switch between current shift, today, this route, or all saved data."
+                    triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  >
+                    Live Audit
+                  </HelpHint>
                 </div>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open remittance totals only when you need them.</p>
               </div>
@@ -442,8 +450,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tools</p>
-                  <HelpHint label="Tools contains extra actions like the calculator, stop calibration, and drop-off alerts. These are not needed on every trip, so they stay collapsed until opened." />
+                  <HelpHint
+                    label="Tools contains extra actions like the calculator, stop calibration, and drop-off alerts. These are not needed on every trip, so they stay collapsed until opened."
+                    triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  >
+                    Tools
+                  </HelpHint>
                 </div>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open extra tools only when you need them.</p>
               </div>
@@ -518,8 +530,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stops And GPS</p>
-                  <HelpHint label="This section is for learning better stop locations, syncing stop data, and checking reminder status. It is separate from passenger fare entry." />
+                  <HelpHint
+                    label="This section is for learning better stop locations, syncing stop data, and checking reminder status. It is separate from passenger fare entry."
+                    triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  >
+                    Stops And GPS
+                  </HelpHint>
                 </div>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Keep GPS learning and sync controls tucked away until needed.</p>
               </div>
@@ -594,8 +610,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">ID Check</p>
-                  <HelpHint label="Use this to open the official PWD verification website. The app cannot verify the result automatically because the official page must be checked directly." />
+                  <HelpHint
+                    label="Use this to open the official PWD verification website. The app cannot verify the result automatically because the official page must be checked directly."
+                    triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  >
+                    ID Check
+                  </HelpHint>
                 </div>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open official verification tools only when needed.</p>
               </div>
@@ -650,8 +670,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="font-bold dark:text-white">Night Shift</p>
-                    <HelpHint label="Turns on the dark theme for easier use at night or inside dim buses." />
+                    <HelpHint
+                      label="Turns on the dark theme for easier use at night or inside dim buses."
+                      triggerClassName="inline-flex cursor-help rounded-md font-bold text-slate-900 underline decoration-dotted underline-offset-4 dark:text-white"
+                    >
+                      Night Shift
+                    </HelpHint>
                   </div>
                   <p className="text-xs text-slate-500">Dark background mode</p>
                 </div>
@@ -669,8 +693,12 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="font-bold dark:text-white">Voice Assistant Bubble</p>
-                    <HelpHint label="Shows the movable floating microphone for voice fare lookup, voice calculator, stop picking, and tally navigation. Turn this off if it gets in the way." />
+                    <HelpHint
+                      label="Shows the movable floating microphone for voice fare lookup, voice calculator, stop picking, and tally navigation. Turn this off if it gets in the way."
+                      triggerClassName="inline-flex cursor-help rounded-md font-bold text-slate-900 underline decoration-dotted underline-offset-4 dark:text-white"
+                    >
+                      Voice Assistant Bubble
+                    </HelpHint>
                   </div>
                   <p className="text-xs text-slate-500">Show or hide the floating microphone</p>
                 </div>
