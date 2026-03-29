@@ -163,6 +163,9 @@ export interface StopReminder {
   enabled: boolean;
   status: 'active' | 'arriving' | 'done';
   createdAt: number;
+  matchConfidence?: 'exact-stop' | 'near-stop' | 'manual-pick';
+  matchedPlaceLabel?: string | null;
+  lastEtaSeconds?: number;
   alertsTriggered: {
     twoMinute: boolean;
     oneMinute: boolean;

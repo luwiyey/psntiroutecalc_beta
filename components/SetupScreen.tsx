@@ -448,40 +448,29 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </section>
 
         <section className="space-y-3">
-          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <HelpHint
-                    label="Tools contains quick utilities like the standard calculator. GPS learning and alerts now live in their own dedicated places so this section stays lighter."
-                triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
-                  >
-                    Tools
-                  </HelpHint>
-                </div>
-                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Open extra tools only when you need them.</p>
-              </div>
-              <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
-            </summary>
-            <div className="border-t border-slate-100 dark:border-white/5">
-            <button
-              onClick={() => setIsCalculatorOpen(true)}
-              className="flex w-full items-center justify-between border-b border-slate-100 p-5 transition-all active:scale-[0.99] dark:border-white/5"
+          <div className="flex items-center gap-2 px-1">
+            <HelpHint
+              label="Open the standard calculator here if you need a full cursor-editable calculator with voice input while staying inside Setup."
+              triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
             >
-              <div className="flex items-center gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                  <span className="material-icons">calculate</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold dark:text-white">Standard Calculator</p>
-                  <p className="text-xs text-slate-500">Open the regular calculator with voice and cursor editing</p>
-                </div>
+              Standard Calculator
+            </HelpHint>
+          </div>
+          <button
+            onClick={() => setIsCalculatorOpen(true)}
+            className="flex w-full items-center justify-between rounded-[1.75rem] bg-white p-5 shadow-md transition-all active:scale-[0.99] dark:bg-night-charcoal"
+          >
+            <div className="flex items-center gap-4">
+              <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                <span className="material-icons">calculate</span>
               </div>
-              <span className="material-icons text-slate-400">chevron_right</span>
-            </button>
-
+              <div className="text-left">
+                <p className="font-bold dark:text-white">Open Standard Calculator</p>
+                <p className="text-xs text-slate-500">Voice, cursor editing, and normal math tools stay here in Setup.</p>
+              </div>
             </div>
-          </details>
+            <span className="material-icons text-slate-400">chevron_right</span>
+          </button>
         </section>
 
         <section className="space-y-3">

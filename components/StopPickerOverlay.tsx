@@ -29,6 +29,9 @@ interface Props {
   title: string;
   mode?: 'pickup' | 'destination';
   onRecommendManualKm?: (pickupKm: number, placeLabel?: string) => void;
+  initialSearch?: string;
+  suggestedStops?: string[];
+  helperMessage?: string | null;
 }
 
 interface GooglePlaceResolution {
@@ -44,7 +47,10 @@ const StopPickerOverlay: React.FC<Props> = ({
   onSelect,
   title,
   mode = 'destination',
-  onRecommendManualKm
+  onRecommendManualKm,
+  initialSearch = '',
+  suggestedStops = [],
+  helperMessage = null
 }) => {
   const [search, setSearch] = useState('');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
@@ -80,7 +86,7 @@ const StopPickerOverlay: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setSearch('');
+      setSearch(initialSearch);
       setIsVoiceListening(false);
       setVoiceTranscript('');
       setVoiceFeedback(null);
@@ -91,7 +97,7 @@ const StopPickerOverlay: React.FC<Props> = ({
       setGoogleResults([]);
       setGoogleResolution(null);
     }
-  }, [activeRoute.id, isOpen]);
+  }, [activeRoute.id, initialSearch, isOpen]);
 
   useEffect(() => {
     return () => {
@@ -272,6 +278,30 @@ const StopPickerOverlay: React.FC<Props> = ({
             onChange={event => setSearch(event.target.value)}
           />
         </div>
+
+        {helperMessage ? (
+          <div className="mb-4 rounded-[1.5rem] border border-primary/10 bg-primary/[0.06] px-4 py-4">
+            <p className="text-sm font-semibold text-slate-600 dark:text-slate-200">{helperMessage}</p>
+          </div>
+        ) : null}
+
+        {suggestedStops.length > 0 && (
+          <div className="mb-4">
+            <p className="ml-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Suggested Exact Stops</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {suggestedStops.map(stopName => (
+                <button
+                  key={stopName}
+                  type="button"
+                  onClick={() => onSelect(stopName)}
+                  className="rounded-full border border-primary/20 bg-primary/[0.08] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-primary active:scale-95"
+                >
+                  {stopName}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
           type="button"

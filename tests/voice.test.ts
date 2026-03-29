@@ -8,6 +8,11 @@ import {
   parseFareConversationShortcut,
   parseFareTypeVoiceAnswer,
   parseFareVoiceTranscript,
+  parsePassengerCountVoiceTranscript,
+  parseStopReminderVoiceChain,
+  parseStopReminderVoiceChainDetailed,
+  parseStopReminderFollowUpTranscript,
+  parseStopReminderVoiceTranscript,
   parseStopVoiceTranscript,
   parseTallyBatchFollowUpTranscript,
   parseVoiceBinaryAnswer,
@@ -67,6 +72,19 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.status).toBe('match');
     if (result.status !== 'match') {
       throw new Error('Expected a matched fare result after fuzzy repetition cleanup.');
+    }
+
+    expect(result.originStop.name).toBe('Cubao');
+    expect(result.destinationStop.name).toBe('Dau');
+    expect(result.fareType).toBe('regular');
+  });
+
+  it('ignores filler words and repeated connector words from noisy recognition', () => {
+    const result = parseFareVoiceTranscript('uh Cubao to to Dau regular', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result from noisy speech.');
     }
 
     expect(result.originStop.name).toBe('Cubao');
@@ -250,6 +268,132 @@ describe('parseStopVoiceTranscript', () => {
     }
 
     expect(result.stop.name).toBe('Dau');
+  });
+
+  it('uses fuzzy stop matching for slight speech variations', () => {
+    const result = parseStopVoiceTranscript('Rosaryo', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a fuzzy matched stop result.');
+    }
+
+    expect(result.stop.name).toBe('Rosario');
+    expect(result.matchMode).toBe('fuzzy');
+  });
+});
+
+describe('parseStopReminderVoiceTranscript', () => {
+  it('matches stop plus passenger count in one phrase', () => {
+    const result = parseStopReminderVoiceTranscript('Dau 2', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop reminder result.');
+    }
+
+    expect(result.stop?.name).toBe('Dau');
+    expect(result.passengerCount).toBe(2);
+  });
+
+  it('keeps the stop query even when the passenger count is missing', () => {
+    const result = parseStopReminderVoiceTranscript('Dau', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop reminder result.');
+    }
+
+    expect(result.stop?.name).toBe('Dau');
+    expect(result.passengerCount).toBeNull();
+  });
+
+  it('returns suggestion candidates for rough stop spellings', () => {
+    const result = parseStopReminderVoiceTranscript('Rosaryo 2', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop reminder result with suggestions.');
+    }
+
+    expect(result.suggestions.length).toBeGreaterThan(0);
+  });
+});
+
+describe('parseStopReminderVoiceChain', () => {
+  it('splits chained stop reminders joined by commas', () => {
+    const result = parseStopReminderVoiceChain('Dau 1, Rosario 2', cubaoBaguioRoute);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].passengerCount).toBe(1);
+    expect(result[1].passengerCount).toBe(2);
+  });
+
+  it('reports unresolved chained segments instead of silently dropping them', () => {
+    const result = parseStopReminderVoiceChainDetailed('Dau 1, Rosario', cubaoBaguioRoute);
+
+    expect(result.segments).toHaveLength(2);
+    expect(result.items).toHaveLength(1);
+    expect(result.unresolvedSegments).toEqual(['Rosario']);
+  });
+});
+
+describe('parsePassengerCountVoiceTranscript', () => {
+  it('reads passenger count follow-up answers', () => {
+    const result = parsePassengerCountVoiceTranscript('two passengers');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched passenger count result.');
+    }
+
+    expect(result.passengerCount).toBe(2);
+  });
+});
+
+describe('parseStopReminderFollowUpTranscript', () => {
+  it('matches next follow-up commands', () => {
+    const result = parseStopReminderFollowUpTranscript('next');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop reminder follow-up result.');
+    }
+
+    expect(result.command).toBe('next-stop');
+  });
+
+  it('matches wrong as a correction command', () => {
+    const result = parseStopReminderFollowUpTranscript('wrong');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched stop reminder follow-up result.');
+    }
+
+    expect(result.command).toBe('correct-last');
+  });
+
+  it('matches undo as a recovery command', () => {
+    const result = parseStopReminderFollowUpTranscript('undo last');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched undo follow-up result.');
+    }
+
+    expect(result.command).toBe('undo-last');
+  });
+
+  it('matches pause alerts as a follow-up command', () => {
+    const result = parseStopReminderFollowUpTranscript('pause alerts');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched pause follow-up result.');
+    }
+
+    expect(result.command).toBe('pause-alerts');
   });
 });
 

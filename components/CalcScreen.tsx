@@ -371,7 +371,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleSwap = () => {
-    clearVisibleVoiceState();
+    clearVisibleVoiceState({ keepMemory: false });
     const temp = origin;
     setOrigin(destination);
     setDestination(temp);
@@ -404,14 +404,14 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleReset = () => {
-    clearVisibleVoiceState();
+    clearVisibleVoiceState({ keepMemory: false });
     setOrigin(routeStart.name);
     setDestination(routeEnd.name);
     showToast(`Reset to ${activeRoute.shortLabel}`);
   };
 
   const applyRecentFare = (nextOrigin: string, nextDestination: string) => {
-    clearVisibleVoiceState();
+    clearVisibleVoiceState({ keepMemory: false });
     setOrigin(nextOrigin);
     setDestination(nextDestination);
     showToast(`Loaded ${nextOrigin} to ${nextDestination}`);
@@ -1402,7 +1402,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleUseDetectedStop = (stopName: string) => {
-    clearVisibleVoiceState();
+    clearVisibleVoiceState({ keepMemory: false });
     setOrigin(stopName);
     setIsLocationAssistOpen(false);
     showToast(`Pickup set to ${stopName}`);
@@ -1446,7 +1446,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleRecommendManualKmFromPlaceSearch = (pickupKm: number, placeLabel?: string) => {
-    clearVisibleVoiceState();
+    clearVisibleVoiceState({ keepMemory: false });
     setIsOriginPickerOpen(false);
     setManualPrefill({
       pickupKm,
@@ -2025,20 +2025,20 @@ const CalcScreen: React.FC = () => {
           <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-700 dark:text-slate-300">Reset Route</span>
         </button>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
           <button
             onClick={() => {
               setManualPrefill(null);
               setIsManualOpen(true);
             }}
-            className="bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
+            className="w-full bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
           >
             <span className="material-icons text-primary text-2xl">keyboard</span>
             <span className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 dark:text-slate-300">Manual KM</span>
           </button>
           <button
             onClick={() => setIsMidStopOpen(true)}
-            className="bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
+            className="w-full bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
           >
             <span className="material-icons text-primary text-2xl">timeline</span>
             <span className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 dark:text-slate-300">Mid-Stop Est</span>
@@ -2063,7 +2063,7 @@ const CalcScreen: React.FC = () => {
           isOpen={isOriginPickerOpen}
           onClose={() => setIsOriginPickerOpen(false)}
           onSelect={(name) => {
-            clearVisibleVoiceState();
+            clearVisibleVoiceState({ keepMemory: false });
             setOrigin(name);
             setIsOriginPickerOpen(false);
           }}
@@ -2075,7 +2075,7 @@ const CalcScreen: React.FC = () => {
           isOpen={isDestPickerOpen}
           onClose={() => setIsDestPickerOpen(false)}
           onSelect={(name) => {
-            clearVisibleVoiceState();
+            clearVisibleVoiceState({ keepMemory: false });
             setDestination(name);
             setIsDestPickerOpen(false);
           }}

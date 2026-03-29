@@ -203,6 +203,12 @@ const normalizeStopReminders = (savedReminders: StopReminder[] | null): StopRemi
       enabled: reminder.enabled ?? true,
       status: reminder.status ?? 'active',
       passengerCount: Math.max(1, reminder.passengerCount ?? 1),
+      matchConfidence: reminder.matchConfidence ?? 'exact-stop',
+      matchedPlaceLabel: reminder.matchedPlaceLabel ?? null,
+      lastEtaSeconds:
+        typeof reminder.lastEtaSeconds === 'number' && Number.isFinite(reminder.lastEtaSeconds)
+          ? reminder.lastEtaSeconds
+          : undefined,
       alertsTriggered: {
         twoMinute: Boolean(reminder.alertsTriggered?.twoMinute),
         oneMinute: Boolean(reminder.alertsTriggered?.oneMinute),

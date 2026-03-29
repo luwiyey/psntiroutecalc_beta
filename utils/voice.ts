@@ -121,6 +121,29 @@ export type StopVoiceParseResult =
       status: 'empty';
       transcript: string;
       message: string;
+      suggestions?: Stop[];
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+      suggestions?: Stop[];
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      stop: Stop;
+      matchMode: 'exact' | 'fuzzy';
+      suggestions?: Stop[];
+    };
+
+export type PassengerCountVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
     }
   | {
       status: 'invalid';
@@ -132,8 +155,81 @@ export type StopVoiceParseResult =
       status: 'match';
       transcript: string;
       normalized: string;
-      stop: Stop;
+      passengerCount: number;
     };
+
+export type StopReminderVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+      suggestions?: Stop[];
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+      suggestions?: Stop[];
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      stopQuery: string;
+      passengerCount: number | null;
+      stop: Stop | null;
+      stopMatchMode: 'exact' | 'fuzzy' | 'unknown';
+      suggestions: Stop[];
+    };
+
+export type StopReminderFollowUpCommand =
+  | 'next-stop'
+  | 'exit'
+  | 'correct-last'
+  | 'undo-last'
+  | 'repeat'
+  | 'pause-alerts'
+  | 'resume-alerts'
+  | 'how-many-left'
+  | 'list-passengers'
+  | 'clear-all'
+  | 'confirm-all';
+
+export type StopReminderFollowUpVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: StopReminderFollowUpCommand;
+      label: string;
+      stopQuery?: string | null;
+    };
+
+export interface StopReminderChainItem {
+  stopQuery: string;
+  passengerCount: number;
+  stop: Stop | null;
+  stopMatchMode: 'exact' | 'fuzzy' | 'unknown';
+  suggestions: Stop[];
+}
+
+export interface StopReminderChainParseResult {
+  segments: string[];
+  items: StopReminderChainItem[];
+  unresolvedSegments: string[];
+}
 
 export type TallyNavigationCommand =
   | 'previous-box'
@@ -337,6 +433,9 @@ const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
 
 const cleanWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
 
+const SPEECH_FILLER_PATTERN = /\b(?:uh|um|ah|er|hmm+|mmm+)\b/gi;
+const DEDUPABLE_SHORT_SPEECH_TOKENS = new Set(['to', 'from', 'and', 'then', 'na', 'ng', 'the']);
+
 const normalizeSpeechToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const areSimilarSpeechChunks = (leftWords: string[], rightWords: string[]) => {
@@ -373,7 +472,7 @@ const areSimilarSpeechChunks = (leftWords: string[], rightWords: string[]) => {
 };
 
 const collapseRepeatedSpeech = (value: string) => {
-  const normalized = cleanWhitespace(value);
+  const normalized = cleanWhitespace(value.replace(SPEECH_FILLER_PATTERN, ' '));
   if (!normalized) return '';
 
   const words = normalized.split(' ');
@@ -407,7 +506,11 @@ const collapseRepeatedSpeech = (value: string) => {
 
     const current = words[index];
     const previous = nextWords[nextWords.length - 1];
-    if (previous && current === previous && current.length > 3) {
+    if (
+      previous &&
+      current === previous &&
+      (current.length > 3 || DEDUPABLE_SHORT_SPEECH_TOKENS.has(current))
+    ) {
       index += 1;
       continue;
     }
@@ -555,6 +658,49 @@ const normalizeStopVoiceText = (value: string) =>
       .replace(/[^a-z0-9\s]/g, ' ')
   );
 
+const STOP_REMINDER_IGNORED_TOKENS = new Set([
+  'please',
+  'po',
+  'lang',
+  'queue',
+  'record',
+  'add',
+  'save',
+  'stop',
+  'drop',
+  'off',
+  'dropoff',
+  'alert',
+  'alerts',
+  'passenger',
+  'passengers',
+  'pax',
+  'tao',
+  'for',
+  'at',
+  'the',
+  'a',
+  'an',
+  'there',
+  'is',
+  'are',
+  'with',
+  'count'
+]);
+
+const STOP_REMINDER_COUNT_HINTS = new Set([
+  'passenger',
+  'passengers',
+  'pax',
+  'tao',
+  'there',
+  'is',
+  'are',
+  'with',
+  'na',
+  'ng'
+]);
+
 const isBoundary = (value: string | undefined) => !value || value === ' ';
 
 const getPhraseIndexes = (text: string, phrase: string) => {
@@ -576,6 +722,132 @@ const getPhraseIndexes = (text: string, phrase: string) => {
   }
 
   return indexes;
+};
+
+const tokenizeNormalizedText = (value: string) => value.split(' ').filter(Boolean);
+
+const getLevenshteinDistance = (left: string, right: string) => {
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const matrix = Array.from({ length: left.length + 1 }, () =>
+    Array<number>(right.length + 1).fill(0)
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    matrix[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    matrix[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + cost
+      );
+    }
+  }
+
+  return matrix[left.length][right.length];
+};
+
+const getPhoneticKey = (value: string) => {
+  const upper = value.toUpperCase().replace(/[^A-Z]/g, '');
+  if (!upper) return '';
+
+  const first = upper[0];
+  const replacements = upper
+    .slice(1)
+    .replace(/[AEIOUYHW]/g, '')
+    .replace(/[BFPV]/g, '1')
+    .replace(/[CGJKQSXZ]/g, '2')
+    .replace(/[DT]/g, '3')
+    .replace(/[L]/g, '4')
+    .replace(/[MN]/g, '5')
+    .replace(/[R]/g, '6')
+    .replace(/(.)\1+/g, '$1');
+
+  return `${first}${replacements}`.slice(0, 4).padEnd(4, '0');
+};
+
+const getTokenSimilarity = (left: string, right: string) => {
+  if (left === right) return 1;
+  if (!left || !right) return 0;
+
+  if (getPhoneticKey(left) === getPhoneticKey(right)) {
+    return 0.92;
+  }
+
+  const distance = getLevenshteinDistance(left, right);
+  return Math.max(0, 1 - distance / Math.max(left.length, right.length));
+};
+
+const findApproximateStopCandidates = (
+  segment: string,
+  route: RouteProfile,
+  limit = 3
+) => {
+  const tokens = tokenizeNormalizedText(segment);
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const entries = buildStopAliasEntries(route);
+  const candidates = entries.flatMap(entry => {
+    const aliasTokens = tokenizeNormalizedText(entry.alias);
+    if (aliasTokens.length === 0 || aliasTokens.length > tokens.length) {
+      return [];
+    }
+
+    const entryMatches: Array<{ stop: Stop; score: number; index: number; aliasLength: number }> = [];
+
+    for (let index = 0; index <= tokens.length - aliasTokens.length; index += 1) {
+      const windowTokens = tokens.slice(index, index + aliasTokens.length);
+      const similarities = aliasTokens.map((token, tokenIndex) =>
+        getTokenSimilarity(token, windowTokens[tokenIndex])
+      );
+      const exactishCount = similarities.filter(score => score >= 0.78).length;
+      const averageScore = similarities.reduce((sum, score) => sum + score, 0) / similarities.length;
+
+      if (
+        averageScore >= (aliasTokens.length === 1 ? 0.78 : 0.8) &&
+        exactishCount === aliasTokens.length
+      ) {
+        entryMatches.push({
+          stop: entry.stop,
+          score: averageScore,
+          index,
+          aliasLength: aliasTokens.length
+        });
+      }
+    }
+
+    return entryMatches;
+  });
+
+  return candidates
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (left.index !== right.index) {
+        return left.index - right.index;
+      }
+
+      return right.aliasLength - left.aliasLength;
+    })
+    .filter((candidate, index, list) =>
+      list.findIndex(other => other.stop.name === candidate.stop.name) === index
+    )
+    .slice(0, limit)
+    .map(candidate => candidate.stop);
 };
 
 const createAliasCandidates = (stop: Stop) => {
@@ -665,6 +937,24 @@ const findOrderedStopsInTranscript = (normalizedTranscript: string, route: Route
     .sort((left, right) => left.index - right.index || right.aliasLength - left.aliasLength);
 
   return dedupeStops(matches.map(match => match.stop));
+};
+
+export const findTopStopVoiceSuggestions = (
+  transcript: string,
+  route: RouteProfile,
+  limit = 3
+) => {
+  const normalized = normalizeStopText(collapseRepeatedSpeech(transcript));
+  if (!normalized) {
+    return [] as Stop[];
+  }
+
+  const exactMatches = findOrderedStopsInTranscript(normalized, route);
+  if (exactMatches.length > 0) {
+    return exactMatches.slice(0, limit);
+  }
+
+  return findApproximateStopCandidates(normalized, route, limit);
 };
 
 const parseNumberPhrase = (tokens: string[]): string | null => {
@@ -762,6 +1052,84 @@ const parseFractionTokens = (tokens: string[]) => {
   const parsed = parseIntegerTokens(tokens);
   return parsed ? parsed.replace(/^0+/, '') || '0' : null;
 };
+
+const isVoiceNumberToken = (token: string) =>
+  /^\d+$/.test(token) ||
+  token === 'point' ||
+  token in DIGIT_WORDS ||
+  token in SMALL_NUMBER_WORDS ||
+  token in TENS_NUMBER_WORDS ||
+  token === 'hundred' ||
+  token === 'thousand' ||
+  token === 'daan' ||
+  token === 'libo';
+
+const extractPassengerCountMatch = (tokens: string[]) => {
+  let bestMatch: { start: number; end: number; passengerCount: number; score: number } | null = null;
+
+  for (let start = 0; start < tokens.length; start += 1) {
+    if (!isVoiceNumberToken(tokens[start])) {
+      continue;
+    }
+
+    for (let end = start; end < Math.min(tokens.length, start + 4); end += 1) {
+      const segment = tokens.slice(start, end + 1);
+      if (!segment.every(isVoiceNumberToken)) {
+        break;
+      }
+
+      const parsed = parseNumberPhrase(segment);
+      if (!parsed) {
+        continue;
+      }
+
+      const passengerCount = Math.max(0, Math.round(Number(parsed)));
+      if (!Number.isFinite(passengerCount) || passengerCount <= 0) {
+        continue;
+      }
+
+      const before = tokens[start - 1];
+      const after = tokens[end + 1];
+      const score =
+        segment.length +
+        (STOP_REMINDER_COUNT_HINTS.has(before ?? '') ? 2 : 0) +
+        (STOP_REMINDER_COUNT_HINTS.has(after ?? '') ? 2 : 0) +
+        (end >= tokens.length - 1 ? 1 : 0);
+
+      if (
+        !bestMatch ||
+        score > bestMatch.score ||
+        (score === bestMatch.score && end > bestMatch.end)
+      ) {
+        bestMatch = {
+          start,
+          end,
+          passengerCount,
+          score
+        };
+      }
+    }
+  }
+
+  return bestMatch;
+};
+
+const buildStopReminderQuery = (
+  tokens: string[],
+  passengerCountMatch: ReturnType<typeof extractPassengerCountMatch>
+) =>
+  cleanWhitespace(
+    tokens
+      .filter((_, index) => {
+        if (!passengerCountMatch) {
+          return true;
+        }
+
+        return index < passengerCountMatch.start || index > passengerCountMatch.end;
+      })
+      .filter(token => !STOP_REMINDER_IGNORED_TOKENS.has(token))
+      .join(' ')
+  );
 
 const BATCH_COUNT_IGNORED_TOKENS = new Set([
   'there',
@@ -1071,19 +1439,33 @@ export const parseStopVoiceTranscript = (
     return {
       status: 'empty',
       transcript: cleanedTranscript,
-      message: 'Try saying a stop name like "Bayambang" or "Baguio".'
+      message: 'Try saying a stop name like "Bayambang" or "Baguio".',
+      suggestions: []
     };
   }
 
   const orderedStops = findOrderedStopsInTranscript(normalized, route);
-  const stop = orderedStops[0] ?? null;
+  if (orderedStops.length > 0) {
+    return {
+      status: 'match',
+      transcript: cleanedTranscript,
+      normalized,
+      stop: orderedStops[0],
+      matchMode: 'exact',
+      suggestions: orderedStops.slice(0, 3)
+    };
+  }
+
+  const approximateStops = findApproximateStopCandidates(normalized, route, 3);
+  const stop = approximateStops[0] ?? null;
 
   if (!stop) {
     return {
       status: 'invalid',
       transcript: cleanedTranscript,
       normalized,
-      message: `I couldn't match a stop on ${route.shortLabel}. Try saying the stop name again.`
+      message: `I couldn't match a stop on ${route.shortLabel}. Try saying the stop name again.`,
+      suggestions: []
     };
   }
 
@@ -1091,9 +1473,288 @@ export const parseStopVoiceTranscript = (
     status: 'match',
     transcript: cleanedTranscript,
     normalized,
-    stop
+    stop,
+    matchMode: 'fuzzy',
+    suggestions: approximateStops
   };
 };
+
+export const parsePassengerCountVoiceTranscript = (
+  transcript: string
+): PassengerCountVoiceParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopText(cleanedTranscript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript: cleanedTranscript,
+      message: 'Please say the passenger count, like "2" or "two passengers".'
+    };
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const passengerCountMatch = extractPassengerCountMatch(tokens);
+
+  if (!passengerCountMatch) {
+    return {
+      status: 'invalid',
+      transcript: cleanedTranscript,
+      normalized,
+      message: 'I heard your voice, but not the passenger count. Please say the number again.'
+    };
+  }
+
+  return {
+    status: 'match',
+    transcript: cleanedTranscript,
+    normalized,
+    passengerCount: passengerCountMatch.passengerCount
+  };
+};
+
+export const parseStopReminderVoiceTranscript = (
+  transcript: string,
+  route: RouteProfile
+): StopReminderVoiceParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopText(cleanedTranscript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript: cleanedTranscript,
+      message: 'Try saying a stop and passenger count like "Anonas 2".',
+      suggestions: []
+    };
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const passengerCountMatch = extractPassengerCountMatch(tokens);
+  const stopQuery = buildStopReminderQuery(tokens, passengerCountMatch);
+
+  if (!stopQuery) {
+    return {
+      status: 'invalid',
+      transcript: cleanedTranscript,
+      normalized,
+      message: 'I heard the passenger count, but not the stop name. Please say the stop too.',
+      suggestions: []
+    };
+  }
+
+  const stopResult = parseStopVoiceTranscript(stopQuery, route);
+  const stopSuggestions =
+    stopResult.status === 'match'
+      ? stopResult.suggestions ?? [stopResult.stop]
+      : stopResult.suggestions ?? findTopStopVoiceSuggestions(stopQuery, route);
+
+  return {
+    status: 'match',
+    transcript: cleanedTranscript,
+    normalized,
+    stopQuery,
+    passengerCount: passengerCountMatch?.passengerCount ?? null,
+    stop: stopResult.status === 'match' ? stopResult.stop : null,
+    stopMatchMode:
+      stopResult.status === 'match'
+        ? stopResult.matchMode
+        : 'unknown',
+    suggestions: stopSuggestions
+  };
+};
+
+export const parseStopReminderFollowUpTranscript = (
+  transcript: string
+): StopReminderFollowUpVoiceParseResult => {
+  const normalized = normalizeStopText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Say the next stop, say exit, say undo, or say wrong if you need to fix the last one.'
+    };
+  }
+
+  if (/\b(wrong|sorry|mistake|mali|correction|correct that|fix that|remove that)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'correct-last',
+      label: 'Correct Last Stop'
+    };
+  }
+
+  if (/\b(undo|cancel last|undo last|take back|balik huli)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'undo-last',
+      label: 'Undo Last Stop'
+    };
+  }
+
+  if (/\b(repeat|say that again|ulit|ulitin|pakulit)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'repeat',
+      label: 'Repeat Voice Prompt'
+    };
+  }
+
+  if (/\b(pause alerts|pause alert|alerts off|alert off|stop alerts)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'pause-alerts',
+      label: 'Pause Alerts'
+    };
+  }
+
+  if (/\b(resume alerts|alerts on|turn alerts on|resume alert)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'resume-alerts',
+      label: 'Resume Alerts'
+    };
+  }
+
+  if (/\b(how many left|how many pa|ilan pa|how many remaining|remaining reminders)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'how-many-left',
+      label: 'How Many Left'
+    };
+  }
+
+  if (/\b(list passengers|list reminders|list stops|what are the stops|ano mga stop)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'list-passengers',
+      label: 'List Passengers'
+    };
+  }
+
+  if (/\b(clear all|remove all|delete all)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'clear-all',
+      label: 'Clear All Stops'
+    };
+  }
+
+  if (/\b(confirm all|turn all on|enable all)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'confirm-all',
+      label: 'Confirm All Stops'
+    };
+  }
+
+  if (/\b(next|another|continue|more|again|sunod|susunod|tuloy|next stop|skip)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'next-stop',
+      label: 'Next Stop'
+    };
+  }
+
+  if (/\b(exit|stop|close|cancel|done|finish|tama na|labas|end)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'exit',
+      label: 'Exit Voice Assistant'
+    };
+  }
+
+  return {
+    status: 'invalid',
+    transcript,
+    normalized,
+    message: 'Say the next stop, say exit, say undo, or say wrong if you need to fix the last one.'
+  };
+};
+
+export const parseStopReminderVoiceChainDetailed = (
+  transcript: string,
+  route: RouteProfile
+): StopReminderChainParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  if (!cleanedTranscript.trim()) {
+    return {
+      segments: [],
+      items: [],
+      unresolvedSegments: []
+    };
+  }
+
+  const segments = cleanedTranscript
+    .split(/\s*(?:,| then | tapos | saka | and then )\s*/i)
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
+  if (segments.length <= 1) {
+    return {
+      segments,
+      items: [],
+      unresolvedSegments: []
+    };
+  }
+
+  const parsedSegments = segments.map(segment => ({
+    segment,
+    result: parseStopReminderVoiceTranscript(segment, route)
+  }));
+
+  const items: StopReminderChainItem[] = [];
+  const unresolvedSegments: string[] = [];
+
+  parsedSegments.forEach(({ segment, result }) => {
+    if (result.status === 'match' && typeof result.passengerCount === 'number' && result.passengerCount > 0) {
+      items.push({
+        stopQuery: result.stopQuery,
+        passengerCount: result.passengerCount ?? 0,
+        stop: result.stop,
+        stopMatchMode: result.stopMatchMode,
+        suggestions: result.suggestions
+      });
+      return;
+    }
+
+    unresolvedSegments.push(segment);
+  });
+
+  return {
+    segments,
+    items,
+    unresolvedSegments
+  };
+};
+
+export const parseStopReminderVoiceChain = (
+  transcript: string,
+  route: RouteProfile
+): StopReminderChainItem[] => parseStopReminderVoiceChainDetailed(transcript, route).items;
 
 export const parseTallyNavigationVoiceTranscript = (
   transcript: string
