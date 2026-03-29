@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import FloatingVoiceButton from './FloatingVoiceButton';
 import type { BrowserSpeechRecognition } from '../utils/voice';
 import {
+  extractRecognitionTranscript,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
@@ -287,10 +289,7 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       setIsVoiceListening(false);
     };
     recognition.onresult = event => {
-      const recognitionResult = event.results[event.results.length - 1];
-      const alternative = recognitionResult?.[0];
-      const transcript = alternative?.transcript?.trim() ?? '';
-      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const { transcript, confidence } = extractRecognitionTranscript(event);
       const parsed = parseCalculatorVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
@@ -298,7 +297,9 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
       if (parsed.status === 'match') {
         applyVoiceExpression(parsed.expression, parsed.prettyExpression);
-        setVoiceFeedback(`Computed ${parsed.prettyExpression}.`);
+        const computedPreview = findEvaluableExpression(parsed.expression);
+        const resultText = computedPreview ? formatNumber(computedPreview.result) : '0';
+        setVoiceFeedback(`Computed ${parsed.prettyExpression} = ${resultText}.`);
       } else {
         setVoiceFeedback(parsed.message);
       }
@@ -432,25 +433,12 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={startVoiceCalculator}
-              className={`flex h-9 min-w-[44px] items-center justify-center rounded-full px-3 text-[10px] font-black uppercase tracking-widest active:scale-90 ${
-                isVoiceListening
-                  ? 'bg-primary text-white'
-                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
-              }`}
-              title={canUseVoiceRecognition ? 'Voice calculator' : 'Voice not available in this browser'}
-            >
-              <span className="material-icons text-base">{isVoiceListening ? 'mic' : 'mic_none'}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-            >
-              <span className="material-icons text-base">close</span>
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+          >
+            <span className="material-icons text-base">close</span>
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 visible-scrollbar">
@@ -585,6 +573,13 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
+      <FloatingVoiceButton
+        active={isVoiceListening}
+        disabled={!canUseVoiceRecognition}
+        label="Voice calculator"
+        title={canUseVoiceRecognition ? 'Voice calculator' : 'Voice not available in this browser'}
+        onActivate={startVoiceCalculator}
+      />
     </div>
   );
 };

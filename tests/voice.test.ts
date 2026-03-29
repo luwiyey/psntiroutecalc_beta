@@ -47,6 +47,19 @@ describe('parseFareVoiceTranscript', () => {
 
     expect(result.message).toContain('same stop');
   });
+
+  it('collapses repeated fare phrases from speech recognition', () => {
+    const result = parseFareVoiceTranscript('Cubao to Dau regular Cubao to Dau regular', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result after collapsing repetition.');
+    }
+
+    expect(result.originStop.name).toBe('Cubao');
+    expect(result.destinationStop.name).toBe('Dau');
+    expect(result.fareType).toBe('regular');
+  });
 });
 
 describe('parseCalculatorVoiceTranscript', () => {
@@ -72,6 +85,18 @@ describe('parseCalculatorVoiceTranscript', () => {
 
     expect(result.expression).toBe('60*0.8');
     expect(result.prettyExpression).toBe('60 x 0.8');
+  });
+
+  it('accepts compact calculator phrases with an equals ending', () => {
+    const result = parseCalculatorVoiceTranscript('75+67=');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched calculator result with equals.');
+    }
+
+    expect(result.expression).toBe('75+67');
+    expect(result.prettyExpression).toBe('75 + 67');
   });
 
   it('returns empty when the transcript has no usable content', () => {

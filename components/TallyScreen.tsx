@@ -1364,7 +1364,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
                 <HelpHint
                   label="This card shows the slot you are filling now, the next slot after it, and which trip and sheet you are currently working on."
-                  triggerClassName="inline-flex cursor-help rounded-md text-[8px] font-black uppercase tracking-[0.25em] text-slate-400 underline decoration-dotted underline-offset-4"
+                          triggerClassName="inline-flex cursor-pointer rounded-md text-[8px] font-black uppercase tracking-[0.25em] text-slate-400"
                 >
                   Current Entry
                 </HelpHint>

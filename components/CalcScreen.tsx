@@ -1127,8 +1127,8 @@ const CalcScreen: React.FC = () => {
     const recognition = new RecognitionCtor();
     voiceRecognitionRef.current = recognition;
     recognition.lang = 'en-PH';
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.interimResults = false;
     recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       setIsVoiceListening(true);
@@ -1164,13 +1164,11 @@ const CalcScreen: React.FC = () => {
       latestVoiceConfidenceRef.current = confidence;
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
-      setVoiceFeedback(hasFinal ? `Heard "${transcript}". Processing...` : `Heard "${transcript}"... keep speaking.`);
+      setVoiceFeedback(hasFinal ? `Heard "${transcript}". Processing...` : `Heard "${transcript}".`);
 
-      clearVoiceSilenceTimeout();
-      voiceSilenceTimeoutRef.current = window.setTimeout(() => {
-        voiceSilenceTimeoutRef.current = null;
-        voiceRecognitionRef.current?.stop();
-      }, getVoiceSilenceDelay(requestedStep, hasFinal));
+      if (hasFinal) {
+        clearVoiceSilenceTimeout();
+      }
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -1712,8 +1710,8 @@ const CalcScreen: React.FC = () => {
         >
           <div className="min-w-0 flex-1">
             <HelpHint
-              label="Tap here to choose where the passenger rode the bus. This becomes the starting point for the fare."
-              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary underline decoration-dotted underline-offset-4"
+              label="Tap here to pick an exact KM-post stop, or search a nearby place and let the app match it to the nearest route stop. If the place is between KM posts, Manual KM is safer."
+              triggerClassName="inline-flex cursor-pointer rounded-md text-[9px] font-black uppercase tracking-widest text-primary"
             >
               Pickup Point
             </HelpHint>
@@ -1742,8 +1740,8 @@ const CalcScreen: React.FC = () => {
         >
           <div className="min-w-0 flex-1">
             <HelpHint
-              label="Tap here to choose where the passenger will get down. The fare is based on pickup point to destination."
-              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary underline decoration-dotted underline-offset-4"
+              label="Tap here to choose the exact destination stop on the route. The fare is based on pickup point to destination."
+              triggerClassName="inline-flex cursor-pointer rounded-md text-[9px] font-black uppercase tracking-widest text-primary"
             >
               Destination
             </HelpHint>
@@ -1844,7 +1842,7 @@ const CalcScreen: React.FC = () => {
               <div>
                 <HelpHint
                   label="These are your latest fare combinations on this route. Tap one to load the same pickup and destination again."
-                  triggerClassName="inline-flex cursor-help rounded-md text-base font-semibold text-slate-900 underline decoration-dotted underline-offset-4 dark:text-white"
+              triggerClassName="inline-flex cursor-pointer rounded-md text-base font-semibold text-slate-900 dark:text-white"
                 >
                   Recent Fares
                 </HelpHint>

@@ -333,6 +333,53 @@ const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
 
 const cleanWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
 
+const collapseRepeatedSpeech = (value: string) => {
+  const normalized = cleanWhitespace(value);
+  if (!normalized) return '';
+
+  const words = normalized.split(' ');
+  if (words.length >= 4 && words.length % 2 === 0) {
+    const half = words.length / 2;
+    if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+      return words.slice(0, half).join(' ');
+    }
+  }
+
+  const nextWords: string[] = [];
+  let index = 0;
+
+  while (index < words.length) {
+    let collapsedChunk = false;
+
+    for (let size = Math.min(6, Math.floor((words.length - index) / 2)); size >= 2; size -= 1) {
+      const left = words.slice(index, index + size).join(' ');
+      const right = words.slice(index + size, index + size * 2).join(' ');
+      if (left === right) {
+        nextWords.push(...words.slice(index, index + size));
+        index += size * 2;
+        collapsedChunk = true;
+        break;
+      }
+    }
+
+    if (collapsedChunk) {
+      continue;
+    }
+
+    const current = words[index];
+    const previous = nextWords[nextWords.length - 1];
+    if (previous && current === previous && current.length > 3) {
+      index += 1;
+      continue;
+    }
+
+    nextWords.push(current);
+    index += 1;
+  }
+
+  return cleanWhitespace(nextWords.join(' '));
+};
+
 const normalizeStopText = (value: string) =>
   cleanWhitespace(
     value
@@ -347,6 +394,8 @@ const normalizeCalculatorText = (value: string) =>
   cleanWhitespace(
     value
       .toLowerCase()
+      .replace(/equals?/g, ' = ')
+      .replace(/equal to/g, ' = ')
       .replace(/multiplied by/g, ' * ')
       .replace(/multiply by/g, ' * ')
       .replace(/times/g, ' * ')
@@ -360,7 +409,9 @@ const normalizeCalculatorText = (value: string) =>
       .replace(/less/g, ' - ')
       .replace(/point/g, ' point ')
       .replace(/dot/g, ' point ')
-      .replace(/[^a-z0-9+*/.\-\s]/g, ' ')
+      .replace(/=/g, ' = ')
+      .replace(/([+\-*/])/g, ' $1 ')
+      .replace(/[^a-z0-9=+*/.\-\s]/g, ' ')
   );
 
 const normalizeCashText = (value: string) =>
@@ -741,7 +792,7 @@ export const extractRecognitionTranscript = (event: SpeechRecognitionEventLike) 
     }
   }
 
-  const transcript = [...finalParts, latestInterim].filter(Boolean).join(' ').trim();
+  const transcript = collapseRepeatedSpeech([...finalParts, latestInterim].filter(Boolean).join(' ').trim());
 
   return {
     transcript,
@@ -894,11 +945,12 @@ export const parseFareVoiceTranscript = (
   transcript: string,
   route: RouteProfile
 ): FareVoiceParseResult => {
-  const normalized = normalizeStopText(transcript);
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopText(cleanedTranscript);
   if (!normalized) {
     return {
       status: 'empty',
-      transcript,
+      transcript: cleanedTranscript,
       message: 'Tap the mic and say something like "Bayambang to Baguio discounted".'
     };
   }
@@ -921,38 +973,38 @@ export const parseFareVoiceTranscript = (
   }
 
   if (!originStop || !destinationStop) {
-    return {
-      status: 'invalid',
-      transcript,
-      normalized,
-      message: `I couldn't match both stops on ${route.shortLabel}. Try saying "${route.stops[0]?.name ?? 'Origin'} to ${route.stops[route.stops.length - 1]?.name ?? 'Destination'} discounted".`
-    };
+      return {
+        status: 'invalid',
+        transcript: cleanedTranscript,
+        normalized,
+        message: `I couldn't match both stops on ${route.shortLabel}. Try saying "${route.stops[0]?.name ?? 'Origin'} to ${route.stops[route.stops.length - 1]?.name ?? 'Destination'} discounted".`
+      };
   }
 
   if (originStop.name === destinationStop.name) {
-    return {
-      status: 'invalid',
-      transcript,
-      normalized,
-      message: 'I heard the same stop for pickup and destination. Please say two different stops.'
-    };
+      return {
+        status: 'invalid',
+        transcript: cleanedTranscript,
+        normalized,
+        message: 'I heard the same stop for pickup and destination. Please say two different stops.'
+      };
   }
 
   const distance = Math.abs(destinationStop.km - originStop.km);
   if (distance <= 0) {
-    return {
-      status: 'invalid',
-      transcript,
-      normalized,
-      message: 'That route distance is zero. Please try again with a different stop pair.'
-    };
+      return {
+        status: 'invalid',
+        transcript: cleanedTranscript,
+        normalized,
+        message: 'That route distance is zero. Please try again with a different stop pair.'
+      };
   }
 
   const fare = calculateFare(distance, route.fare);
 
   return {
     status: 'match',
-    transcript,
+    transcript: cleanedTranscript,
     normalized,
     fareType,
     originStop,
@@ -967,11 +1019,12 @@ export const parseStopVoiceTranscript = (
   transcript: string,
   route: RouteProfile
 ): StopVoiceParseResult => {
-  const normalized = normalizeStopVoiceText(transcript);
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopVoiceText(cleanedTranscript);
   if (!normalized) {
     return {
       status: 'empty',
-      transcript,
+      transcript: cleanedTranscript,
       message: 'Try saying a stop name like "Bayambang" or "Baguio".'
     };
   }
@@ -982,7 +1035,7 @@ export const parseStopVoiceTranscript = (
   if (!stop) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: `I couldn't match a stop on ${route.shortLabel}. Try saying the stop name again.`
     };
@@ -990,7 +1043,7 @@ export const parseStopVoiceTranscript = (
 
   return {
     status: 'match',
-    transcript,
+    transcript: cleanedTranscript,
     normalized,
     stop
   };
@@ -999,8 +1052,9 @@ export const parseStopVoiceTranscript = (
 export const parseTallyNavigationVoiceTranscript = (
   transcript: string
 ): TallyNavigationVoiceParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
   const normalized = cleanWhitespace(
-    transcript
+    cleanedTranscript
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
   );
@@ -1008,7 +1062,7 @@ export const parseTallyNavigationVoiceTranscript = (
   if (!normalized) {
     return {
       status: 'empty',
-      transcript,
+      transcript: cleanedTranscript,
       message: 'Try saying next box, previous box, next block, standard, batch, or finalize session.'
     };
   }
@@ -1032,7 +1086,7 @@ export const parseTallyNavigationVoiceTranscript = (
   if (!matched) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: 'I heard your voice, but not a safe tally command. Try next box, previous box, next block, standard, batch, or finalize session.'
     };
@@ -1040,7 +1094,7 @@ export const parseTallyNavigationVoiceTranscript = (
 
   return {
     status: 'match',
-    transcript,
+    transcript: cleanedTranscript,
     normalized,
     command: matched.command,
     label: matched.label,
@@ -1211,11 +1265,12 @@ export const parseTallyBatchFollowUpTranscript = (
 };
 
 export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVoiceParseResult => {
-  const normalized = normalizeCalculatorText(transcript);
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeCalculatorText(cleanedTranscript);
   if (!normalized) {
     return {
       status: 'empty',
-      transcript,
+      transcript: cleanedTranscript,
       message: 'Try saying something like "12 plus 45" or "60 times point eight".'
     };
   }
@@ -1235,11 +1290,15 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
   };
 
   for (const token of tokens) {
+    if (token === '=') {
+      break;
+    }
+
     if (OPERATOR_TOKENS.has(token)) {
       if (!flushNumber()) {
         return {
           status: 'invalid',
-          transcript,
+          transcript: cleanedTranscript,
           normalized,
           message: 'I heard the math words, but I could not safely turn them into numbers.'
         };
@@ -1248,7 +1307,7 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
       if (parts.length === 0 || OPERATOR_TOKENS.has(parts[parts.length - 1])) {
         return {
           status: 'invalid',
-          transcript,
+          transcript: cleanedTranscript,
           normalized,
           message: 'I need a number before that operator. Try saying the full expression again.'
         };
@@ -1264,7 +1323,7 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
   if (!flushNumber()) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: 'I could not turn that spoken number into a calculator expression.'
     };
@@ -1273,7 +1332,7 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
   if (parts.length === 0 || OPERATOR_TOKENS.has(parts[parts.length - 1])) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: 'That expression looks incomplete. Try saying the numbers and operators again.'
     };
@@ -1284,7 +1343,7 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
 
   return {
     status: 'match',
-    transcript,
+    transcript: cleanedTranscript,
     normalized,
     expression,
     prettyExpression: expression
@@ -1296,11 +1355,12 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
 };
 
 export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResult => {
-  const normalized = normalizeCashText(transcript);
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeCashText(cleanedTranscript);
   if (!normalized) {
     return {
       status: 'empty',
-      transcript,
+      transcript: cleanedTranscript,
       message: 'Please say the passenger money clearly, like "one thousand pesos".'
     };
   }
@@ -1311,7 +1371,7 @@ export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResu
   if (!spokenAmount) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: 'I heard the response, but I could not safely read the passenger money amount.'
     };
@@ -1321,7 +1381,7 @@ export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResu
   if (!Number.isFinite(amount) || amount <= 0) {
     return {
       status: 'invalid',
-      transcript,
+      transcript: cleanedTranscript,
       normalized,
       message: 'The passenger money needs to be greater than zero.'
     };
@@ -1329,7 +1389,7 @@ export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResu
 
   return {
     status: 'match',
-    transcript,
+    transcript: cleanedTranscript,
     normalized,
     amount,
     spokenAmount

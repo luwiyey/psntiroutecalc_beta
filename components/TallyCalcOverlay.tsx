@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import FloatingVoiceButton from './FloatingVoiceButton';
 import type { BrowserSpeechRecognition } from '../utils/voice';
 import {
+  extractRecognitionTranscript,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
@@ -320,10 +322,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
       setIsVoiceListening(false);
     };
     recognition.onresult = event => {
-      const recognitionResult = event.results[event.results.length - 1];
-      const alternative = recognitionResult?.[0];
-      const transcript = alternative?.transcript?.trim() ?? '';
-      const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const { transcript, confidence } = extractRecognitionTranscript(event);
       const parsed = parseTallyVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
@@ -369,25 +368,12 @@ const TallyCalcOverlay: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={startVoiceTally}
-              className={`flex h-9 min-w-[44px] items-center justify-center rounded-full px-3 text-[10px] font-black uppercase tracking-widest active:scale-90 ${
-                isVoiceListening
-                  ? 'bg-primary text-white'
-                  : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300'
-              }`}
-              title={canUseVoiceRecognition ? 'Voice tally calculator' : 'Voice not available in this browser'}
-            >
-              <span className="material-icons text-base">{isVoiceListening ? 'mic' : 'mic_none'}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-            >
-              <span className="material-icons text-base">close</span>
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+          >
+            <span className="material-icons text-base">close</span>
+          </button>
         </div>
 
         <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
@@ -618,6 +604,14 @@ const TallyCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      <FloatingVoiceButton
+        active={isVoiceListening}
+        disabled={!canUseVoiceRecognition}
+        label="Voice tally calculator"
+        title={canUseVoiceRecognition ? 'Voice tally calculator' : 'Voice not available in this browser'}
+        onActivate={startVoiceTally}
+      />
     </div>
   );
 };

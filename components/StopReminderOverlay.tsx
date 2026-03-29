@@ -166,7 +166,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <HelpHint
-                  label="Step 1: pick a stop. Step 2: enter how many passengers will go down there. Step 3: tap Queue to save the reminder."
+                  label="Pick the exact KM-post stop for this drop-off. If you only know the place or landmark, search it first and then use the nearest route stop."
                   triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                 >
                   Add Stop
@@ -184,9 +184,9 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 onClick={() => setIsStopPickerOpen(true)}
                 className="w-full shrink-0 rounded-[1.5rem] bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 sm:w-auto"
               >
-                {draftStopName ? 'Change Stop' : 'Pick Stop'}
-              </button>
-            </div>
+                  {draftStopName ? 'Change Stop' : 'Pick Or Search Stop'}
+                </button>
+              </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <input

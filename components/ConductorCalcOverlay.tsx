@@ -3,6 +3,7 @@ import FloatingVoiceButton from "./FloatingVoiceButton";
 import type { BrowserSpeechRecognition } from "../utils/voice";
 import {
   cancelVoiceReply,
+  extractRecognitionTranscript,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
@@ -329,18 +330,28 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       speakVoiceReply(message);
     };
     recognition.onresult = event => {
-      const recognitionResult = event.results[event.results.length - 1];
-      const alternative = recognitionResult?.[0];
-      const transcript = alternative?.transcript?.trim() ?? "";
-      const confidence = typeof alternative?.confidence === "number" ? alternative.confidence : null;
+      const { transcript, confidence } = extractRecognitionTranscript(event);
       const parsedExpression = parseCalculatorVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
 
       if (parsedExpression.status === "match") {
+        const expressionMatch = parsedExpression.expression.match(/^(-?\d+(?:\.\d+)?)([+\-*/])(-?\d+(?:\.\d+)?)$/);
         applyVoiceExpression(parsedExpression.expression);
-        const summary = `Computed ${parsedExpression.prettyExpression}.`;
+        const summary = expressionMatch
+          ? (() => {
+              const result = computeBinary(
+                Number(expressionMatch[1]),
+                expressionMatch[2] as "+" | "-" | "*" | "/",
+                Number(expressionMatch[3])
+              );
+              const resultText = Number.isInteger(result)
+                ? result.toString()
+                : Number(result.toFixed(10)).toString();
+              return `Computed ${parsedExpression.prettyExpression} = ${resultText}.`;
+            })()
+          : `Computed ${parsedExpression.prettyExpression}.`;
         setVoiceFeedback(summary);
         speakVoiceReply(summary);
         return;

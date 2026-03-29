@@ -44,7 +44,10 @@ const HelpHint: React.FC<Props> = ({
     setOpen(false);
   };
 
-  const popupAlignmentClass = align === 'right' ? 'right-0' : 'left-0';
+  const popupAlignmentClass =
+    align === 'right'
+      ? 'left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0'
+      : 'left-1/2 -translate-x-1/2 sm:left-0 sm:translate-x-0';
 
   return (
     <span ref={wrapperRef} className="relative inline-flex max-w-full">
@@ -60,7 +63,7 @@ const HelpHint: React.FC<Props> = ({
         }}
         className={
           `${triggerClassName ??
-          'inline-flex cursor-help items-center rounded-md text-[11px] font-black text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/30'} no-underline`
+          'inline-flex cursor-pointer items-center rounded-md text-[11px] font-black text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/30'} no-underline`
         }
         style={{ textDecoration: 'none' }}
       >
@@ -76,7 +79,7 @@ const HelpHint: React.FC<Props> = ({
               handleToggle(event);
             }
           }}
-          className={`absolute top-[calc(100%+8px)] z-[210] w-[min(16rem,calc(100vw-2rem))] rounded-2xl bg-slate-900 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-white shadow-2xl outline-none dark:bg-night-charcoal ${popupAlignmentClass}`}
+          className={`absolute top-[calc(100%+8px)] z-[210] max-h-[40vh] w-[min(13rem,calc(100vw-3rem))] overflow-y-auto rounded-[1.25rem] bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-snug text-white shadow-2xl outline-none dark:bg-night-charcoal sm:w-[min(14.5rem,calc(100vw-2.5rem))] ${popupAlignmentClass}`}
         >
           {label}
         </span>

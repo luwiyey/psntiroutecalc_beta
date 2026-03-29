@@ -65,6 +65,18 @@ const StopPickerOverlay: React.FC<Props> = ({
   const routeEndName = routeEnd?.name ?? 'Route End';
   const routeStartKm = routeStart?.km ?? 0;
   const routeEndKm = routeEnd?.km ?? routeStartKm;
+  const pickerHeading =
+    mode === 'pickup'
+      ? 'Pick Or Search Pickup'
+      : mode === 'destination'
+        ? 'Pick Or Search Destination'
+        : `Pick Or Search ${title}`;
+  const searchLabel =
+    mode === 'pickup'
+      ? 'pickup stop'
+      : mode === 'destination'
+        ? 'destination stop'
+        : title.toLowerCase();
 
   useEffect(() => {
     if (isOpen) {
@@ -245,7 +257,7 @@ const StopPickerOverlay: React.FC<Props> = ({
         <button onClick={onClose} className="-ml-2 p-2 transition-opacity active:opacity-50">
           <span className="material-icons text-slate-600 dark:text-white">chevron_left</span>
         </button>
-        <h1 className="text-sm font-900 uppercase tracking-widest text-slate-800 dark:text-white">Select {title}</h1>
+        <h1 className="text-sm font-900 uppercase tracking-widest text-slate-800 dark:text-white">{pickerHeading}</h1>
         <div className="w-10" />
       </header>
 
@@ -255,7 +267,7 @@ const StopPickerOverlay: React.FC<Props> = ({
           <input
             autoFocus
             className="w-full rounded-2xl border-2 border-slate-100 bg-white py-4 pl-12 pr-4 font-bold text-slate-800 outline-none transition-colors caret-primary focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-white/10 dark:bg-black dark:text-white"
-            placeholder={`Search ${title.toLowerCase()}...`}
+            placeholder={`Search ${searchLabel} or nearby place...`}
             value={search}
             onChange={event => setSearch(event.target.value)}
           />
@@ -266,12 +278,12 @@ const StopPickerOverlay: React.FC<Props> = ({
           onClick={() => void searchGooglePlaces()}
           className="mb-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-600 active:scale-95 dark:border-white/10 dark:bg-black/30 dark:text-slate-200"
         >
-          {isGoogleSearching ? 'Searching Google...' : 'Search With Google'}
+          {isGoogleSearching ? 'Searching Google...' : 'Search Place In Google'}
         </button>
 
         {googleSearchError && (
           <div className="mb-4 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-4 py-4 dark:border-amber-400/20 dark:bg-amber-400/10">
-            <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Google Search</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Place Search</p>
             <p className="mt-2 text-sm font-bold text-amber-700 dark:text-amber-200">{googleSearchError}</p>
           </div>
         )}
@@ -294,7 +306,7 @@ const StopPickerOverlay: React.FC<Props> = ({
 
         {googleResolution && googleResolution.recommendation !== 'exact-stop' && (
           <div className="mb-4 rounded-[1.5rem] border border-primary/15 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/30">
-            <p className="text-[9px] font-black uppercase tracking-widest text-primary">Google Place Match</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-primary">Place Matched To Route</p>
             <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{googleResolution.candidate.name}</p>
             {googleResolution.segmentMatch ? (
               <>
@@ -302,7 +314,7 @@ const StopPickerOverlay: React.FC<Props> = ({
                   Approx. KM {formatKM(googleResolution.segmentMatch.estimatedKm)} between {googleResolution.segmentMatch.startStop.name} and {googleResolution.segmentMatch.endStop.name}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  This looks between tariff stops, so Manual KM is safer than forcing an exact stop.
+                  This place sits between KM-post stops, so Manual KM is safer than forcing one exact stop.
                 </p>
                 {mode === 'pickup' && onRecommendManualKm && (
                   <button
