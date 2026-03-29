@@ -14,7 +14,6 @@ type AuditScope = 'shift' | 'today' | 'route' | 'all';
 
 const NormalCalcOverlay = React.lazy(() => import('./NormalCalcOverlay'));
 const StopCalibrationOverlay = React.lazy(() => import('./StopCalibrationOverlay'));
-const StopReminderOverlay = React.lazy(() => import('./StopReminderOverlay'));
 const SupportContactSheet = React.lazy(() => import('./SupportContactSheet'));
 const RouteAdminOverlay = React.lazy(() => import('./RouteAdminOverlay'));
 
@@ -34,8 +33,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     shiftHistory,
     startShift,
     endShift,
-    stopReminders,
-    reminderSettings,
     showToast
   } = useApp();
   const { authState, logout } = useAuth();
@@ -43,7 +40,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isStopCalibrationOpen, setIsStopCalibrationOpen] = useState(false);
-  const [isStopReminderOpen, setIsStopReminderOpen] = useState(false);
   const [isRouteAdminOpen, setIsRouteAdminOpen] = useState(false);
   const [auditScope, setAuditScope] = useState<AuditScope>('shift');
 
@@ -147,9 +143,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const routeSegmentCount = routeSegments.length;
   const completedRouteShiftCount = shiftHistory.filter(
     shift => shift.routeId === activeRoute.id && shift.status === 'closed'
-  ).length;
-  const routeReminderCount = stopReminders.filter(
-    reminder => reminder.routeId === activeRoute.id && reminder.status !== 'done'
   ).length;
   const lastClosedShiftForRoute = [...shiftHistory]
     .filter(shift => shift.routeId === activeRoute.id && shift.status === 'closed' && shift.endedAt)
@@ -460,7 +453,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <HelpHint
-                    label="Tools contains extra actions like the calculator, stop calibration, and drop-off alerts. These are not needed on every trip, so they stay collapsed until opened."
+                    label="Tools contains quick utilities like the standard calculator. GPS learning and alerts now live in their own dedicated places so this section stays lighter."
                 triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                   >
                     Tools
@@ -487,49 +480,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               <span className="material-icons text-slate-400">chevron_right</span>
             </button>
 
-            <button
-              onClick={() => setIsStopCalibrationOpen(true)}
-              className="flex w-full items-center justify-between border-b border-slate-100 p-5 transition-all active:scale-[0.99] dark:border-white/5"
-            >
-              <div className="flex items-center gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                  <span className="material-icons">near_me</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold dark:text-white">Calibrate Stops</p>
-                  <p className="text-xs text-slate-500">
-                    Save this route stop from the phone&apos;s current GPS
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">{calibratedStopCount} learned</p>
-                <span className="material-icons text-slate-400">chevron_right</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setIsStopReminderOpen(true)}
-              className="flex w-full items-center justify-between p-5 transition-all active:scale-[0.99]"
-            >
-              <div className="flex items-center gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                  <span className="material-icons">notifications_active</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold dark:text-white">Drop-Off Alerts</p>
-                  <p className="text-xs text-slate-500">
-                    Queue stops, passenger counts, and GPS reminders
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-black uppercase tracking-widest text-primary">
-                  {routeReminderCount} queued
-                </p>
-                <span className="material-icons text-slate-400">chevron_right</span>
-              </div>
-            </button>
             </div>
           </details>
         </section>
@@ -540,13 +490,13 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <HelpHint
-                    label="This section is for learning better stop locations, syncing stop data, and checking reminder status. It is separate from passenger fare entry."
+                    label="This section keeps stop calibration, shared stop learning, and GPS route data together in one place. Alerts now have their own bottom-tab screen."
                 triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                   >
                     Stops And GPS
                   </HelpHint>
                 </div>
-                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Keep GPS learning and sync controls tucked away until needed.</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-300">Use this for route learning, verified stop data, and sync health.</p>
               </div>
               <span className="material-icons text-slate-400 transition-transform group-open:rotate-180">expand_more</span>
             </summary>
@@ -594,15 +544,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             </div>
 
             <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
-              <p className="text-[10px] font-black uppercase tracking-widest text-primary">Reminder Engine</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                {reminderSettings.enabled
-                  ? `Alerts are ON with ${routeReminderCount} queued stop reminders on this route.`
-                  : 'Alerts are OFF right now. Turn them on in Drop-Off Alerts when needed.'}
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shared Status</p>
               <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
                 {stopSyncState.enabled
@@ -626,14 +567,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 {stopSyncState.isSyncing ? 'Syncing...' : 'Sync Stop Data'}
               </button>
               <button
-                onClick={() => setIsStopReminderOpen(true)}
-                className="rounded-2xl border border-slate-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] dark:border-white/10 dark:text-slate-300"
-              >
-                Open Alerts
-              </button>
-              <button
                 onClick={() => setIsRouteAdminOpen(true)}
-                className="rounded-2xl bg-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98] dark:bg-white dark:text-slate-900"
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98] dark:bg-white dark:text-slate-900 sm:col-span-2"
               >
                 Open Route Editor
               </button>
@@ -769,7 +704,6 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       <Suspense fallback={null}>
         <NormalCalcOverlay isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
         <StopCalibrationOverlay isOpen={isStopCalibrationOpen} onClose={() => setIsStopCalibrationOpen(false)} />
-        <StopReminderOverlay isOpen={isStopReminderOpen} onClose={() => setIsStopReminderOpen(false)} />
         <SupportContactSheet isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
         <RouteAdminOverlay isOpen={isRouteAdminOpen} onClose={() => setIsRouteAdminOpen(false)} />
       </Suspense>

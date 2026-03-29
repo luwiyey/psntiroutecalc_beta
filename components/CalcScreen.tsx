@@ -71,6 +71,7 @@ const StopPickerOverlay = React.lazy(() => import('./StopPickerOverlay'));
 const ManualKMOverlay = React.lazy(() => import('./ManualKMOverlay'));
 const ConductorCalcOverlay = React.lazy(() => import('./ConductorCalcOverlay'));
 const LocationAssistOverlay = React.lazy(() => import('./LocationAssistOverlay'));
+const BetweenStopsScreen = React.lazy(() => import('./BetweenStopsScreen'));
 
 const CalcScreen: React.FC = () => {
   const {
@@ -90,6 +91,7 @@ const CalcScreen: React.FC = () => {
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isConductorCalcOpen, setIsConductorCalcOpen] = useState(false);
   const [isLocationAssistOpen, setIsLocationAssistOpen] = useState(false);
+  const [isMidStopOpen, setIsMidStopOpen] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -1917,23 +1919,32 @@ const CalcScreen: React.FC = () => {
         </div>
 
         <button
-          onClick={() => {
-            setManualPrefill(null);
-            setIsManualOpen(true);
-          }}
-          className="w-full bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-4"
-        >
-          <span className="material-icons text-primary text-2xl">keyboard</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-700 dark:text-slate-300">Manual Entry</span>
-        </button>
-
-        <button
           onClick={handleReset}
           className="w-full bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-4"
         >
           <span className="material-icons text-primary text-2xl">refresh</span>
           <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-700 dark:text-slate-300">Reset Route</span>
         </button>
+
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            onClick={() => {
+              setManualPrefill(null);
+              setIsManualOpen(true);
+            }}
+            className="bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
+          >
+            <span className="material-icons text-primary text-2xl">keyboard</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 dark:text-slate-300">Manual KM</span>
+          </button>
+          <button
+            onClick={() => setIsMidStopOpen(true)}
+            className="bg-white dark:bg-night-charcoal py-6 rounded-[2rem] border border-slate-200 dark:border-white/10 active:scale-95 shadow-sm transition-all flex items-center justify-center gap-3"
+          >
+            <span className="material-icons text-primary text-2xl">timeline</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 dark:text-slate-300">Mid-Stop Est</span>
+          </button>
+        </div>
       </div>
 
       <FloatingVoiceButton
@@ -2043,6 +2054,11 @@ const CalcScreen: React.FC = () => {
             void handleConfirmMapPoint(point);
           }}
         />
+        {isMidStopOpen ? (
+          <div className="fixed inset-0 z-[170]">
+            <BetweenStopsScreen onExit={() => setIsMidStopOpen(false)} />
+          </div>
+        ) : null}
       </Suspense>
     </div>
   );

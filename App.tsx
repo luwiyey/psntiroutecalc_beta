@@ -16,12 +16,12 @@ import {
 } from './utils/location';
 import { estimateTravelSpeedMetersPerSecond, getStopAlertRadius } from './utils/stop-data';
 
-type Tab = 'calc' | 'between' | 'tally' | 'logs' | 'setup';
+type Tab = 'calc' | 'alerts' | 'tally' | 'logs' | 'setup';
 const STARTED_STORAGE_KEY = 'psnti_started';
 const INSTALL_BANNER_DISMISSED_KEY = 'psnti_install_banner_dismissed';
 const SW_UPDATE_EVENT = 'psnti-sw-update';
 const CalcScreen = React.lazy(() => import('./components/CalcScreen'));
-const BetweenStopsScreen = React.lazy(() => import('./components/BetweenStopsScreen'));
+const AlertsScreen = React.lazy(() => import('./components/AlertsScreen'));
 const TallyScreen = React.lazy(() => import('./components/TallyScreen'));
 const LogsScreen = React.lazy(() => import('./components/LogsScreen'));
 const SetupScreen = React.lazy(() => import('./components/SetupScreen'));
@@ -400,7 +400,7 @@ const AppContent: React.FC = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'calc': return <CalcScreen />;
-      case 'between': return <BetweenStopsScreen onExit={handleExit} />;
+      case 'alerts': return <AlertsScreen onExit={handleExit} />;
       case 'tally': return <TallyScreen onExit={handleExit} />;
       case 'logs': return <LogsScreen onExit={handleExit} />;
       case 'setup': return <SetupScreen onExit={handleExit} />;
@@ -411,7 +411,7 @@ const AppContent: React.FC = () => {
   const navItems = [
     { id: 'calc', icon: 'calculate', label: 'FARE' },
     { id: 'tally', icon: 'fact_check', label: 'TALLY' },
-    { id: 'between', icon: 'map', label: 'ROUTE' },
+    { id: 'alerts', icon: 'notifications_active', label: 'ALERTS' },
     { id: 'logs', icon: 'receipt_long', label: 'LOGS' },
     { id: 'setup', icon: 'settings', label: 'SETUP' }
   ];
