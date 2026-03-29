@@ -245,6 +245,8 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     resultText: string;
     usesPemdas: boolean;
   } | null>(null);
+  const [useFareDueReference, setUseFareDueReference] = useState(true);
+  const [isFareDueDialogOpen, setIsFareDueDialogOpen] = useState(false);
   const voiceHideTimeoutRef = useRef<number | null>(null);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
@@ -268,6 +270,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     }
 
     if (assistantPreset) {
+      setUseFareDueReference(true);
       const result = formatNumber(assistantPreset.changeAmount);
       setExpression(result);
       setCaretPos(result.length);
@@ -284,6 +287,8 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setHasEvaluated(false);
     setDisplaySource('manual');
     setVoiceFeedback(null);
+    setUseFareDueReference(baseFareDue > 0);
+    setIsFareDueDialogOpen(false);
   }, [assistantPreset, baseFareDue, isOpen]);
 
   useEffect(() => {
@@ -463,11 +468,11 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       return Number.isFinite(currentShownAmount) ? currentShownAmount : baseFareDue;
     }
 
-    if (typeof baseFareDue === 'number' && Number.isFinite(baseFareDue) && baseFareDue > 0) {
+    if (useFareDueReference && typeof baseFareDue === 'number' && Number.isFinite(baseFareDue) && baseFareDue > 0) {
       return baseFareDue;
     }
 
-    return Number.isFinite(currentShownAmount) ? currentShownAmount : 0;
+    return 0;
   };
 
   const applyCashTender = (cashAmount: number, shouldSpeak = true) => {
@@ -709,9 +714,17 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner dark:bg-black">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Expression</p>
-              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-slate-200">
-                Fare Due {peso}{formatNumber(baseFareDue)}
-              </span>
+              <button
+                type="button"
+                onClick={() => setIsFareDueDialogOpen(true)}
+                className={`rounded-full px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] transition-colors active:scale-95 ${
+                  useFareDueReference
+                    ? 'bg-white/10 text-slate-200'
+                    : 'bg-white/5 text-slate-400'
+                }`}
+              >
+                {useFareDueReference ? `Fare Due ${peso}${formatNumber(baseFareDue)}` : 'Fare Due Off'}
+              </button>
             </div>
 
             <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3 py-2">
@@ -859,6 +872,49 @@ const ConductorCalcOverlay: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {isFareDueDialogOpen && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-xs rounded-[1.6rem] bg-white p-4 shadow-2xl dark:bg-night-charcoal">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary">Fare Due</p>
+              <h3 className="mt-2 text-lg font-black text-slate-900 dark:text-white">Keep or remove fare due?</h3>
+              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-500 dark:text-slate-300">
+                Keep it if quick bills should subtract from the current fare due when the screen is empty. Remove it if you want quick bills to stop using fare due and rely only on what you type manually.
+              </p>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseFareDueReference(true);
+                    setIsFareDueDialogOpen(false);
+                  }}
+                  className="flex-1 rounded-[1.1rem] bg-primary px-3 py-3 text-sm font-black uppercase tracking-[0.16em] text-white active:scale-[0.98]"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseFareDueReference(false);
+                    setIsFareDueDialogOpen(false);
+                  }}
+                  className="flex-1 rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3 text-sm font-black uppercase tracking-[0.16em] text-slate-700 active:scale-[0.98] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsFareDueDialogOpen(false)}
+                className="mt-2 w-full rounded-[1.1rem] px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-slate-400 active:scale-[0.98]"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
