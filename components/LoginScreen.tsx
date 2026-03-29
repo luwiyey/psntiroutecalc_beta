@@ -1,91 +1,136 @@
-
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import SupportContactSheet from './SupportContactSheet';
+
+const normalizeFullName = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+const normalizeEmployeeId = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+
+const FULL_NAME_ALLOWED_PATTERN = /^[\p{L}][\p{L}.'-]*(?: [\p{L}][\p{L}.'-]*)+$/u;
+const DISALLOWED_NAME_PARTS = new Set([
+  'admin',
+  'anonymous',
+  'conductor',
+  'employee',
+  'name',
+  'none',
+  'nobody',
+  'sample',
+  'test',
+  'unknown',
+  'user'
+]);
+
+const getFullNameError = (value: string) => {
+  const normalized = normalizeFullName(value);
+  if (!normalized) {
+    return 'Please enter your full name.';
+  }
+
+  if (!FULL_NAME_ALLOWED_PATTERN.test(normalized)) {
+    return 'Use your full name with at least first name and surname only.';
+  }
+
+  const parts = normalized.split(' ');
+  if (parts.length < 2) {
+    return 'Please enter at least your first name and surname.';
+  }
+
+  const meaningfulParts = parts.filter(part => part.replace(/[.'-]/g, '').length >= 2);
+  if (meaningfulParts.length < 2) {
+    return 'Please enter a complete full name.';
+  }
+
+  const normalizedParts = meaningfulParts.map(part => part.replace(/[.'-]/g, '').toLowerCase());
+  if (normalizedParts.every(part => DISALLOWED_NAME_PARTS.has(part))) {
+    return 'Please enter your real full name.';
+  }
+
+  return '';
+};
 
 const LoginScreen: React.FC = () => {
   const [employeeName, setEmployeeName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [idPhoto, setIdPhoto] = useState<File | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const { login } = useAuth();
 
-  const handleLogin = async () => {
-    if (!employeeName || !employeeId) {
-      alert('Please enter your name and employee ID.');
+  const normalizedName = useMemo(() => normalizeFullName(employeeName), [employeeName]);
+  const normalizedEmployeeId = useMemo(() => normalizeEmployeeId(employeeId), [employeeId]);
+  const fullNameError = useMemo(() => getFullNameError(employeeName), [employeeName]);
+  const employeeIdError = useMemo(
+    () => (normalizedEmployeeId ? '' : 'Please enter your employee ID.'),
+    [normalizedEmployeeId]
+  );
+
+  const handleLogin = () => {
+    setShowErrors(true);
+
+    if (fullNameError || employeeIdError) {
       return;
     }
-    if (!idPhoto) {
-      alert('Please upload a photo of your ID.');
-      return;
-    }
 
-    setIsVerifying(true);
-
-    // Simulate ID verification
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Here you would typically use an OCR library or a backend service
-    // to analyze the uploaded ID photo and verify the details.
-    // For this example, we'll just simulate a successful verification.
-
-    console.log('Verifying details...', { employeeName, employeeId });
-    console.log('Analyzing ID photo...', idPhoto.name);
-
-    // Simulate successful login
-    login(employeeName, employeeId);
-    
-    setIsVerifying(false);
+    login(normalizedName, normalizedEmployeeId);
   };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-100 p-4 dark:bg-black">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
+        <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-primary">Conductor Login</h1>
-          <p className="text-slate-500">Please enter your details to begin.</p>
+          <p className="text-slate-500 dark:text-slate-400">
+            Enter your full name and employee ID to begin.
+          </p>
         </div>
 
-        <div className="bg-white dark:bg-night-charcoal p-8 rounded-2xl shadow-lg space-y-6">
+        <div className="space-y-6 rounded-2xl bg-white p-8 shadow-lg dark:bg-night-charcoal">
           <div className="flex flex-col">
-            <label className="text-sm font-bold text-slate-500 mb-2">Full Name</label>
+            <label className="mb-2 text-sm font-bold text-slate-500">Full Name</label>
             <input
               type="text"
               value={employeeName}
-              onChange={(e) => setEmployeeName(e.target.value)}
+              onChange={event => setEmployeeName(event.target.value)}
               placeholder="e.g., Mark Joseph M. Galvan"
-              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
+              autoComplete="name"
+              className={`rounded-lg border px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 dark:bg-black dark:text-white dark:placeholder:text-slate-500 ${
+                showErrors && fullNameError
+                  ? 'border-primary/60 bg-primary/5 focus:ring-primary'
+                  : 'border-slate-200 bg-slate-50 focus:ring-primary dark:border-white/10'
+              }`}
             />
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              Use your full legal name. First name and surname are required.
+            </p>
+            {showErrors && fullNameError ? (
+              <p className="mt-2 text-sm font-semibold text-primary">{fullNameError}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-bold text-slate-500 mb-2">Employee ID</label>
+            <label className="mb-2 text-sm font-bold text-slate-500">Employee ID</label>
             <input
               type="text"
               value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
+              onChange={event => setEmployeeId(event.target.value)}
               placeholder="e.g., 03-1123"
-              className="px-4 py-3 bg-slate-50 dark:bg-black rounded-lg border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
+              autoComplete="username"
+              className={`rounded-lg border px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 dark:bg-black dark:text-white dark:placeholder:text-slate-500 ${
+                showErrors && employeeIdError
+                  ? 'border-primary/60 bg-primary/5 focus:ring-primary'
+                  : 'border-slate-200 bg-slate-50 focus:ring-primary dark:border-white/10'
+              }`}
             />
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm font-bold text-slate-500 mb-2">Scan/Upload ID</label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => e.target.files && setIdPhoto(e.target.files[0])}
-              className="block w-full text-sm text-slate-500 dark:text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-            />
+            {showErrors && employeeIdError ? (
+              <p className="mt-2 text-sm font-semibold text-primary">{employeeIdError}</p>
+            ) : null}
           </div>
 
           <button
             onClick={handleLogin}
-            disabled={isVerifying}
-            className="w-full bg-primary text-white py-4 rounded-lg font-bold uppercase tracking-wider shadow-lg hover:bg-primary/90 transition-all disabled:bg-slate-300"
+            className="w-full rounded-lg bg-primary py-4 font-bold uppercase tracking-wider text-white shadow-lg transition-all hover:bg-primary/90"
           >
-            {isVerifying ? 'Verifying...' : 'Login'}
+            Login
           </button>
         </div>
 
@@ -96,7 +141,7 @@ const LoginScreen: React.FC = () => {
           >
             <span>Developed by Zia Louise Mariano</span>
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-[#1877F2]" aria-hidden="true">
-              <path d="M22 12.07C22 6.5 17.52 2 12 2S2 6.5 2 12.07c0 5.02 3.66 9.18 8.44 9.93v-7.03H7.9v-2.9h2.54V9.85c0-2.52 1.49-3.91 3.78-3.91 1.1 0 2.24.2 2.24.2v2.47H15.2c-1.24 0-1.63.78-1.63 1.58v1.89h2.77l-.44 2.9h-2.33V22c4.78-.75 8.43-4.91 8.43-9.93z"/>
+              <path d="M22 12.07C22 6.5 17.52 2 12 2S2 6.5 2 12.07c0 5.02 3.66 9.18 8.44 9.93v-7.03H7.9v-2.9h2.54V9.85c0-2.52 1.49-3.91 3.78-3.91 1.1 0 2.24.2 2.24.2v2.47H15.2c-1.24 0-1.63.78-1.63 1.58v1.89h2.77l-.44 2.9h-2.33V22c4.78-.75 8.43-4.91 8.43-9.93z" />
             </svg>
           </button>
         </div>
@@ -108,4 +153,3 @@ const LoginScreen: React.FC = () => {
 };
 
 export default LoginScreen;
-

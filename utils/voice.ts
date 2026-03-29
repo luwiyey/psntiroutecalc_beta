@@ -305,6 +305,7 @@ export type TallyBatchFollowUpVoiceParseResult =
 
 export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
 export type VoiceBinaryAnswer = 'yes' | 'no';
+export type ShiftVoiceCommand = 'start-shift' | 'end-shift';
 export type FareConversationShortcut =
   | {
       command: 'same-route';
@@ -335,6 +336,26 @@ export type CashVoiceParseResult =
       normalized: string;
       amount: number;
       spokenAmount: string;
+    };
+
+export type ShiftVoiceCommandParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: ShiftVoiceCommand;
+      label: string;
     };
 
 const DIGIT_WORDS: Record<string, string> = {
@@ -1331,6 +1352,48 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   }
 
   return null;
+};
+
+export const parseShiftVoiceCommand = (
+  transcript: string
+): ShiftVoiceCommandParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopText(cleanedTranscript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript: cleanedTranscript,
+      message: 'Say start shift or end shift.'
+    };
+  }
+
+  if (/\b(start|begin|open|resume|continue)\s+(shift|session)\b|\btime in\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript: cleanedTranscript,
+      normalized,
+      command: 'start-shift',
+      label: 'Start Shift'
+    };
+  }
+
+  if (/\b(end|close|finish|stop)\s+(shift|session)\b|\btime out\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript: cleanedTranscript,
+      normalized,
+      command: 'end-shift',
+      label: 'End Shift'
+    };
+  }
+
+  return {
+    status: 'invalid',
+    transcript: cleanedTranscript,
+    normalized,
+    message: 'Say start shift or end shift.'
+  };
 };
 
 export const parseFareConversationShortcut = (transcript: string): FareConversationShortcut | null => {

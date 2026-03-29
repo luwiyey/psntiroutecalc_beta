@@ -47,6 +47,7 @@ import {
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
   parseFareConversationShortcut,
+  parseShiftVoiceCommand,
   parseVoiceBinaryAnswer,
   parseCashVoiceTranscript,
   parseFareTypeVoiceAnswer,
@@ -88,6 +89,8 @@ const CalcScreen: React.FC = () => {
     history,
     addRecord,
     setActiveFare,
+    startShift,
+    endShift,
     showToast
   } = useApp();
   const { authState } = useAuth();
@@ -1082,6 +1085,26 @@ const CalcScreen: React.FC = () => {
 
     setVoiceTranscript(effectiveTranscript);
     setVoiceConfidence(confidence);
+
+    const shiftCommand = parseShiftVoiceCommand(effectiveTranscript);
+    if (shiftCommand.status === 'match') {
+      if (shiftCommand.command === 'start-shift') {
+        const startedShift = startShift('manual');
+        const message = startedShift
+          ? `Shift started at ${new Date(startedShift.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. You can keep computing fares now.`
+          : 'Shift is already open. You can keep computing fares now.';
+        setVoiceFeedback(message);
+        queueVoicePrompt(message, requestedStep === 'confirm' ? 'fare' : requestedStep);
+      } else {
+        const closedShift = endShift();
+        const message = closedShift
+          ? `Shift ended at ${new Date(closedShift.endedAt ?? Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. You can still compute fares now.`
+          : 'No open shift to end right now. You can still compute fares now.';
+        setVoiceFeedback(message);
+        queueVoicePrompt(message, requestedStep === 'confirm' ? 'fare' : requestedStep);
+      }
+      return;
+    }
 
     if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(effectiveTranscript)) {
       pendingVoiceConfirmationRef.current = null;

@@ -10,7 +10,7 @@ interface Props {
 
 const peso = '\u20B1';
 const PWD_VERIFICATION_URL = 'https://pwd.doh.gov.ph/tbl_pwd_id_verificationlist.php';
-type AuditScope = 'shift' | 'today' | 'route' | 'all';
+type AuditScope = 'shift' | 'last-closed' | 'today' | 'route' | 'all';
 
 const NormalCalcOverlay = React.lazy(() => import('./NormalCalcOverlay'));
 const StopCalibrationOverlay = React.lazy(() => import('./StopCalibrationOverlay'));
@@ -41,7 +41,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isStopCalibrationOpen, setIsStopCalibrationOpen] = useState(false);
   const [isRouteAdminOpen, setIsRouteAdminOpen] = useState(false);
-  const [auditScope, setAuditScope] = useState<AuditScope>('shift');
+  const [auditScope, setAuditScope] = useState<AuditScope>('today');
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -61,6 +61,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     setSettings(prev => ({ ...prev, floatingVoiceEnabled: !prev.floatingVoiceEnabled }));
   };
 
+  const routeShiftHistory = shiftHistory.filter(shift => shift.routeId === activeRoute.id);
   const activeShiftForRoute = currentShift?.routeId === activeRoute.id ? currentShift : null;
   const routeSessions = sessions.filter(session => session.routeId === activeRoute.id);
   const routeHistory = history.filter(record => record.routeId === activeRoute.id);
@@ -69,6 +70,15 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     : [];
   const shiftSessions = activeShiftForRoute
     ? routeSessions.filter(session => session.shiftId === activeShiftForRoute.id)
+    : [];
+  const lastClosedShiftForRoute = [...routeShiftHistory]
+    .filter(shift => shift.status === 'closed' && shift.endedAt)
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0];
+  const lastClosedShiftHistoryRecords = lastClosedShiftForRoute
+    ? routeHistory.filter(record => record.shiftId === lastClosedShiftForRoute.id)
+    : [];
+  const lastClosedShiftSessions = lastClosedShiftForRoute
+    ? routeSessions.filter(session => session.shiftId === lastClosedShiftForRoute.id)
     : [];
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -101,8 +111,20 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   };
   const todayHistory = history.filter(record => isToday(record.timestamp));
   const todaySessions = sessions.filter(session => isToday(getSessionActivityAt(session)));
+  const selectedAuditShift =
+    auditScope === 'shift'
+      ? activeShiftForRoute
+      : auditScope === 'last-closed'
+        ? lastClosedShiftForRoute
+        : null;
   const auditCollection = (() => {
     switch (auditScope) {
+      case 'last-closed':
+        return {
+          label: 'Last Closed Shift',
+          historyRecords: lastClosedShiftHistoryRecords,
+          sessionRecords: lastClosedShiftSessions
+        };
       case 'today':
         return {
           label: 'Today',
@@ -141,20 +163,43 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const verifiedStopCount = verifiedStops.length;
   const routeLandmarkCount = routeLandmarks.length;
   const routeSegmentCount = routeSegments.length;
-  const completedRouteShiftCount = shiftHistory.filter(
-    shift => shift.routeId === activeRoute.id && shift.status === 'closed'
-  ).length;
-  const lastClosedShiftForRoute = [...shiftHistory]
-    .filter(shift => shift.routeId === activeRoute.id && shift.status === 'closed' && shift.endedAt)
-    .sort((a, b) => b.endedAt - a.endedAt)[0];
+  const completedRouteShiftCount = routeShiftHistory.filter(shift => shift.status === 'closed').length;
   const formatShiftTimestamp = (timestamp?: number | null) =>
     timestamp ? new Date(timestamp).toLocaleString() : 'Not recorded yet';
   const formatSyncTimestamp = (timestamp?: number | null) =>
     timestamp ? new Date(timestamp).toLocaleString() : 'Not synced yet';
+  const formatDuration = (durationMs?: number | null) => {
+    if (!durationMs || durationMs <= 0) return 'Not enough activity yet';
+
+    const totalMinutes = Math.max(1, Math.round(durationMs / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours <= 0) {
+      return `${minutes} min`;
+    }
+
+    if (minutes === 0) {
+      return `${hours} hr${hours === 1 ? '' : 's'}`;
+    }
+
+    return `${hours} hr ${minutes} min`;
+  };
+  const selectedAuditShiftDurationMs =
+    selectedAuditShift?.endedAt && selectedAuditShift?.startedAt
+      ? Math.max(0, selectedAuditShift.endedAt - selectedAuditShift.startedAt)
+      : activeShiftForRoute?.startedAt && selectedAuditShift?.id === activeShiftForRoute.id
+        ? Math.max(0, Date.now() - activeShiftForRoute.startedAt)
+        : 0;
 
   const handleExportAudit = async () => {
     if (auditScope === 'shift' && !activeShiftForRoute) {
-      showToast('Start a shift first before generating a remittance report.', 'info');
+      showToast('No open shift yet. The app will start one automatically on the first saved work.', 'info');
+      return;
+    }
+
+    if (auditScope === 'last-closed' && !lastClosedShiftForRoute) {
+      showToast('No closed shift is saved on this route yet.', 'info');
       return;
     }
 
@@ -163,12 +208,14 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       employee_id: authState.employeeId,
       date: new Date().toLocaleDateString(),
       audit_scope: auditCollection.label,
-      shift: activeShiftForRoute ? {
-        id: activeShiftForRoute.id,
-        route: activeShiftForRoute.routeLabel,
-        started_at: new Date(activeShiftForRoute.startedAt).toISOString(),
-        ended_at: activeShiftForRoute.endedAt ? new Date(activeShiftForRoute.endedAt).toISOString() : null,
-        status: activeShiftForRoute.status
+      shift: selectedAuditShift ? {
+        id: selectedAuditShift.id,
+        route: selectedAuditShift.routeLabel,
+        started_at: new Date(selectedAuditShift.startedAt).toISOString(),
+        ended_at: selectedAuditShift.endedAt ? new Date(selectedAuditShift.endedAt).toISOString() : null,
+        status: selectedAuditShift.status,
+        started_mode: selectedAuditShift.startedMode,
+        approximate_active_app_time: formatDuration(selectedAuditShift.activeUsageMs)
       } : null,
       financial_summary: {
         manual_logs_gross: `${peso}${totalTripLogs}`,
@@ -190,10 +237,10 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
       employeeName: authState.employeeName,
       deviceId: authState.deviceId,
       routeId: activeRoute.id,
-      routeLabel: activeRoute.label,
-      appSurface: 'setup',
+        routeLabel: activeRoute.label,
+        appSurface: 'setup',
       metadata: {
-        shiftId: activeShiftForRoute?.id ?? null,
+        shiftId: selectedAuditShift?.id ?? null,
         auditScope,
         historyGross: totalTripLogs,
         tallyGross: totalTallyGross,
@@ -316,8 +363,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 </p>
                 <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-300">
                   {activeShiftForRoute
-                    ? 'This route is currently recording logs and tally totals inside one active shift.'
-                    : 'Start a shift so remittance, logs, and tally totals only count this trip.'}
+                    ? 'This route is recording saved work inside one open shift. You can still end it manually any time.'
+                    : 'The app will start a shift automatically on the first saved fare, tally, or alert. Start one now only if you want to mark it ahead of time.'}
                 </p>
               </div>
               <span className={`rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
@@ -333,7 +380,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Started At</p>
                 <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
-                  {activeShiftForRoute ? formatShiftTimestamp(activeShiftForRoute.startedAt) : 'Tap Start Shift'}
+                  {activeShiftForRoute ? formatShiftTimestamp(activeShiftForRoute.startedAt) : 'Will start on first saved work'}
                 </p>
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
@@ -350,19 +397,30 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{completedRouteShiftCount}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Logs This Shift</p>
-                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{shiftHistoryRecords.length}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Approx. Active Time</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">
+                  {formatDuration(activeShiftForRoute?.activeUsageMs ?? lastClosedShiftForRoute?.activeUsageMs ?? 0)}
+                </p>
               </div>
             </div>
 
+            {activeShiftForRoute && (
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Started By</p>
+                <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                  {activeShiftForRoute.startedMode === 'auto' ? 'Automatic first saved work' : 'Manual start'}
+                </p>
+              </div>
+            )}
+
             <button
-              onClick={activeShiftForRoute ? endShift : startShift}
+              onClick={() => (activeShiftForRoute ? endShift() : startShift('manual'))}
               className={`flex w-full items-center justify-center gap-2 rounded-2xl py-5 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 ${
                 activeShiftForRoute ? 'bg-zinc-900 dark:bg-black' : 'bg-primary'
               }`}
             >
               <span className="material-icons text-sm">{activeShiftForRoute ? 'flag' : 'play_arrow'}</span>
-              {activeShiftForRoute ? 'End Shift' : 'Start Shift'}
+              {activeShiftForRoute ? 'End Shift Now' : 'Start Shift Now'}
             </button>
           </div>
         </section>
@@ -373,7 +431,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <HelpHint
-                    label="Audit shows totals from fare logs and tally sessions. Use the scope buttons inside to switch between current shift, today, this route, or all saved data."
+                    label="Audit shows totals from fare logs and tally sessions. Today is the default view. Shift views are optional and stay available when you want to review the open or last closed trip."
                 triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                   >
                     Live Audit
@@ -386,8 +444,9 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
             <div className="space-y-5 border-t border-slate-100 p-6 dark:border-white/5">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {([
-                { id: 'shift', label: 'Current Shift' },
                 { id: 'today', label: 'Today' },
+                { id: 'shift', label: 'Current Shift' },
+                { id: 'last-closed', label: 'Last Closed' },
                 { id: 'route', label: 'This Route' },
                 { id: 'all', label: 'All Saved' }
               ] as Array<{ id: AuditScope; label: string }>).map(option => (
@@ -407,7 +466,13 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
 
             {auditScope === 'shift' && !activeShiftForRoute && (
               <div className="rounded-2xl bg-slate-50 px-4 py-4 text-xs font-semibold text-slate-500 dark:bg-black/30 dark:text-slate-300">
-                Shift totals stay at zero until you tap <span className="font-black text-primary">Start Shift</span>.
+                No open shift yet. The app will create one automatically on the first saved fare, tally, or alert.
+              </div>
+            )}
+
+            {auditScope === 'last-closed' && !lastClosedShiftForRoute && (
+              <div className="rounded-2xl bg-slate-50 px-4 py-4 text-xs font-semibold text-slate-500 dark:bg-black/30 dark:text-slate-300">
+                No closed shift is saved on this route yet. End one shift first if you want to review the previous trip only.
               </div>
             )}
 
@@ -417,6 +482,29 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 {auditCollection.historyRecords.length} fare logs and {auditCollection.sessionRecords.length} tally sessions are included in this view.
               </p>
             </div>
+
+            {selectedAuditShift && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Started By</p>
+                  <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                    {selectedAuditShift.startedMode === 'auto' ? 'Automatic first saved work' : 'Manual start'}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Approx. Active Time</p>
+                  <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                    {formatDuration(selectedAuditShift.activeUsageMs)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 dark:bg-black/30">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Session Duration</p>
+                  <p className="mt-2 text-sm font-black text-slate-800 dark:text-white">
+                    {formatDuration(selectedAuditShiftDurationMs)}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-5">
               <div>
@@ -436,11 +524,14 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               </div>
               <button
                 onClick={handleExportAudit}
-                disabled={auditScope === 'shift' && !activeShiftForRoute}
+                disabled={
+                  (auditScope === 'shift' && !activeShiftForRoute) ||
+                  (auditScope === 'last-closed' && !lastClosedShiftForRoute)
+                }
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-900 py-5 text-[11px] font-black uppercase tracking-widest text-white shadow-xl transition-all active:scale-95 disabled:opacity-40 dark:bg-black"
               >
                 <span className="material-icons text-sm">ios_share</span>
-                {auditScope === 'shift' ? 'Generate Remittance Report' : 'Copy Audit Snapshot'}
+                {auditScope === 'shift' || auditScope === 'last-closed' ? 'Generate Remittance Report' : 'Copy Audit Snapshot'}
               </button>
             </div>
             </div>

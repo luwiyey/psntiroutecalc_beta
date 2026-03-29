@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AppContextType,
   AppSettings,
@@ -60,6 +60,8 @@ const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
   soundEnabled: true,
   vibrationEnabled: true
 };
+const ACTIVE_APP_IDLE_WINDOW_MS = 5 * 60 * 1000;
+const MOTIVATION_INTERVAL_MS = 60 * 60 * 1000;
 
 const createShiftId = () => `shift-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -104,7 +106,8 @@ const createShiftRecord = (
   routeId: string,
   routeLabel: string,
   employeeId: string | null,
-  employeeName: string | null
+  employeeName: string | null,
+  startedMode: 'manual' | 'auto'
 ): ShiftRecord => ({
   id: createShiftId(),
   routeId,
@@ -113,7 +116,11 @@ const createShiftRecord = (
   employeeName,
   startedAt: Date.now(),
   endedAt: null,
-  status: 'open'
+  status: 'open',
+  startedMode,
+  activeUsageMs: 0,
+  lastActivityAt: Date.now(),
+  encouragementCount: 0
 });
 
 const normalizeSessions = (savedSessions: TallySession[] | null): TallySession[] => {
@@ -230,7 +237,11 @@ const normalizeShiftHistory = (savedShifts: ShiftRecord[] | null): ShiftRecord[]
       employeeId: shift.employeeId ?? null,
       employeeName: shift.employeeName ?? null,
       endedAt: shift.endedAt ?? null,
-      status: shift.status === 'closed' ? 'closed' : 'open'
+      status: shift.status === 'closed' ? 'closed' : 'open',
+      startedMode: shift.startedMode === 'manual' ? 'manual' : 'auto',
+      activeUsageMs: Math.max(0, shift.activeUsageMs ?? 0),
+      lastActivityAt: shift.lastActivityAt ?? shift.endedAt ?? shift.startedAt,
+      encouragementCount: Math.max(0, shift.encouragementCount ?? 0)
     }))
     .sort((left, right) => right.startedAt - left.startedAt);
 };
@@ -389,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
   const [activeFare, setActiveFare] = useState(0);
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
+  const currentShiftRef = useRef<ShiftRecord | null>(null);
 
   const showToast = useCallback((msg: string, type: 'info' | 'success' = 'success') => {
     setToast({ message: msg, type });
@@ -397,6 +409,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const currentShift = useMemo(() => {
     return shiftHistory.find(shift => shift.status === 'open') ?? null;
   }, [shiftHistory]);
+
+  useEffect(() => {
+    currentShiftRef.current = currentShift;
+  }, [currentShift]);
 
   const baseActiveRoute = useMemo(
     () => getReadyRouteById(settings.activeRouteId) ?? DEFAULT_ROUTE,
@@ -772,10 +788,244 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
+  const applyShiftActivityUpdate = useCallback(
+    (shift: ShiftRecord, occurredAt = Date.now(), options?: { showMotivation?: boolean }) => {
+      if (shift.status !== 'open') {
+        return shift;
+      }
+
+      const lastActivityAt = shift.lastActivityAt ?? shift.startedAt;
+      const elapsedMs = Math.max(0, occurredAt - lastActivityAt);
+      const additionalUsageMs = Math.min(elapsedMs, ACTIVE_APP_IDLE_WINDOW_MS);
+      const nextActiveUsageMs = shift.activeUsageMs + additionalUsageMs;
+      const nextEncouragementCount =
+        options?.showMotivation === false
+          ? shift.encouragementCount
+          : Math.max(shift.encouragementCount, Math.floor(nextActiveUsageMs / MOTIVATION_INTERVAL_MS));
+      const shouldShowMotivation =
+        options?.showMotivation !== false && nextEncouragementCount > shift.encouragementCount;
+      const updatedShift: ShiftRecord = {
+        ...shift,
+        activeUsageMs: nextActiveUsageMs,
+        lastActivityAt: occurredAt,
+        encouragementCount: nextEncouragementCount
+      };
+
+      setShiftHistory(prev => prev.map(entry => (entry.id === shift.id ? updatedShift : entry)));
+      currentShiftRef.current = updatedShift;
+
+      if (shouldShowMotivation) {
+        showToast("You're doing great. Your entries are still being saved.", 'info');
+      }
+
+      return updatedShift;
+    },
+    [showToast]
+  );
+
+  const recordCurrentShiftActivity = useCallback(
+    (occurredAt = Date.now(), options?: { showMotivation?: boolean }) => {
+      const openShift = currentShiftRef.current;
+      if (!openShift) {
+        return null;
+      }
+
+      return applyShiftActivityUpdate(openShift, occurredAt, options);
+    },
+    [applyShiftActivityUpdate]
+  );
+
+  const startShift = useCallback((mode: 'manual' | 'auto' = 'manual', options?: { silent?: boolean }) => {
+    if (currentShift) {
+      if (currentShift.routeId !== baseActiveRoute.id) {
+        if (!options?.silent) {
+          showToast(`Finish the open ${currentShift.routeLabel} shift first.`, 'info');
+        }
+        return currentShift;
+      }
+
+      const refreshedShift = applyShiftActivityUpdate(currentShift, Date.now(), { showMotivation: false });
+      const existingSession = sessions.find(session => session.shiftId === currentShift.id);
+      const openRouteSession = sessions.find(
+        session => session.routeId === baseActiveRoute.id && session.status === 'open'
+      );
+
+      if (existingSession) {
+        setTallyNav({
+          sessionId: existingSession.id,
+          tripIdx: 0,
+          sheetIdx: 0,
+          blockIdx: 0
+        });
+      } else if (openRouteSession) {
+        setSessions(prev =>
+          prev.map(session =>
+            session.id === openRouteSession.id ? { ...session, shiftId: currentShift.id } : session
+          )
+        );
+        setTallyNav({
+          sessionId: openRouteSession.id,
+          tripIdx: 0,
+          sheetIdx: 0,
+          blockIdx: 0
+        });
+      }
+
+      if (!options?.silent) {
+        showToast('Current shift is already open.', 'info');
+      }
+      return refreshedShift;
+    }
+
+    const nextShift = createShiftRecord(
+      baseActiveRoute.id,
+      baseActiveRoute.label,
+      authState.employeeId,
+      authState.employeeName,
+      mode
+    );
+    const openRouteSession = sessions.find(
+      session => session.routeId === baseActiveRoute.id && session.status === 'open'
+    );
+
+    setShiftHistory(prev => [nextShift, ...prev]);
+    currentShiftRef.current = nextShift;
+
+    if (openRouteSession) {
+      setSessions(prev =>
+        prev.map(session =>
+          session.id === openRouteSession.id ? { ...session, shiftId: nextShift.id } : session
+        )
+      );
+      setTallyNav({
+        sessionId: openRouteSession.id,
+        tripIdx: 0,
+        sheetIdx: 0,
+        blockIdx: 0
+      });
+    } else if (mode === 'manual') {
+      const nextSession = createDefaultSession(baseActiveRoute.id, baseActiveRoute.label, nextShift.id);
+      setSessions(prev => [nextSession, ...prev]);
+      setTallyNav({
+        sessionId: nextSession.id,
+        tripIdx: 0,
+        sheetIdx: 0,
+        blockIdx: 0
+      });
+    }
+
+    if (!options?.silent) {
+      showToast(
+        mode === 'auto'
+          ? `Session started automatically for ${baseActiveRoute.shortLabel}`
+          : `Shift started for ${baseActiveRoute.shortLabel}`
+      );
+    }
+
+    return nextShift;
+  }, [
+    activeRoute.id,
+    applyShiftActivityUpdate,
+    authState.employeeId,
+    authState.employeeName,
+    baseActiveRoute.id,
+    baseActiveRoute.label,
+    baseActiveRoute.shortLabel,
+    currentShift,
+    sessions,
+    setSessions,
+    setTallyNav,
+    showToast
+  ]);
+
+  const endShift = useCallback((options?: { silent?: boolean }) => {
+    if (!currentShift) {
+      if (!options?.silent) {
+        showToast('No active shift to end.', 'info');
+      }
+      return null;
+    }
+
+    const activityUpdatedShift = applyShiftActivityUpdate(currentShift, Date.now(), { showMotivation: false });
+    const endedAt = Date.now();
+    const closedShift: ShiftRecord = {
+      ...activityUpdatedShift,
+      status: 'closed',
+      endedAt,
+      lastActivityAt: endedAt
+    };
+
+    setShiftHistory(prev => prev.map(shift => (shift.id === currentShift.id ? closedShift : shift)));
+    currentShiftRef.current = null;
+    setSessions(prev =>
+      prev.map(session =>
+        session.shiftId === currentShift.id
+          ? { ...session, status: 'closed' }
+          : session
+      )
+    );
+
+    const shiftSessionIds = new Set(
+      sessions.filter(session => session.shiftId === currentShift.id).map(session => session.id)
+    );
+
+    if (shiftSessionIds.has(tallyNav.sessionId)) {
+      setTallyNav({
+        sessionId: '',
+        tripIdx: 0,
+        sheetIdx: 0,
+        blockIdx: 0
+      });
+    }
+
+    if (!options?.silent) {
+      showToast(`Shift ended for ${currentShift.routeLabel}`);
+    }
+    return closedShift;
+  }, [applyShiftActivityUpdate, currentShift, sessions, setSessions, setTallyNav, showToast, tallyNav.sessionId]);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated || !currentShift) {
+      return;
+    }
+
+    const markActivity = () => {
+      void recordCurrentShiftActivity(Date.now(), { showMotivation: true });
+    };
+
+    const flushActivityOnHide = () => {
+      if (document.visibilityState === 'hidden') {
+        void recordCurrentShiftActivity(Date.now(), { showMotivation: false });
+      }
+    };
+
+    window.addEventListener('pointerdown', markActivity, { passive: true });
+    window.addEventListener('keydown', markActivity);
+    window.addEventListener('touchstart', markActivity, { passive: true });
+    window.addEventListener('focus', markActivity);
+    document.addEventListener('visibilitychange', flushActivityOnHide);
+
+    return () => {
+      window.removeEventListener('pointerdown', markActivity);
+      window.removeEventListener('keydown', markActivity);
+      window.removeEventListener('touchstart', markActivity);
+      window.removeEventListener('focus', markActivity);
+      document.removeEventListener('visibilitychange', flushActivityOnHide);
+    };
+  }, [authState.isAuthenticated, currentShift, recordCurrentShiftActivity]);
+
   const addRecord = (record: Omit<FareRecord, 'id' | 'timestamp'>) => {
     const routeId = record.routeId ?? activeRoute.id;
     const routeLabel = record.routeLabel ?? activeRoute.label;
-    const shiftId = routeId === currentShift?.routeId ? currentShift.id : null;
+    const ensuredShift =
+      routeId === baseActiveRoute.id
+        ? currentShift?.routeId === routeId
+          ? applyShiftActivityUpdate(currentShift, Date.now(), { showMotivation: false })
+          : startShift('auto', { silent: true })
+        : null;
+    const shiftId = routeId === (ensuredShift?.routeId ?? currentShift?.routeId)
+      ? ensuredShift?.id ?? currentShift?.id ?? null
+      : null;
     const newRecord: FareRecord = {
       ...record,
       routeId,
@@ -817,105 +1067,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setHistory([]);
     }
   };
-
-  const startShift = useCallback(() => {
-    if (currentShift) {
-      if (currentShift.routeId !== baseActiveRoute.id) {
-        showToast(`Finish the open ${currentShift.routeLabel} shift first.`, 'info');
-        return currentShift;
-      }
-
-      const existingSession = sessions.find(session => session.shiftId === currentShift.id);
-      if (existingSession) {
-        setTallyNav({
-          sessionId: existingSession.id,
-          tripIdx: 0,
-          sheetIdx: 0,
-          blockIdx: 0
-        });
-        showToast('Current shift is already open.', 'info');
-        return currentShift;
-      }
-
-      const recoveredSession = createDefaultSession(baseActiveRoute.id, baseActiveRoute.label, currentShift.id);
-      setSessions(prev => [recoveredSession, ...prev]);
-      setTallyNav({
-        sessionId: recoveredSession.id,
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-      showToast('Recovered tally for the open shift.', 'info');
-      return currentShift;
-    }
-
-    const nextShift = createShiftRecord(
-      baseActiveRoute.id,
-      baseActiveRoute.label,
-      authState.employeeId,
-      authState.employeeName
-    );
-    const nextSession = createDefaultSession(baseActiveRoute.id, baseActiveRoute.label, nextShift.id);
-
-    setShiftHistory(prev => [nextShift, ...prev]);
-    setSessions(prev => [nextSession, ...prev]);
-    setTallyNav({
-      sessionId: nextSession.id,
-      tripIdx: 0,
-      sheetIdx: 0,
-      blockIdx: 0
-    });
-    showToast(`Shift started for ${baseActiveRoute.shortLabel}`);
-    return nextShift;
-  }, [
-    authState.employeeId,
-    authState.employeeName,
-    baseActiveRoute.id,
-    baseActiveRoute.label,
-    baseActiveRoute.shortLabel,
-    currentShift,
-    sessions,
-    showToast
-  ]);
-
-  const endShift = useCallback(() => {
-    if (!currentShift) {
-      showToast('No active shift to end.', 'info');
-      return null;
-    }
-
-    const endedAt = Date.now();
-    const closedShift: ShiftRecord = {
-      ...currentShift,
-      status: 'closed',
-      endedAt
-    };
-
-    setShiftHistory(prev => prev.map(shift => (shift.id === currentShift.id ? closedShift : shift)));
-    setSessions(prev =>
-      prev.map(session =>
-        session.shiftId === currentShift.id
-          ? { ...session, status: 'closed' }
-          : session
-      )
-    );
-
-    const shiftSessionIds = new Set(
-      sessions.filter(session => session.shiftId === currentShift.id).map(session => session.id)
-    );
-
-    if (shiftSessionIds.has(tallyNav.sessionId)) {
-      setTallyNav({
-        sessionId: '',
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-    }
-
-    showToast(`Shift ended for ${currentShift.routeLabel}`);
-    return closedShift;
-  }, [currentShift, sessions, showToast, tallyNav.sessionId]);
 
   const selectRoute = (routeId: string) => {
     const nextRoute = getReadyRouteById(routeId);

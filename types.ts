@@ -222,6 +222,10 @@ export interface ShiftRecord {
   startedAt: number;
   endedAt: number | null;
   status: 'open' | 'closed';
+  startedMode: 'manual' | 'auto';
+  activeUsageMs: number;
+  lastActivityAt: number | null;
+  encouragementCount: number;
 }
 
 export interface AppSettings {
@@ -289,8 +293,8 @@ export interface AppContextType {
   stopSyncState: StopSyncState;
   currentShift: ShiftRecord | null;
   shiftHistory: ShiftRecord[];
-  startShift: () => ShiftRecord | null;
-  endShift: () => ShiftRecord | null;
+  startShift: (mode?: 'manual' | 'auto', options?: { silent?: boolean }) => ShiftRecord | null;
+  endShift: (options?: { silent?: boolean }) => ShiftRecord | null;
   stopReminders: StopReminder[];
   setStopReminders: React.Dispatch<React.SetStateAction<StopReminder[]>>;
   reminderSettings: ReminderSettings;

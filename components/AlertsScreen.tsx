@@ -13,6 +13,7 @@ import {
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
   parsePassengerCountVoiceTranscript,
+  parseShiftVoiceCommand,
   parseStopReminderVoiceChainDetailed,
   parseStopReminderFollowUpTranscript,
   parseStopReminderVoiceTranscript,
@@ -87,6 +88,8 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     setStopReminders,
     reminderSettings,
     setReminderSettings,
+    startShift,
+    endShift,
     showToast
   } = useApp();
   const [isStopPickerOpen, setIsStopPickerOpen] = useState(false);
@@ -226,6 +229,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
       return;
     }
 
+    startShift('auto', { silent: true });
     let nextReminders = [...stopReminders];
     let lastQueuedAction: VoiceQueuedReminderAction | null = null;
 
@@ -802,7 +806,26 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     }
 
     const normalizedTranscript = trimmedTranscript.toLowerCase();
+    const shiftCommand = parseShiftVoiceCommand(trimmedTranscript);
     const followUp = parseStopReminderFollowUpTranscript(trimmedTranscript);
+
+    if (shiftCommand.status === 'match') {
+      clearVoiceSuggestions();
+      if (shiftCommand.command === 'start-shift') {
+        const startedShift = startShift('manual');
+        const message = startedShift
+          ? `Shift started at ${new Date(startedShift.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Say the stop and passenger count when ready.`
+          : 'Shift is already open. Say the stop and passenger count when ready.';
+        queueVoicePrompt(message, 'stop-and-count');
+      } else {
+        const closedShift = endShift();
+        const message = closedShift
+          ? `Shift ended at ${new Date(closedShift.endedAt ?? Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Say the stop and passenger count when ready, or say exit.`
+          : 'No open shift to end right now. Say the stop and passenger count when ready.';
+        queueVoicePrompt(message, 'stop-and-count');
+      }
+      return;
+    }
 
     if (followUp.status === 'match') {
       if (followUp.command === 'exit') {

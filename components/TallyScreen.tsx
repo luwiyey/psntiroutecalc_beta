@@ -16,6 +16,7 @@ import {
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
   parseBatchCountVoiceTranscript,
+  parseShiftVoiceCommand,
   parseTallyBatchFollowUpTranscript,
   parseTallyNavigationVoiceTranscript,
   speakVoiceReply
@@ -61,7 +62,7 @@ const getPreferredSlotIndexForBlock = (slots: number[], blockIdx: number) => {
 };
 
 const TallyScreen: React.FC<Props> = ({ onExit }) => {
-  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, currentShift, showToast } = useApp();
+  const { activeRoute, sessions, setSessions, tallyNav, setTallyNav, history, currentShift, startShift, endShift, showToast } = useApp();
   const { authState } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -642,18 +643,56 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     const fillsSheet = selectedSlotIdx + finalEntries.length >= SLOTS_PER_SHEET;
     const nextSlotIdx = clampSlotIndex(selectedSlotIdx + finalEntries.length);
     const nextBlockIdx = Math.floor(nextSlotIdx / SLOTS_PER_BLOCK);
+    const ensuredShift = startShift('auto', { silent: true });
 
-    setSessions(prev => prev.map(s => s.id === activeSession.id ? {
-      ...s, trips: s.trips.map((t, ti) => ti === tallyNav.tripIdx ? {
-        ...t, sheets: t.sheets.map((sh, si) => si === tallyNav.sheetIdx ? {
-          ...sh, slots: sh.slots.map((sl, sli) => {
-            const offset = sli - selectedSlotIdx;
-            if (offset >= 0 && offset < finalEntries.length) return finalEntries[offset];
-            return sl;
-          }), lastUpdatedAt: Date.now()
-        } : sh)
-      } : t)
-    } : s));
+    setSessions(prev => {
+      const applyEntriesToSession = (session: TallySession): TallySession => ({
+        ...session,
+        shiftId:
+          session.routeId === activeRoute.id
+            ? ensuredShift?.id ?? session.shiftId ?? null
+            : session.shiftId ?? null,
+        trips: session.trips.map((trip, tripIdx) =>
+          tripIdx === tallyNav.tripIdx
+            ? {
+                ...trip,
+                sheets: trip.sheets.map((sheet, sheetIdx) =>
+                  sheetIdx === tallyNav.sheetIdx
+                    ? {
+                        ...sheet,
+                        slots: sheet.slots.map((slot, slotIdx) => {
+                          const offset = slotIdx - selectedSlotIdx;
+                          if (offset >= 0 && offset < finalEntries.length) {
+                            return finalEntries[offset];
+                          }
+                          return slot;
+                        }),
+                        lastUpdatedAt: Date.now()
+                      }
+                    : sheet
+                )
+              }
+            : trip
+        )
+      });
+
+      const existingSessionIndex = prev.findIndex(session => session.id === activeSession.id);
+      if (existingSessionIndex >= 0) {
+        return prev.map((session, sessionIdx) =>
+          sessionIdx === existingSessionIndex ? applyEntriesToSession(session) : session
+        );
+      }
+
+      const workingSession = applyEntriesToSession({
+        ...activeSession,
+        shiftId:
+          activeSession.routeId === activeRoute.id
+            ? ensuredShift?.id ?? activeSession.shiftId ?? null
+            : activeSession.shiftId ?? null
+      });
+
+      return [workingSession, ...prev];
+    });
 
     void trackAnalyticsEvent({
       eventType: 'tally_saved',
@@ -985,10 +1024,32 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       const batchCountResult = editorMode === 'batch' || requestedStep === 'batch-follow-up'
         ? parseBatchCountVoiceTranscript(transcript, allBatchFares)
         : null;
+      const shiftCommand = parseShiftVoiceCommand(transcript);
       const parsed = parseTallyNavigationVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
+
+      if (shiftCommand.status === 'match') {
+        setPendingVoiceNavAction(null);
+        setTallyVoiceStep('command');
+        if (shiftCommand.command === 'start-shift') {
+          const startedShift = startShift('manual');
+          const message = startedShift
+            ? `Shift started at ${new Date(startedShift.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. You can keep working now.`
+            : 'Shift is already open. You can keep working now.';
+          setVoiceFeedback(message);
+          speakVoiceReply(message);
+        } else {
+          const closedShift = endShift();
+          const message = closedShift
+            ? `Shift ended at ${new Date(closedShift.endedAt ?? Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+            : 'No open shift to end right now.';
+          setVoiceFeedback(message);
+          speakVoiceReply(message);
+        }
+        return;
+      }
 
       if (batchCountResult?.status === 'match') {
         setPendingVoiceNavAction(null);

@@ -12,6 +12,7 @@ import {
   parseStopReminderVoiceChain,
   parseStopReminderVoiceChainDetailed,
   parseStopReminderFollowUpTranscript,
+  parseShiftVoiceCommand,
   parseStopReminderVoiceTranscript,
   parseStopVoiceTranscript,
   parseTallyBatchFollowUpTranscript,
@@ -275,6 +276,30 @@ describe('parseVoiceBinaryAnswer', () => {
 
   it('treats im done as a yes response for follow-up questions', () => {
     expect(parseVoiceBinaryAnswer('im done')).toBe('yes');
+  });
+});
+
+describe('parseShiftVoiceCommand', () => {
+  it('matches manual start shift phrases', () => {
+    const result = parseShiftVoiceCommand('start shift');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched shift command.');
+    }
+
+    expect(result.command).toBe('start-shift');
+  });
+
+  it('matches manual end shift phrases', () => {
+    const result = parseShiftVoiceCommand('end session');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched shift command.');
+    }
+
+    expect(result.command).toBe('end-shift');
   });
 });
 
