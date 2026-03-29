@@ -223,7 +223,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   isOpen,
   onClose,
   initialValue,
-  title = 'Conductor Calc',
+  title = 'CHANGE CALCULATOR',
   showQuickBills = true,
   assistantPreset = null
 }) => {
@@ -661,25 +661,25 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     beginVoiceRecognition(requestedStep);
   };
 
-  const keyBase = 'rounded-2xl select-none active:scale-[0.98] transition-transform';
-  const keyLight = 'bg-white dark:bg-white/5 border border-slate-100 dark:border-white/10 text-xl font-900 shadow-sm';
+  const keyBase = 'h-11 rounded-[1.2rem] select-none active:scale-[0.98] transition-transform sm:h-12';
+  const keyLight = 'bg-white dark:bg-white/5 border border-slate-100 dark:border-white/10 text-[1.35rem] font-900 shadow-sm';
   const keyFunc = 'bg-slate-100 dark:bg-white/5 font-bold text-slate-500';
-  const keyOp = 'bg-primary text-white text-2xl font-black';
-  const keyEq = 'bg-[#0f172a] text-white text-2xl font-black';
+  const keyOp = 'bg-primary text-white text-[1.55rem] font-black';
+  const keyEq = 'bg-[#0f172a] text-white text-[1.55rem] font-black';
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
 
-      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
-        <div className="flex shrink-0 items-center justify-between px-6 pb-4 pt-6">
+      <div className="relative flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal sm:max-h-[92vh]">
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-white shadow-sm">
               <span className="material-icons text-sm">calculate</span>
             </div>
             <div>
               <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">{title}</h2>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Change And Voice Math</p>
+              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Multi-functional computation</p>
             </div>
           </div>
 
@@ -705,16 +705,16 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 visible-scrollbar sm:px-5">
-          <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner dark:bg-black sm:p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-3 visible-scrollbar sm:px-4">
+          <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner dark:bg-black">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Expression</p>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-200">
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.18em] text-slate-200">
                 Fare Due {peso}{formatNumber(baseFareDue)}
               </span>
             </div>
 
-            <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3 py-2.5">
+            <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3 py-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -728,38 +728,40 @@ const ConductorCalcOverlay: React.FC<Props> = ({
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
-                className="w-full bg-transparent text-base font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white sm:text-lg"
+                className="w-full bg-transparent text-[15px] font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white sm:text-base"
               />
-              <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => moveCaret(-1)}
                     disabled={caretPos === 0}
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                    className="flex h-7 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 text-[7px] font-black uppercase tracking-[0.18em] text-slate-300 active:scale-95 disabled:opacity-40"
                     aria-label="Cursor left"
                   >
-                    <span className="material-icons text-base">chevron_left</span>
+                    <span className="material-icons text-sm leading-none">chevron_left</span>
+                    <span>Cursor Left</span>
                   </button>
                   <button
                     onClick={() => moveCaret(1)}
                     disabled={caretPos >= expression.length}
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                    className="flex h-7 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 text-[7px] font-black uppercase tracking-[0.18em] text-slate-300 active:scale-95 disabled:opacity-40"
                     aria-label="Cursor right"
                   >
-                    <span className="material-icons text-base">chevron_right</span>
+                    <span>Cursor Right</span>
+                    <span className="material-icons text-sm leading-none">chevron_right</span>
                   </button>
                 </div>
-                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                <p className="text-[7px] font-black uppercase tracking-[0.16em] text-slate-500">
                   Cursor {Math.min(caretPos + 1, Math.max(expression.length, 1))}/{Math.max(expression.length, 1)}
                 </p>
               </div>
-              <p className="mt-2 min-h-[16px] overflow-x-auto whitespace-nowrap text-[10px] font-black tracking-widest text-slate-400 scrollbar-hide">
+              <p className="mt-1.5 min-h-[14px] overflow-x-auto whitespace-nowrap text-[9px] font-black tracking-[0.16em] text-slate-400 scrollbar-hide">
                 {formulaLine}
               </p>
-              <div className="mt-3 rounded-[1.35rem] border border-white/10 bg-white/5 px-3 py-3">
+              <div className="mt-2 rounded-[1.15rem] border border-white/10 bg-white/5 px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Result</p>
-                  <p className="overflow-x-auto whitespace-nowrap text-[clamp(2rem,10vw,3rem)] font-900 leading-none tracking-tight text-white scrollbar-hide">
+                  <p className="overflow-x-auto whitespace-nowrap text-[clamp(1.75rem,9vw,2.6rem)] font-900 leading-none tracking-tight text-white scrollbar-hide">
                     {previewResult}
                   </p>
                 </div>
@@ -768,15 +770,15 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           </div>
 
           {(voiceFeedback || voiceTranscript || isVoiceListening) && (
-            <div className="mt-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="mt-3 rounded-[1.35rem] border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-white/10 dark:bg-black/20">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
-                  <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                  <p className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-200">
                     {voiceTranscript || voiceFeedback}
                   </p>
                   {voiceTranscript && voiceFeedback && voiceFeedback !== voiceTranscript && (
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+                    <p className="mt-1 text-[10px] font-semibold text-slate-500 dark:text-slate-300">
                       {voiceFeedback}
                     </p>
                   )}
@@ -789,70 +791,70 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           )}
 
           {showQuickBills && (
-            <div className="mt-4">
-              <p className="mb-2 ml-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Quick Bills (PHP)</p>
+            <div className="mt-3">
+              <p className="mb-1.5 ml-2 text-[8px] font-black uppercase tracking-widest text-slate-400">Quick Bills (PHP)</p>
               <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
                 {quickBills.map(bill => (
                   <button
                     key={bill}
                     onClick={() => handleQuickBill(bill)}
-                    className="min-w-[60px] flex-shrink-0 rounded-2xl border border-slate-100 bg-white py-2 shadow-sm transition-all active:scale-95 dark:border-white/10 dark:bg-white/5"
+                    className="min-w-[56px] flex-shrink-0 rounded-[1rem] border border-slate-100 bg-white py-1.5 shadow-sm transition-all active:scale-95 dark:border-white/10 dark:bg-white/5"
                   >
-                    <span className="text-base font-900 text-primary">{peso}{bill}</span>
+                    <span className="text-[15px] font-900 text-primary">{peso}{bill}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="mt-4 grid grid-cols-4 gap-2">
-            <button onClick={handleClear} className={`${keyBase} ${keyFunc} py-3`}>
+          <div className="mt-3 grid grid-cols-4 gap-1.5">
+            <button onClick={handleClear} className={`${keyBase} ${keyFunc}`}>
               AC
             </button>
-            <button onClick={handlePercent} className={`${keyBase} ${keyFunc} py-3`}>
+            <button onClick={handlePercent} className={`${keyBase} ${keyFunc}`}>
               %
             </button>
-            <button onClick={handleBackspace} className={`${keyBase} ${keyFunc} py-3`}>
-              <span className="text-lg leading-none">{BACKSPACE}</span>
+            <button onClick={handleBackspace} className={`${keyBase} ${keyFunc}`}>
+              <span className="text-base leading-none">{BACKSPACE}</span>
             </button>
-            <button onClick={handleEqual} className={`${keyBase} ${keyEq} py-3`}>
+            <button onClick={handleEqual} className={`${keyBase} ${keyEq}`}>
               =
             </button>
 
             {[7, 8, 9].map(n => (
-              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight} py-3`}>
+              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight}`}>
                 {n}
               </button>
             ))}
-            <button onClick={() => handleOperator('/')} className={`${keyBase} ${keyOp} py-3`}>
+            <button onClick={() => handleOperator('/')} className={`${keyBase} ${keyOp}`}>
               {DIVIDE}
             </button>
 
             {[4, 5, 6].map(n => (
-              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight} py-3`}>
+              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight}`}>
                 {n}
               </button>
             ))}
-            <button onClick={() => handleOperator('*')} className={`${keyBase} ${keyOp} py-3`}>
+            <button onClick={() => handleOperator('*')} className={`${keyBase} ${keyOp}`}>
               {MULTIPLY}
             </button>
 
             {[1, 2, 3].map(n => (
-              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight} py-3`}>
+              <button key={n} onClick={() => handleDigit(String(n))} className={`${keyBase} ${keyLight}`}>
                 {n}
               </button>
             ))}
-            <button onClick={() => handleOperator('-')} className={`${keyBase} ${keyOp} py-3`}>
+            <button onClick={() => handleOperator('-')} className={`${keyBase} ${keyOp}`}>
               -
             </button>
 
-            <button onClick={() => handleDigit('0')} className={`${keyBase} ${keyLight} col-span-2 py-3`}>
+            <button onClick={() => handleDigit('0')} className={`${keyBase} ${keyLight} col-span-2`}>
               0
             </button>
-            <button onClick={() => handleDigit('.')} className={`${keyBase} ${keyLight} py-3`}>
+            <button onClick={() => handleDigit('.')} className={`${keyBase} ${keyLight}`}>
               .
             </button>
-            <button onClick={() => handleOperator('+')} className={`${keyBase} ${keyOp} py-3`}>
+            <button onClick={() => handleOperator('+')} className={`${keyBase} ${keyOp}`}>
               +
             </button>
           </div>

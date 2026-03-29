@@ -91,6 +91,18 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toBe('Dau');
     expect(result.fareType).toBe('regular');
   });
+
+  it('accepts ti as a route connector from noisy speech recognition', () => {
+    const result = parseFareVoiceTranscript('Cubao ti Dau regular', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result using ti as the connector.');
+    }
+
+    expect(result.originStop.name).toBe('Cubao');
+    expect(result.destinationStop.name).toBe('Dau');
+  });
 });
 
 describe('parseCalculatorVoiceTranscript', () => {
@@ -163,6 +175,10 @@ describe('parseFareTypeVoiceAnswer', () => {
 
   it('matches Taglish discounted follow-up answers', () => {
     expect(parseFareTypeVoiceAnswer('may discount po')).toBe('discounted');
+  });
+
+  it('treats counted as a noisy discounted answer', () => {
+    expect(parseFareTypeVoiceAnswer('counted')).toBe('discounted');
   });
 
   it('matches regular follow-up answers', () => {
@@ -255,6 +271,10 @@ describe('parseVoiceBinaryAnswer', () => {
 
   it('matches Taglish no responses', () => {
     expect(parseVoiceBinaryAnswer('hindi exit')).toBe('no');
+  });
+
+  it('treats im done as a yes response for follow-up questions', () => {
+    expect(parseVoiceBinaryAnswer('im done')).toBe('yes');
   });
 });
 

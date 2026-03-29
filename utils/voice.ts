@@ -527,6 +527,7 @@ const normalizeStopText = (value: string) =>
     value
       .toLowerCase()
       .replace(/&/g, ' and ')
+      .replace(/\bti\b/g, ' to ')
       .replace(/[()]/g, ' ')
       .replace(/[\/,.-]/g, ' ')
       .replace(/[^a-z0-9\s]/g, ' ')
@@ -1302,7 +1303,11 @@ export const parseFareTypeVoiceAnswer = (transcript: string): FareTypeVoiceAnswe
     return 'regular';
   }
 
-  if (/\b(discount|discounted|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(normalized)) {
+  if (
+    /\b(discount|discounted|counted|discounting|dis counted|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(
+      normalized
+    )
+  ) {
     return 'discounted';
   }
 
@@ -1313,11 +1318,15 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   const normalized = normalizeStopText(transcript);
   if (!normalized) return null;
 
-  if (/\b(yes|yeah|yep|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na)\b/.test(normalized)) {
+  if (
+    /\b(yes|yeah|yep|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na|im done|i m done|okay done|ok done|done na|tapos na)\b/.test(
+      normalized
+    )
+  ) {
     return 'yes';
   }
 
-  if (/\b(no|nope|exit|stop|close|finish|done|cancel|end|hindi|wag|tama na|ayaw|labas|stop na)\b/.test(normalized)) {
+  if (/\b(no|nope|exit|stop|close|finish|done|cancel|end|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
     return 'no';
   }
 
@@ -1344,7 +1353,7 @@ export const parseFareConversationShortcut = (transcript: string): FareConversat
 
   if (
     /\b(same route|same trip|same fare|same one|same passenger|same destination|repeat route|repeat that|same again|pareho route|parehong route|ulit route|same lang|same na lang)\b/.test(normalized) ||
-    ((/\b(again|repeat|same)\b/.test(normalized) || fareType !== null) && !/\bto\b/.test(normalized))
+    ((/\b(again|repeat|same)\b/.test(normalized) || fareType !== null) && !/\b(?:to|ti)\b/.test(normalized))
   ) {
     return {
       command: 'same-route',
@@ -1371,7 +1380,7 @@ export const parseFareVoiceTranscript = (
 
   const fareType = detectFareType(normalized);
   const stopAliases = buildStopAliasEntries(route);
-  const toMatch = /\bto\b/.exec(normalized);
+  const toMatch = /\b(?:to|ti)\b/.exec(normalized);
 
   let originStop: Stop | null = null;
   let destinationStop: Stop | null = null;

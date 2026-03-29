@@ -29,6 +29,11 @@ import {
   hasGoogleMapsAssistConfig,
   snapLocationToRoad
 } from '../utils/google-maps-assist';
+import {
+  analyzeSmartVoiceTranscript,
+  type SmartVoiceAssistResult,
+  type SmartVoiceConfidence
+} from '../utils/smart-voice-assist';
 import type {
   BrowserSpeechRecognition,
   FareConversationShortcut,
@@ -583,8 +588,20 @@ const CalcScreen: React.FC = () => {
     queuedVoicePromptRef.current = { message, nextStep };
   };
 
-  const shouldConfirmVoiceInterpretation = (confidence: number | null) =>
-    typeof confidence === 'number' && !Number.isNaN(confidence) && confidence < 0.45;
+  const shouldConfirmVoiceInterpretation = (
+    confidence: number | null,
+    smartConfidence: SmartVoiceConfidence | null = null
+  ) => {
+    if (smartConfidence === 'high') {
+      return false;
+    }
+
+    if (smartConfidence === 'medium') {
+      return typeof confidence === 'number' && !Number.isNaN(confidence) && confidence < 0.35;
+    }
+
+    return typeof confidence === 'number' && !Number.isNaN(confidence) && confidence < 0.45;
+  };
 
   const queueVoiceConfirmation = (message: string, action: VoiceConfirmationAction) => {
     pendingVoiceConfirmationRef.current = action;
@@ -611,6 +628,43 @@ const CalcScreen: React.FC = () => {
     ...matchedFare,
     fareType: nextFareType
   });
+
+  const buildMatchedFareFromSmartVoice = (
+    smartResult: SmartVoiceAssistResult | null
+  ): MatchedFareVoiceResult | null => {
+    if (!smartResult?.originStopName || !smartResult.destinationStopName) {
+      return null;
+    }
+
+    const findStopByName = (stopName: string) =>
+      activeRoute.stops.find(stop => stop.name.toLowerCase() === stopName.trim().toLowerCase()) ?? null;
+
+    const nextOriginStop = findStopByName(smartResult.originStopName);
+    const nextDestStop = findStopByName(smartResult.destinationStopName);
+
+    if (!nextOriginStop || !nextDestStop || nextOriginStop.name === nextDestStop.name) {
+      return null;
+    }
+
+    const nextDistance = Math.abs(nextDestStop.km - nextOriginStop.km);
+    const nextCalculation = calculateFare(nextDistance, activeRoute.fare);
+    const nextFareType =
+      smartResult.fareType === 'regular' || smartResult.fareType === 'discounted'
+        ? smartResult.fareType
+        : 'either';
+
+    return {
+      status: 'match',
+      transcript: smartResult.correctedTranscript || `${nextOriginStop.name} to ${nextDestStop.name}`,
+      normalized: (smartResult.correctedTranscript || `${nextOriginStop.name} to ${nextDestStop.name}`).toLowerCase(),
+      fareType: nextFareType,
+      originStop: nextOriginStop,
+      destinationStop: nextDestStop,
+      distance: nextDistance,
+      regularFare: nextCalculation.reg,
+      discountedFare: nextCalculation.disc
+    };
+  };
 
   const buildScreenFareContext = (
     fareType: 'regular' | 'discounted' | 'either'
@@ -660,7 +714,8 @@ const CalcScreen: React.FC = () => {
   const applyVoiceShortcut = (
     shortcut: FareConversationShortcut,
     confidence: number | null,
-    currentStep: VoiceAssistantStep
+    currentStep: VoiceAssistantStep,
+    smartConfidence: SmartVoiceConfidence | null = null
   ) => {
     if (shortcut.command === 'new-route') {
       const nextMessage = `Okay. Say the new pickup and destination, like ${routeStart.name} to ${routeEnd.name}.`;
@@ -686,7 +741,7 @@ const CalcScreen: React.FC = () => {
 
       const prompt = `I heard same route. Use ${getResolvedFareLabel(nextMatchedFare).toLowerCase()} fare from ${nextMatchedFare.originStop.name} to ${nextMatchedFare.destinationStop.name}. Say yes or no.`;
 
-      if (currentStep === 'fare' || shouldConfirmVoiceInterpretation(confidence)) {
+      if (currentStep === 'fare' || shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
         queueVoiceConfirmation(prompt, {
           kind: 'fare-match',
           matchedFare: nextMatchedFare,
@@ -951,7 +1006,7 @@ const CalcScreen: React.FC = () => {
     finishVoiceChangeFlow(fareContext, lastCashAmount);
   };
 
-  const processFareVoiceTranscript = (
+  const processFareVoiceTranscript = async (
     requestedStep: VoiceAssistantStep,
     transcript: string,
     confidence: number | null
@@ -962,16 +1017,79 @@ const CalcScreen: React.FC = () => {
     }
 
     voiceTranscriptHandledRef.current = true;
-    setVoiceTranscript(trimmedTranscript);
+    const smartResult = await analyzeSmartVoiceTranscript({
+      step: requestedStep,
+      transcript: trimmedTranscript,
+      routeLabel: activeRoute.label,
+      routeStops: activeRoute.stops.map(stop => ({
+        name: stop.name,
+        km: stop.km,
+        aliases: stop.aliases ?? []
+      })),
+      activeFare: (() => {
+        const activeFare = getActiveVoiceFareContext('fare-type');
+        if (!activeFare) return null;
+        return {
+          originStopName: activeFare.originStop.name,
+          destinationStopName: activeFare.destinationStop.name,
+          fareType: activeFare.fareType
+        };
+      })(),
+      lastResolvedFare: lastResolvedVoiceFareRef.current
+        ? {
+            originStopName: lastResolvedVoiceFareRef.current.originStop.name,
+            destinationStopName: lastResolvedVoiceFareRef.current.destinationStop.name,
+            fareType: lastResolvedVoiceFareRef.current.fareType
+          }
+        : null,
+      lastCashAmount: lastVoiceCashAmountRef.current
+    });
+
+    const effectiveTranscript = smartResult?.correctedTranscript?.trim() || trimmedTranscript;
+    const smartConfidence = smartResult?.confidence ?? null;
+    const smartFareType =
+      smartResult?.fareType === 'regular' || smartResult?.fareType === 'discounted'
+        ? smartResult.fareType
+        : null;
+    const smartBinaryAnswer =
+      smartResult && smartResult.binaryAnswer !== 'unknown' ? smartResult.binaryAnswer : null;
+    const smartCashAmount =
+      typeof smartResult?.cashAmount === 'number' && Number.isFinite(smartResult.cashAmount)
+        ? smartResult.cashAmount
+        : null;
+    const smartShortcut: FareConversationShortcut | null =
+      smartResult && smartResult.shortcut !== 'none'
+        ? smartResult.shortcut === 'same-route'
+          ? {
+              command: 'same-route',
+              fareType: smartFareType
+            }
+          : smartResult.shortcut === 'same-cash'
+            ? { command: 'same-cash' }
+            : { command: 'new-route' }
+        : null;
+    const smartMatchedFare = buildMatchedFareFromSmartVoice(smartResult);
+    const smartClarificationMessage = smartResult?.clarificationQuestion
+      ? [
+          smartResult.clarificationQuestion,
+          smartResult.clarificationChoices.length > 0
+            ? `Choices: ${smartResult.clarificationChoices.join(', ')}.`
+            : ''
+        ]
+          .filter(Boolean)
+          .join(' ')
+      : null;
+
+    setVoiceTranscript(effectiveTranscript);
     setVoiceConfidence(confidence);
 
-    if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(trimmedTranscript)) {
+    if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(effectiveTranscript)) {
       pendingVoiceConfirmationRef.current = null;
       closeVoicePanelAfterReply('Voice assistant cancelled.');
       return;
     }
 
-    if (/\b(are you still there|still there|nandiyan ka pa|naririnig mo ako|hello)\b/i.test(trimmedTranscript)) {
+    if (/\b(are you still there|still there|nandiyan ka pa|naririnig mo ako|hello)\b/i.test(effectiveTranscript)) {
       const stillHereMessage =
         requestedStep === 'cash'
           ? 'Yes, I am still here. Please say how much is their money, or say same amount.'
@@ -985,7 +1103,7 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    if (/\b(sorry|wrong|mali|not that|hindi iyon|hindi yun|ulitin)\b/i.test(trimmedTranscript)) {
+    if (/\b(sorry|wrong|mali|not that|hindi iyon|hindi yun|ulitin)\b/i.test(effectiveTranscript)) {
       const correctionMessage =
         requestedStep === 'cash'
           ? 'Okay. Please say how much is their money again.'
@@ -1002,7 +1120,7 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'confirm') {
-      const confirmationAnswer = parseVoiceBinaryAnswer(trimmedTranscript);
+      const confirmationAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
       const pendingConfirmation = pendingVoiceConfirmationRef.current;
 
       if (!confirmationAnswer) {
@@ -1039,16 +1157,24 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'fare') {
-      const shortcut = parseFareConversationShortcut(trimmedTranscript);
-      if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep)) {
+      const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
+      if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep, smartConfidence)) {
         return;
       }
 
-      const parsed = parseFareVoiceTranscript(trimmedTranscript, activeRoute);
+      if (smartClarificationMessage && !smartMatchedFare) {
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        setVoiceFeedback(smartClarificationMessage);
+        queueVoicePrompt(smartClarificationMessage, 'fare');
+        return;
+      }
+
+      const parsed = smartMatchedFare ?? parseFareVoiceTranscript(effectiveTranscript, activeRoute);
       setVoiceResult(parsed);
 
       if (parsed.status === 'match') {
-        if (shouldConfirmVoiceInterpretation(confidence)) {
+        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
           const confirmMessage =
             parsed.fareType === 'either'
               ? `I heard ${parsed.originStop.name} to ${parsed.destinationStop.name}. Say yes to continue or no to try again.`
@@ -1073,7 +1199,7 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'fare-type') {
-      const parsedFareType = parseFareTypeVoiceAnswer(trimmedTranscript);
+      const parsedFareType = smartFareType ?? parseFareTypeVoiceAnswer(effectiveTranscript);
       const baseFare = getActiveVoiceFareContext('fare-type');
 
       if (!parsedFareType) {
@@ -1091,7 +1217,7 @@ const CalcScreen: React.FC = () => {
       }
 
       const resolvedFare = resolveVoiceFareType(baseFare, parsedFareType);
-      if (shouldConfirmVoiceInterpretation(confidence)) {
+      if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
         queueVoiceConfirmation(
           `I heard ${getResolvedFareLabel(resolvedFare).toLowerCase()} fare for ${resolvedFare.originStop.name} to ${resolvedFare.destinationStop.name}. Say yes or no.`,
           {
@@ -1108,7 +1234,7 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'done-check') {
-      const doneAnswer = parseVoiceBinaryAnswer(trimmedTranscript);
+      const doneAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
 
       if (doneAnswer === 'yes') {
         setIsConductorCalcOpen(false);
@@ -1136,14 +1262,20 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'next-passenger') {
-      const shortcut = parseFareConversationShortcut(trimmedTranscript);
-      if (shortcut && applyVoiceShortcut(shortcut, confidence, 'fare')) {
+      const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
+      if (shortcut && applyVoiceShortcut(shortcut, confidence, 'fare', smartConfidence)) {
         return;
       }
 
-      const parsedFare = parseFareVoiceTranscript(trimmedTranscript, activeRoute);
+      if (smartClarificationMessage && !smartMatchedFare) {
+        setVoiceFeedback(smartClarificationMessage);
+        queueVoicePrompt(smartClarificationMessage, 'next-passenger');
+        return;
+      }
+
+      const parsedFare = smartMatchedFare ?? parseFareVoiceTranscript(effectiveTranscript, activeRoute);
       if (parsedFare.status === 'match') {
-        if (shouldConfirmVoiceInterpretation(confidence)) {
+        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
           const confirmMessage =
             parsedFare.fareType === 'either'
               ? `I heard ${parsedFare.originStop.name} to ${parsedFare.destinationStop.name}. Say yes to continue or no to try again.`
@@ -1160,7 +1292,7 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      const nextAnswer = parseVoiceBinaryAnswer(trimmedTranscript);
+      const nextAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
 
       if (nextAnswer === 'yes') {
         setVoiceStep('fare');
@@ -1187,8 +1319,8 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    const shortcut = parseFareConversationShortcut(trimmedTranscript);
-    if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep)) {
+    const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
+    if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep, smartConfidence)) {
       return;
     }
 
@@ -1211,9 +1343,18 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    const cashResult = parseCashVoiceTranscript(trimmedTranscript);
+    const cashResult =
+      smartCashAmount !== null
+        ? {
+            status: 'match' as const,
+            transcript: effectiveTranscript,
+            normalized: effectiveTranscript.toLowerCase(),
+            amount: smartCashAmount,
+            spokenAmount: String(smartCashAmount)
+          }
+        : parseCashVoiceTranscript(effectiveTranscript);
     if (cashResult.status === 'match') {
-      if (shouldConfirmVoiceInterpretation(confidence)) {
+      if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
         queueVoiceConfirmation(
           `I heard ${cashResult.amount} pesos for the passenger money. Say yes or no.`,
           {
@@ -1318,7 +1459,7 @@ const CalcScreen: React.FC = () => {
         clearVoiceSilenceTimeout();
         if (!voiceTranscriptHandledRef.current) {
           voiceTranscriptHandledRef.current = true;
-          processFareVoiceTranscript(requestedStep, transcript, confidence);
+          void processFareVoiceTranscript(requestedStep, transcript, confidence);
         }
         recognition.stop();
       }
@@ -1328,7 +1469,7 @@ const CalcScreen: React.FC = () => {
       voiceRecognitionRef.current = null;
       clearVoiceSilenceTimeout();
       if (!voiceTranscriptHandledRef.current && latestVoiceTranscriptRef.current.trim()) {
-        processFareVoiceTranscript(
+        void processFareVoiceTranscript(
           requestedStep,
           latestVoiceTranscriptRef.current,
           latestVoiceConfidenceRef.current

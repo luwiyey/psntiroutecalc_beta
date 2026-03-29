@@ -1,5 +1,7 @@
 .env.local
 .env
+supabase/functions/.env
+supabase/functions/.env.local
 node_modules/
 dist/
 android/.gradle/
