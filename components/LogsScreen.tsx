@@ -36,6 +36,12 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
       : tab === 'fav'
         ? favoriteHistory
         : routeHistory;
+  const tabCards = [
+    { id: 'all' as const, label: 'All Logs', icon: 'history', count: allHistory.length },
+    { id: 'route' as const, label: 'Route Logs', icon: 'alt_route', count: routeHistory.length },
+    { id: 'shift' as const, label: 'Shift Logs', icon: 'badge', count: shiftHistory.length },
+    { id: 'fav' as const, label: 'Favorites', icon: 'star', count: favoriteHistory.length }
+  ];
   const isCM = settings.conductorMode;
 
   return (
@@ -57,62 +63,43 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
       </header>
 
       <div className="sticky top-[76px] z-10 space-y-3 border-b bg-[#f8f6f6]/80 px-4 pb-4 pt-4 backdrop-blur-lg dark:border-white/10 dark:bg-black/80">
-        <div className="flex items-center gap-3">
-          <div className="flex flex-1 flex-wrap rounded-2xl bg-slate-100 p-1 dark:bg-white/5">
-            <button
-              onClick={() => setTab('all')}
-              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'all' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
-            >
-              <span className="material-icons text-sm">history</span>
-              ALL
-            </button>
-            <button
-              onClick={() => setTab('route')}
-              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'route' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
-            >
-              <span className="material-icons text-sm">alt_route</span>
-              ROUTE
-            </button>
-            <button
-              onClick={() => setTab('shift')}
-              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'shift' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
-            >
-              <span className="material-icons text-sm">badge</span>
-              SHIFT
-            </button>
-            <button
-              onClick={() => setTab('fav')}
-              className={`flex min-w-[96px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${tab === 'fav' ? 'bg-white shadow-sm dark:bg-night-charcoal dark:text-white' : 'opacity-50 dark:text-slate-400'}`}
-            >
-              <span className="material-icons text-sm">star</span>
-              FAVORITES
-            </button>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+            Tap a log group below to filter the records.
+          </p>
           <button
             onClick={deleteHistory}
-            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/10 bg-primary/10 text-primary shadow-sm transition-transform active:scale-90"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/10 bg-primary/10 text-primary shadow-sm transition-transform active:scale-90"
           >
             <span className="material-icons">delete_outline</span>
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">All Logs</p>
-            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{allHistory.length}</p>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Route Logs</p>
-            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{routeHistory.length}</p>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Shift Logs</p>
-            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{shiftHistory.length}</p>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-3 text-center shadow-sm dark:bg-night-charcoal">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Favorites</p>
-            <p className="mt-2 text-lg font-black text-slate-800 dark:text-white">{favoriteHistory.length}</p>
-          </div>
+          {tabCards.map(card => {
+            const isActive = tab === card.id;
+            return (
+              <button
+                key={card.id}
+                onClick={() => setTab(card.id)}
+                className={`rounded-2xl border px-3 py-3 text-center shadow-sm transition-all active:scale-[0.98] ${
+                  isActive
+                    ? 'border-primary/20 bg-white ring-2 ring-primary/10 dark:border-primary/30 dark:bg-night-charcoal'
+                    : 'border-transparent bg-white dark:bg-night-charcoal'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-1.5 text-slate-400 dark:text-slate-500">
+                  <span className={`material-icons text-sm ${isActive ? 'text-primary' : ''}`}>{card.icon}</span>
+                  <p className={`text-[9px] font-black uppercase tracking-widest ${isActive ? 'text-primary' : ''}`}>
+                    {card.label}
+                  </p>
+                </div>
+                <p className={`mt-2 text-lg font-black ${isActive ? 'text-primary' : 'text-slate-800 dark:text-white'}`}>
+                  {card.count}
+                </p>
+              </button>
+            );
+          })}
         </div>
       </div>
 

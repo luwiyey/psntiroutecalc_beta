@@ -4,9 +4,11 @@ import {
   getSpeechRecognitionErrorMessage,
   parseCashVoiceTranscript,
   parseCalculatorVoiceTranscript,
+  parseFareConversationShortcut,
   parseFareTypeVoiceAnswer,
   parseFareVoiceTranscript,
   parseStopVoiceTranscript,
+  parseVoiceBinaryAnswer,
   parseTallyNavigationVoiceTranscript
 } from '../utils/voice';
 
@@ -82,8 +84,60 @@ describe('parseFareTypeVoiceAnswer', () => {
     expect(parseFareTypeVoiceAnswer('discounted please')).toBe('discounted');
   });
 
+  it('matches Taglish discounted follow-up answers', () => {
+    expect(parseFareTypeVoiceAnswer('may discount po')).toBe('discounted');
+  });
+
   it('matches regular follow-up answers', () => {
     expect(parseFareTypeVoiceAnswer('regular fare')).toBe('regular');
+  });
+
+  it('matches Taglish regular follow-up answers', () => {
+    expect(parseFareTypeVoiceAnswer('walang discount')).toBe('regular');
+  });
+});
+
+describe('parseFareConversationShortcut', () => {
+  it('matches same route with discounted override', () => {
+    const result = parseFareConversationShortcut('same route discounted again');
+
+    expect(result).toEqual({
+      command: 'same-route',
+      fareType: 'discounted'
+    });
+  });
+
+  it('matches same cash shortcut', () => {
+    const result = parseFareConversationShortcut('same amount');
+
+    expect(result).toEqual({
+      command: 'same-cash'
+    });
+  });
+
+  it('matches new route shortcut', () => {
+    const result = parseFareConversationShortcut('new route');
+
+    expect(result).toEqual({
+      command: 'new-route'
+    });
+  });
+
+  it('matches Taglish same-cash shortcut', () => {
+    const result = parseFareConversationShortcut('parehong bayad');
+
+    expect(result).toEqual({
+      command: 'same-cash'
+    });
+  });
+
+  it('matches Taglish same-route shortcut', () => {
+    const result = parseFareConversationShortcut('pareho route');
+
+    expect(result).toEqual({
+      command: 'same-route',
+      fareType: null
+    });
   });
 });
 
@@ -99,10 +153,31 @@ describe('parseCashVoiceTranscript', () => {
     expect(result.amount).toBe(1000);
   });
 
+  it('reads Taglish passenger money amounts', () => {
+    const result = parseCashVoiceTranscript('isang libo ang bayad');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched Taglish cash result.');
+    }
+
+    expect(result.amount).toBe(1000);
+  });
+
   it('rejects non-numeric follow-up answers', () => {
     const result = parseCashVoiceTranscript('maybe later');
 
     expect(result.status).toBe('invalid');
+  });
+});
+
+describe('parseVoiceBinaryAnswer', () => {
+  it('matches Taglish yes responses', () => {
+    expect(parseVoiceBinaryAnswer('oo susunod')).toBe('yes');
+  });
+
+  it('matches Taglish no responses', () => {
+    expect(parseVoiceBinaryAnswer('hindi exit')).toBe('no');
   });
 });
 

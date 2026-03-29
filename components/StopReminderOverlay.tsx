@@ -154,7 +154,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="mt-4 flex items-start gap-2">
             <HelpHint
               label="Alerts watch the selected stop while the app is open. Sound and vibration can be turned on or off separately."
-              triggerClassName="inline-flex cursor-help rounded-md text-xs font-semibold text-slate-500 underline decoration-dotted underline-offset-4 dark:text-slate-300"
+              triggerClassName="inline-flex cursor-help rounded-md text-xs font-semibold text-slate-500 dark:text-slate-300"
             >
               Alerts work best while the app is open and GPS is allowed on the phone.
             </HelpHint>
@@ -163,11 +163,11 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <HelpHint
                   label="Step 1: pick a stop. Step 2: enter how many passengers will go down there. Step 3: tap Queue to save the reminder."
-                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                 >
                   Add Stop
                 </HelpHint>
@@ -182,25 +182,26 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               </div>
               <button
                 onClick={() => setIsStopPickerOpen(true)}
-                className="rounded-[1.5rem] bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                className="w-full shrink-0 rounded-[1.5rem] bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 sm:w-auto"
               >
                 {draftStopName ? 'Change Stop' : 'Pick Stop'}
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_auto] gap-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
               <input
                 type="number"
                 min="1"
+                inputMode="numeric"
                 value={passengerCount}
                 onChange={event => setPassengerCount(event.target.value)}
-                className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm font-black text-slate-700 outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm font-black text-slate-700 caret-primary outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 dark:border-white/10 dark:bg-black dark:text-white"
                 placeholder="Passengers getting down"
               />
               <button
                 onClick={handleAddReminder}
                 disabled={!draftStopName}
-                className="rounded-[1.5rem] bg-slate-900 px-5 py-4 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 disabled:opacity-50 dark:bg-white dark:text-slate-900"
+                className="w-full rounded-[1.5rem] bg-slate-900 px-5 py-4 text-[10px] font-black uppercase tracking-widest text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-900 sm:w-auto"
               >
                 Queue
               </button>
@@ -208,11 +209,11 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
 
             <div className="rounded-[2rem] bg-white p-5 shadow-sm dark:bg-night-charcoal">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                 <HelpHint
                   label="These are the stops currently being watched for reminders. You can turn each one on or off, mark it done, or remove it."
-                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400 underline decoration-dotted underline-offset-4"
+                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                 >
                   Queued Stops
                 </HelpHint>

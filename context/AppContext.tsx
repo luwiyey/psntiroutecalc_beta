@@ -4,6 +4,8 @@ import type {
   AppSettings,
   FareRecord,
   ReminderSettings,
+  RouteLandmark,
+  RouteSegment,
   ShiftRecord,
   StopReminder,
   StopSubmission,
@@ -20,6 +22,18 @@ import {
   dedupeStopSubmissions,
   mergeStopsWithVerifiedStops
 } from '../utils/stop-data';
+import {
+  buildSeedRouteLandmarks,
+  buildSeedRouteSegments,
+  mergeRouteLandmarks,
+  mergeRouteSegments,
+  mergeStopsWithRouteLandmarks
+} from '../utils/route-geometry';
+import {
+  fetchRouteLandmarks,
+  fetchRouteSegments,
+  hasRouteGeometrySyncConfig
+} from '../utils/route-geometry-sync';
 import {
   fetchRouteStopSubmissions,
   fetchRouteVerifiedStops,
@@ -237,6 +251,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [stopSubmissions, setStopSubmissions] = useState<StopSubmission[]>(initialNormalizedStopSubmissions);
   const [remoteStopSubmissions, setRemoteStopSubmissions] = useState<StopSubmission[]>([]);
   const [remoteVerifiedStops, setRemoteVerifiedStops] = useState<VerifiedStop[]>([]);
+  const [remoteRouteLandmarks, setRemoteRouteLandmarks] = useState<RouteLandmark[]>([]);
+  const [remoteRouteSegments, setRemoteRouteSegments] = useState<RouteSegment[]>([]);
   const [stopSyncState, setStopSyncState] = useState<StopSyncState>(() =>
     buildDefaultStopSyncState(
       initialNormalizedStopSubmissions.filter(submission => submission.syncStatus !== 'synced').length
@@ -308,6 +324,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [settings.activeRouteId]
   );
 
+  const seededRouteLandmarks = useMemo(
+    () => buildSeedRouteLandmarks(baseActiveRoute.id, baseActiveRoute.label, baseActiveRoute.stops),
+    [baseActiveRoute.id, baseActiveRoute.label, baseActiveRoute.stops]
+  );
+
+  const routeLandmarks = useMemo(
+    () => mergeRouteLandmarks(seededRouteLandmarks, remoteRouteLandmarks),
+    [remoteRouteLandmarks, seededRouteLandmarks]
+  );
+
+  const seededRouteSegments = useMemo(
+    () => buildSeedRouteSegments(baseActiveRoute.id, baseActiveRoute.label, baseActiveRoute.stops),
+    [baseActiveRoute.id, baseActiveRoute.label, baseActiveRoute.stops]
+  );
+
+  const routeSegments = useMemo(
+    () => mergeRouteSegments(seededRouteSegments, remoteRouteSegments),
+    [remoteRouteSegments, seededRouteSegments]
+  );
+
   const localRouteSubmissions = useMemo(
     () => stopSubmissions.filter(submission => submission.routeId === baseActiveRoute.id),
     [baseActiveRoute.id, stopSubmissions]
@@ -351,11 +387,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [baseActiveRoute.id, baseActiveRoute.stops, computedVerifiedStops, remoteVerifiedStops]);
 
   const activeRoute = useMemo(() => {
+    const landmarkMergedStops = mergeStopsWithRouteLandmarks(baseActiveRoute.id, baseActiveRoute.stops, routeLandmarks);
+
     return {
       ...baseActiveRoute,
-      stops: mergeStopsWithVerifiedStops(baseActiveRoute.id, baseActiveRoute.stops, verifiedStops)
+      stops: mergeStopsWithVerifiedStops(baseActiveRoute.id, landmarkMergedStops, verifiedStops)
     };
-  }, [baseActiveRoute, verifiedStops]);
+  }, [baseActiveRoute, routeLandmarks, verifiedStops]);
 
   const loadRemoteRouteSubmissions = useCallback(async (routeId: string) => {
     if (!hasStopSyncConfig() || !navigator.onLine || !routeId) {
@@ -419,6 +457,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         verifiedCount: 0,
         lastError: error instanceof Error ? error.message : 'Unable to fetch verified stops right now.'
       }));
+      return [];
+    }
+  }, []);
+
+  const loadRemoteGeometryLandmarks = useCallback(async (routeId: string) => {
+    if (!hasRouteGeometrySyncConfig() || !navigator.onLine || !routeId) {
+      setRemoteRouteLandmarks([]);
+      return [];
+    }
+
+    try {
+      const fetchedLandmarks = await fetchRouteLandmarks(routeId);
+      setRemoteRouteLandmarks(fetchedLandmarks);
+      return fetchedLandmarks;
+    } catch {
+      setRemoteRouteLandmarks([]);
+      return [];
+    }
+  }, []);
+
+  const loadRemoteGeometrySegments = useCallback(async (routeId: string) => {
+    if (!hasRouteGeometrySyncConfig() || !navigator.onLine || !routeId) {
+      setRemoteRouteSegments([]);
+      return [];
+    }
+
+    try {
+      const fetchedSegments = await fetchRouteSegments(routeId);
+      setRemoteRouteSegments(fetchedSegments);
+      return fetchedSegments;
+    } catch {
+      setRemoteRouteSegments([]);
       return [];
     }
   }, []);
@@ -551,31 +621,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [authState.employeeId, authState.isAuthenticated, reminderSettings]);
 
   useEffect(() => {
-    if (!hasStopSyncConfig()) {
+    if (!hasStopSyncConfig() && !hasRouteGeometrySyncConfig()) {
       return;
     }
 
     void Promise.all([
       loadRemoteRouteSubmissions(baseActiveRoute.id),
-      loadRemoteRouteVerifiedStops(baseActiveRoute.id)
+      loadRemoteRouteVerifiedStops(baseActiveRoute.id),
+      loadRemoteGeometryLandmarks(baseActiveRoute.id),
+      loadRemoteGeometrySegments(baseActiveRoute.id)
     ]);
-  }, [baseActiveRoute.id, loadRemoteRouteSubmissions, loadRemoteRouteVerifiedStops]);
+  }, [
+    baseActiveRoute.id,
+    loadRemoteGeometryLandmarks,
+    loadRemoteGeometrySegments,
+    loadRemoteRouteSubmissions,
+    loadRemoteRouteVerifiedStops
+  ]);
 
   useEffect(() => {
-    if (!hasStopSyncConfig()) {
+    if (!hasStopSyncConfig() && !hasRouteGeometrySyncConfig()) {
       return;
     }
 
     const handleOnline = () => {
       void Promise.all([
         loadRemoteRouteSubmissions(baseActiveRoute.id),
-        loadRemoteRouteVerifiedStops(baseActiveRoute.id)
+        loadRemoteRouteVerifiedStops(baseActiveRoute.id),
+        loadRemoteGeometryLandmarks(baseActiveRoute.id),
+        loadRemoteGeometrySegments(baseActiveRoute.id)
       ]);
     };
 
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [baseActiveRoute.id, loadRemoteRouteSubmissions, loadRemoteRouteVerifiedStops]);
+  }, [
+    baseActiveRoute.id,
+    loadRemoteGeometryLandmarks,
+    loadRemoteGeometrySegments,
+    loadRemoteRouteSubmissions,
+    loadRemoteRouteVerifiedStops
+  ]);
 
   useEffect(() => {
     if (!toast) {
@@ -750,7 +836,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDestination(route.stops[route.stops.length - 1]?.name ?? '');
     void Promise.all([
       loadRemoteRouteSubmissions(route.id),
-      loadRemoteRouteVerifiedStops(route.id)
+      loadRemoteRouteVerifiedStops(route.id),
+      loadRemoteGeometryLandmarks(route.id),
+      loadRemoteGeometrySegments(route.id)
     ]);
     void trackAnalyticsEvent({
       eventType: 'route_selected',
@@ -894,6 +982,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       routes: ROUTES,
       activeRoute,
+      routeLandmarks,
+      routeSegments,
       selectRoute,
       settings,
       setSettings,

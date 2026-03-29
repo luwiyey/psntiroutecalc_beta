@@ -66,6 +66,10 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         .sort((left, right) => Date.parse(right.date) - Date.parse(left.date)),
     [activeRoute.id, sessions]
   );
+  const openRouteSessions = useMemo(
+    () => routeSessions.filter(session => session.status !== 'closed'),
+    [routeSessions]
+  );
   const activeShiftSession = useMemo(
     () =>
       currentShift?.routeId === activeRoute.id
@@ -94,8 +98,8 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }), [activeRoute.id, activeRoute.label, currentShift]);
   const activeSession =
     activeShiftSession ||
-    routeSessions.find(s => s.id === tallyNav.sessionId) ||
-    routeSessions[0] ||
+    openRouteSessions.find(s => s.id === tallyNav.sessionId) ||
+    openRouteSessions[0] ||
     fallbackSession;
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -226,7 +230,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
   useEffect(() => {
     if (currentShift?.routeId === activeRoute.id) return;
-    if (routeSessions.length > 0) return;
+    if (openRouteSessions.length > 0) return;
 
     setSessions(prev => {
       if (prev.some(session => session.id === fallbackSession.id)) {
@@ -250,7 +254,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     activeRoute.id,
     currentShift,
     fallbackSession,
-    routeSessions.length,
+    openRouteSessions.length,
     setSessions,
     setTallyNav
   ]);

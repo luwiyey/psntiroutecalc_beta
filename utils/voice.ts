@@ -162,6 +162,18 @@ export type TallyNavigationVoiceParseResult =
     };
 
 export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
+export type VoiceBinaryAnswer = 'yes' | 'no';
+export type FareConversationShortcut =
+  | {
+      command: 'same-route';
+      fareType: FareTypeVoiceAnswer | null;
+    }
+  | {
+      command: 'same-cash';
+    }
+  | {
+      command: 'new-route';
+    };
 
 export type CashVoiceParseResult =
   | {
@@ -185,33 +197,66 @@ export type CashVoiceParseResult =
 
 const DIGIT_WORDS: Record<string, string> = {
   zero: '0',
+  sero: '0',
   oh: '0',
   o: '0',
   one: '1',
+  isa: '1',
+  isang: '1',
   two: '2',
+  dalawa: '2',
+  dalawang: '2',
   three: '3',
+  tatlo: '3',
+  tatlong: '3',
   four: '4',
+  apat: '4',
   five: '5',
+  lima: '5',
+  limang: '5',
   six: '6',
+  anim: '6',
   seven: '7',
+  pito: '7',
+  pitong: '7',
   eight: '8',
-  nine: '9'
+  walo: '8',
+  walong: '8',
+  nine: '9',
+  siyam: '9'
 };
 
 const SMALL_NUMBER_WORDS: Record<string, number> = {
   zero: 0,
+  sero: 0,
   oh: 0,
   o: 0,
   one: 1,
+  isa: 1,
+  isang: 1,
   two: 2,
+  dalawa: 2,
+  dalawang: 2,
   three: 3,
+  tatlo: 3,
+  tatlong: 3,
   four: 4,
+  apat: 4,
   five: 5,
+  lima: 5,
+  limang: 5,
   six: 6,
+  anim: 6,
   seven: 7,
+  pito: 7,
+  pitong: 7,
   eight: 8,
+  walo: 8,
+  walong: 8,
   nine: 9,
+  siyam: 9,
   ten: 10,
+  sampu: 10,
   eleven: 11,
   twelve: 12,
   thirteen: 13,
@@ -225,13 +270,21 @@ const SMALL_NUMBER_WORDS: Record<string, number> = {
 
 const TENS_NUMBER_WORDS: Record<string, number> = {
   twenty: 20,
+  dalawampu: 20,
   thirty: 30,
+  tatlumpu: 30,
   forty: 40,
+  apatnapu: 40,
   fifty: 50,
+  limampu: 50,
   sixty: 60,
+  animnapu: 60,
   seventy: 70,
+  pitumpu: 70,
   eighty: 80,
-  ninety: 90
+  walumpu: 80,
+  ninety: 90,
+  siyamnapu: 90
 };
 
 const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
@@ -272,6 +325,7 @@ const normalizeCashText = (value: string) =>
   cleanWhitespace(
     value
       .toLowerCase()
+      .replace(/\bmagkano\b/g, ' ')
       .replace(/\ba hundred\b/g, 'one hundred')
       .replace(/\ban hundred\b/g, 'one hundred')
       .replace(/\bhow much\b/g, ' ')
@@ -299,6 +353,12 @@ const normalizeCashText = (value: string) =>
       .replace(/\bpaying\b/g, ' ')
       .replace(/\bbayad\b/g, ' ')
       .replace(/\bpera\b/g, ' ')
+      .replace(/\bsukli\b/g, ' ')
+      .replace(/\bang\b/g, ' ')
+      .replace(/\byung\b/g, ' ')
+      .replace(/\bpo\b/g, ' ')
+      .replace(/\bho\b/g, ' ')
+      .replace(/\blang\b/g, ' ')
       .replace(/point/g, ' point ')
       .replace(/dot/g, ' point ')
       .replace(/[^a-z0-9.\s]/g, ' ')
@@ -421,12 +481,12 @@ const pickStopFromSegment = (
 };
 
 const detectFareType = (normalizedTranscript: string): FareVoiceType => {
-  if (/\b(discount|discounted|student|senior|pwd|sc)\b/.test(normalizedTranscript)) {
-    return 'discounted';
+  if (/\b(regular|ordinary|full fare|walang discount|walang diskwento|buo)\b/.test(normalizedTranscript)) {
+    return 'regular';
   }
 
-  if (/\bregular\b/.test(normalizedTranscript)) {
-    return 'regular';
+  if (/\b(discount|discounted|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(normalizedTranscript)) {
+    return 'discounted';
   }
 
   return 'either';
@@ -452,7 +512,9 @@ const findOrderedStopsInTranscript = (normalizedTranscript: string, route: Route
 };
 
 const parseNumberPhrase = (tokens: string[]): string | null => {
-  const filteredTokens = tokens.filter(token => token !== 'and');
+  const filteredTokens = tokens.filter(
+    token => token !== 'and' && token !== 'na' && token !== 'ng' && token !== 'ang'
+  );
   if (filteredTokens.length === 0) return null;
 
   const pointIndex = filteredTokens.indexOf('point');
@@ -506,13 +568,13 @@ const parseIntegerTokens = (tokens: string[]) => {
       continue;
     }
 
-    if (token === 'hundred') {
+    if (token === 'hundred' || token === 'daan') {
       current = (current || 1) * 100;
       hasValue = true;
       continue;
     }
 
-    if (token === 'thousand') {
+    if (token === 'thousand' || token === 'libo') {
       total += (current || 1) * 1000;
       current = 0;
       hasValue = true;
@@ -549,6 +611,42 @@ export const getSpeechRecognitionCtor = (): BrowserSpeechRecognitionConstructor 
   if (typeof window === 'undefined') return null;
 
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+};
+
+export const extractRecognitionTranscript = (event: SpeechRecognitionEventLike) => {
+  const finalParts: string[] = [];
+  let latestInterim = '';
+  let latestConfidence: number | null = null;
+  let hasFinal = false;
+
+  for (let index = 0; index < event.results.length; index += 1) {
+    const result = event.results[index];
+    const alternative = result?.[0];
+    const transcript = alternative?.transcript?.trim();
+
+    if (!transcript) {
+      continue;
+    }
+
+    if (typeof alternative?.confidence === 'number') {
+      latestConfidence = alternative.confidence;
+    }
+
+    if (result.isFinal) {
+      hasFinal = true;
+      finalParts.push(transcript);
+    } else {
+      latestInterim = transcript;
+    }
+  }
+
+  const transcript = [...finalParts, latestInterim].filter(Boolean).join(' ').trim();
+
+  return {
+    transcript,
+    confidence: latestConfidence,
+    hasFinal
+  };
 };
 
 export const getVoiceConfidenceTone = (confidence: number | null): VoiceConfidenceTone => {
@@ -634,12 +732,58 @@ export const parseFareTypeVoiceAnswer = (transcript: string): FareTypeVoiceAnswe
   const normalized = normalizeStopText(transcript);
   if (!normalized) return null;
 
-  if (/\b(discount|discounted|student|senior|pwd|sc)\b/.test(normalized)) {
+  if (/\b(regular|ordinary|full fare|walang discount|walang diskwento|buo)\b/.test(normalized)) {
+    return 'regular';
+  }
+
+  if (/\b(discount|discounted|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(normalized)) {
     return 'discounted';
   }
 
-  if (/\bregular\b/.test(normalized)) {
-    return 'regular';
+  return null;
+};
+
+export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | null => {
+  const normalized = normalizeStopText(transcript);
+  if (!normalized) return null;
+
+  if (/\b(yes|yeah|yep|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na)\b/.test(normalized)) {
+    return 'yes';
+  }
+
+  if (/\b(no|nope|exit|stop|close|finish|done|cancel|end|hindi|wag|tama na|ayaw|labas|stop na)\b/.test(normalized)) {
+    return 'no';
+  }
+
+  return null;
+};
+
+export const parseFareConversationShortcut = (transcript: string): FareConversationShortcut | null => {
+  const normalized = normalizeStopText(transcript);
+  if (!normalized) return null;
+
+  const fareType = parseFareTypeVoiceAnswer(normalized);
+
+  if (/\b(same cash|same money|same amount|same payment|same pera|same bayad|parehong pera|parehong bayad|parehas na amount)\b/.test(normalized)) {
+    return {
+      command: 'same-cash'
+    };
+  }
+
+  if (/\b(new route|different route|new trip|different trip|new pickup|new destination|change route|bagong route|ibang route|iba route|bagong biyahe)\b/.test(normalized)) {
+    return {
+      command: 'new-route'
+    };
+  }
+
+  if (
+    /\b(same route|same trip|same fare|same one|same passenger|same destination|repeat route|repeat that|same again|pareho route|parehong route|ulit route|same lang|same na lang)\b/.test(normalized) ||
+    ((/\b(again|repeat|same)\b/.test(normalized) || fareType !== null) && !/\bto\b/.test(normalized))
+  ) {
+    return {
+      command: 'same-route',
+      fareType
+    };
   }
 
   return null;

@@ -100,6 +100,42 @@ export interface VerifiedStop {
   updatedAt: number;
 }
 
+export interface RouteLandmark {
+  id: string;
+  routeId: string;
+  routeLabel: string;
+  stopName: string;
+  km: number;
+  latitude: number | null;
+  longitude: number | null;
+  radiusMeters: number | null;
+  googlePlaceId: string | null;
+  googleMapsQuery: string | null;
+  aliases: string[];
+  source: 'seeded' | 'manual' | 'place-search' | 'road-snapped';
+  confidenceScore: number;
+  updatedAt: number;
+}
+
+export interface RouteSegmentPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteSegment {
+  id: string;
+  routeId: string;
+  routeLabel: string;
+  startStopName: string;
+  endStopName: string;
+  startKm: number;
+  endKm: number;
+  pathPoints: RouteSegmentPoint[];
+  source: 'seeded' | 'manual' | 'road-snapped';
+  confidenceScore: number;
+  updatedAt: number;
+}
+
 export interface StopSyncState {
   enabled: boolean;
   isSyncing: boolean;
@@ -211,6 +247,8 @@ export interface RecentActionEntry {
 export interface AppContextType {
   routes: RouteProfile[];
   activeRoute: RouteProfile;
+  routeLandmarks: RouteLandmark[];
+  routeSegments: RouteSegment[];
   selectRoute: (routeId: string) => void;
   routeOverrides: RouteOverridesMap;
   saveRouteFareOverride: (routeId: string, fareOverride: Partial<RouteFareRules>) => void;

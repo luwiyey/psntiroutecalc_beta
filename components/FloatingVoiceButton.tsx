@@ -189,10 +189,10 @@ const FloatingVoiceButton: React.FC<Props> = ({
           setIsDragging(false);
           setIsOverDisableZone(false);
         }}
-        className={`fixed z-[95] flex h-[68px] w-[68px] items-center justify-center rounded-full border-4 shadow-2xl transition-transform active:scale-95 ${
+        className={`fixed z-[95] flex h-[68px] w-[68px] items-center justify-center rounded-full shadow-2xl transition-transform active:scale-95 ${
           active
-            ? 'border-white bg-primary text-white'
-            : 'border-white bg-[#0f172a] text-white dark:border-night-charcoal dark:bg-white dark:text-night-charcoal'
+            ? 'bg-primary text-white'
+            : 'bg-[#0f172a] text-white dark:bg-white dark:text-night-charcoal'
         } ${disabled ? 'cursor-not-allowed opacity-55' : 'cursor-grab'}`}
         style={{ left: position.x, top: position.y, touchAction: 'none' }}
       >

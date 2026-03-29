@@ -27,7 +27,7 @@ export const formatRouteEndpointSummary = (
   routeEndName: string
 ) => {
   const { fromStartText, toEndText } = getRouteEndpointDistances(km, routeStartKm, routeEndKm);
-  return `${fromStartText} km from ${routeStartName} • ${toEndText} km to ${routeEndName}`;
+  return `${fromStartText} km from ${routeStartName} | ${toEndText} km to ${routeEndName}`;
 };
 
 export const formatRouteEndpointCompact = (
@@ -38,5 +38,5 @@ export const formatRouteEndpointCompact = (
   routeEndName: string
 ) => {
   const { fromStartText, toEndText } = getRouteEndpointDistances(km, routeStartKm, routeEndKm);
-  return `${fromStartText} from ${routeStartName} • ${toEndText} to ${routeEndName}`;
+  return `${fromStartText} from ${routeStartName} | ${toEndText} to ${routeEndName}`;
 };

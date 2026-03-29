@@ -31,6 +31,15 @@ interface ThresholdNotice {
 
 const sanitizeExpression = (value: string) => value.replace(/[^\d+ ]/g, '').replace(/\s{2,}/g, ' ');
 
+const normalizeExpressionLayout = (value: string) =>
+  value
+    .replace(/[^\d+ ]/g, '')
+    .replace(/\s*\+\s*/g, ' + ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^\s*\+\s*/g, '')
+    .replace(/\s*\+\s*$/g, '')
+    .trim();
+
 const parseEntries = (expression: string) =>
   expression
     .split('+')
@@ -71,6 +80,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
   const [thresholdNotice, setThresholdNotice] = useState<ThresholdNotice | null>(null);
+  const [isUndoMenuOpen, setIsUndoMenuOpen] = useState(false);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   useEffect(() => {
@@ -85,6 +95,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
     setVoiceFeedback(null);
     setVoiceConfidence(null);
     setThresholdNotice(null);
+    setIsUndoMenuOpen(false);
     previousEntryCountRef.current = initialExpression ? 1 : 0;
   }, [initialInput, isOpen]);
 
@@ -218,6 +229,55 @@ const TallyCalcOverlay: React.FC<Props> = ({
       setCaretPos(snapshot.caretPos);
       return nextHistory;
     });
+  };
+
+  const handleUndoLastAction = () => {
+    handleUndo();
+    setIsUndoMenuOpen(false);
+  };
+
+  const handleRemoveLastGroup = () => {
+    if (entries.length === 0) {
+      setIsUndoMenuOpen(false);
+      return;
+    }
+
+    const nextExpression = entries.slice(0, -1).join(' + ');
+    saveHistory();
+    applyExpression(nextExpression, nextExpression.length);
+    setIsUndoMenuOpen(false);
+  };
+
+  const handleRemoveLastNumber = () => {
+    const matches = [...expression.matchAll(/\d+/g)];
+    const lastMatch = matches[matches.length - 1];
+    if (!lastMatch || lastMatch.index === undefined) {
+      setIsUndoMenuOpen(false);
+      return;
+    }
+
+    const nextExpression = normalizeExpressionLayout(
+      expression.slice(0, lastMatch.index) + expression.slice(lastMatch.index + lastMatch[0].length)
+    );
+    saveHistory();
+    applyExpression(nextExpression, nextExpression.length);
+    setIsUndoMenuOpen(false);
+  };
+
+  const handleRemoveCharacter = () => {
+    handleBackspace();
+    setIsUndoMenuOpen(false);
+  };
+
+  const handleClearExpression = () => {
+    if (!expression) {
+      setIsUndoMenuOpen(false);
+      return;
+    }
+
+    saveHistory();
+    applyExpression('', 0);
+    setIsUndoMenuOpen(false);
   };
 
   const handleApplyTotal = () => {
@@ -432,7 +492,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
                 +
               </button>
               <button
-                onClick={handleUndo}
+                onClick={() => setIsUndoMenuOpen(true)}
                 className="h-10 rounded-[1.25rem] bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:bg-white/10"
               >
                 Undo
@@ -481,6 +541,58 @@ const TallyCalcOverlay: React.FC<Props> = ({
           </div>
         )}
       </div>
+
+      {isUndoMenuOpen && (
+        <div className="absolute inset-0 z-[145] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setIsUndoMenuOpen(false)} />
+          <div className="relative w-full max-w-sm rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-night-charcoal">
+            <h3 className="text-base font-900 uppercase tracking-tight text-slate-900 dark:text-white">Choose Undo Action</h3>
+            <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-500 dark:text-slate-300">
+              Pick exactly what you want to remove from the formula so the wrong fare does not disappear by accident.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <button
+                onClick={handleUndoLastAction}
+                className="w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-700 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                Undo Last Action
+              </button>
+              <button
+                onClick={handleRemoveLastGroup}
+                className="w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-700 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                Remove Last Added Group
+              </button>
+              <button
+                onClick={handleRemoveLastNumber}
+                className="w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-700 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                Remove Last Number
+              </button>
+              <button
+                onClick={handleRemoveCharacter}
+                className="w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-700 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              >
+                Remove Symbol Or Character At Cursor
+              </button>
+              <button
+                onClick={handleClearExpression}
+                className="w-full rounded-[1.25rem] border border-primary/20 bg-primary/5 px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-primary active:scale-95 dark:border-primary/30 dark:bg-primary/10"
+              >
+                Clear Whole Formula
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsUndoMenuOpen(false)}
+              className="mt-4 w-full rounded-[1.25rem] bg-slate-100 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:bg-white/10 dark:text-slate-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {thresholdNotice && (
         <div className="absolute inset-0 z-[150] flex items-center justify-center p-6">
