@@ -333,6 +333,41 @@ const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
 
 const cleanWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
 
+const normalizeSpeechToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const areSimilarSpeechChunks = (leftWords: string[], rightWords: string[]) => {
+  const left = leftWords.map(normalizeSpeechToken).filter(Boolean);
+  const right = rightWords.map(normalizeSpeechToken).filter(Boolean);
+
+  if (!left.length || !right.length) {
+    return false;
+  }
+
+  const maxLen = Math.max(left.length, right.length);
+  const minLen = Math.min(left.length, right.length);
+  if (maxLen - minLen > 1) {
+    return false;
+  }
+
+  if (left.join(' ') === right.join(' ')) {
+    return true;
+  }
+
+  let positionalMatches = 0;
+  for (let index = 0; index < minLen; index += 1) {
+    if (left[index] === right[index]) {
+      positionalMatches += 1;
+    }
+  }
+
+  if (positionalMatches / maxLen >= 0.75) {
+    return true;
+  }
+
+  const overlap = left.filter(token => right.includes(token)).length;
+  return overlap / maxLen >= 0.8;
+};
+
 const collapseRepeatedSpeech = (value: string) => {
   const normalized = cleanWhitespace(value);
   if (!normalized) return '';
@@ -340,7 +375,7 @@ const collapseRepeatedSpeech = (value: string) => {
   const words = normalized.split(' ');
   if (words.length >= 4 && words.length % 2 === 0) {
     const half = words.length / 2;
-    if (words.slice(0, half).join(' ') === words.slice(half).join(' ')) {
+    if (areSimilarSpeechChunks(words.slice(0, half), words.slice(half))) {
       return words.slice(0, half).join(' ');
     }
   }
@@ -352,9 +387,9 @@ const collapseRepeatedSpeech = (value: string) => {
     let collapsedChunk = false;
 
     for (let size = Math.min(6, Math.floor((words.length - index) / 2)); size >= 2; size -= 1) {
-      const left = words.slice(index, index + size).join(' ');
-      const right = words.slice(index + size, index + size * 2).join(' ');
-      if (left === right) {
+      const leftWords = words.slice(index, index + size);
+      const rightWords = words.slice(index + size, index + size * 2);
+      if (areSimilarSpeechChunks(leftWords, rightWords)) {
         nextWords.push(...words.slice(index, index + size));
         index += size * 2;
         collapsedChunk = true;

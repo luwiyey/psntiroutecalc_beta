@@ -130,6 +130,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [pendingVoiceNavAction, setPendingVoiceNavAction] = useState<PendingVoiceNavigationAction | null>(null);
   const [tallyVoiceStep, setTallyVoiceStep] = useState<TallyVoiceStep>('command');
   const [isEntryTapeExpanded, setIsEntryTapeExpanded] = useState(false);
+  const [isCurrentEntryCollapsed, setIsCurrentEntryCollapsed] = useState(false);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   
   const [blockAlert, setBlockAlert] = useState<{ completedBlock: number, nextBlock: number } | null>(null);
@@ -469,6 +470,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const compactNextBoxLabel = nextSlotNumber ? `B${nextSlotBlock} - Slot ${nextSlotNumber}` : 'Sheet Full';
   const currentBoxLabel = `Block ${currentSlotBlock} • Slot ${currentSlotNumber}`;
   const nextBoxLabel = nextSlotNumber ? `Block ${nextSlotBlock} • Slot ${nextSlotNumber}` : 'Sheet Full';
+  const collapsedCurrentEntryTitle = `${compactCurrentBoxLabel} | Trip ${tallyNav.tripIdx + 1} | Sheet ${tallyNav.sheetIdx + 1}`;
   const standardTapeSummary =
     stagedStandardEntries.length > 0
       ? `Last ${Math.min(3, stagedStandardEntries.length)}: ${stagedStandardEntries.slice(-3).map(fare => `${peso}${fare}`).join(' / ')}`
@@ -483,6 +485,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const blockSlotsLeftLabel =
     blockSlotsLeft === 1 ? '1 slot left in this block' : `${blockSlotsLeft} slots left in this block`;
   const remainingSlotsSummary = `${blockSlotsLeft} left in block • ${sheetSlotsLeft} left in sheet`;
+  const collapsedRemainingSlotsSummary = `${blockSlotsLeft} left in block / ${sheetSlotsLeft} left in sheet`;
   const displayedPunchAmount =
     editorMode === 'batch'
       ? batchTotalGross
@@ -1361,30 +1364,64 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
               <div className="space-y-3">
-              <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
-                <HelpHint
-                  label="This card shows the slot you are filling now, the next slot after it, and which trip and sheet you are currently working on."
-                          triggerClassName="inline-flex cursor-pointer rounded-md text-[8px] font-black uppercase tracking-[0.25em] text-slate-400"
-                >
-                  Current Entry
-                </HelpHint>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 max-[360px]:gap-x-3">
-                  <div className="min-w-0">
-                    <p className="text-[8px] font-black uppercase tracking-[0.18em] text-primary/70">Now Filling</p>
-                    <p className="mt-2 text-lg font-900 leading-none text-slate-900 max-[360px]:text-base dark:text-white sm:text-xl">{compactCurrentBoxLabel}</p>
-                    <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 max-[360px]:text-[9px]">
-                      Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
+              {isCurrentEntryCollapsed ? (
+                <div className="rounded-[1.5rem] border border-slate-100 bg-slate-50 px-4 py-3 shadow-sm dark:border-white/5 dark:bg-black/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[8px] font-black uppercase tracking-[0.22em] text-slate-400">Current Entry</p>
+                      <p className="mt-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-800 dark:text-white">
+                        {collapsedCurrentEntryTitle}
+                      </p>
+                      <p className="mt-1 text-[9px] font-black uppercase tracking-[0.1em] text-slate-500">
+                        {collapsedRemainingSlotsSummary}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCurrentEntryCollapsed(false)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-95 dark:bg-black/30 dark:text-slate-300"
+                      title="Expand current entry"
+                    >
+                      <span className="material-icons text-base">expand_more</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <HelpHint
+                      label="This card shows the slot you are filling now, the next slot after it, and which trip and sheet you are currently working on."
+                      triggerClassName="inline-flex cursor-pointer rounded-md text-[8px] font-black uppercase tracking-[0.25em] text-slate-400"
+                    >
+                      Current Entry
+                    </HelpHint>
+                    <button
+                      type="button"
+                      onClick={() => setIsCurrentEntryCollapsed(true)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm active:scale-95 dark:bg-black/30 dark:text-slate-300"
+                      title="Collapse current entry"
+                    >
+                      <span className="material-icons text-base">expand_less</span>
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-y-3 min-[390px]:grid-cols-2 min-[390px]:gap-x-4">
+                    <div className="min-w-0">
+                      <p className="text-[8px] font-black uppercase tracking-[0.18em] text-primary/70">Now Filling</p>
+                      <p className="mt-2 text-lg font-900 leading-none text-slate-900 max-[360px]:text-base dark:text-white sm:text-xl">{compactCurrentBoxLabel}</p>
+                      <p className="mt-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 max-[360px]:text-[9px]">
+                        Trip {tallyNav.tripIdx + 1} • Sheet {tallyNav.sheetIdx + 1}
+                      </p>
+                    </div>
+                    <div className="min-w-0 text-left min-[390px]:text-right">
+                      <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Then Next</p>
+                      <p className="mt-2 text-sm font-900 leading-none text-slate-800 max-[360px]:text-[13px] dark:text-white sm:text-base">{compactNextBoxLabel}</p>
+                    </div>
+                    <p className="text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 max-[360px]:text-[8px] min-[390px]:col-span-2 sm:text-[10px]">
+                      {remainingSlotsSummary}
                     </p>
                   </div>
-                  <div className="min-w-0 text-right">
-                    <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Then Next</p>
-                    <p className="mt-2 text-sm font-900 leading-none text-slate-800 max-[360px]:text-[13px] dark:text-white sm:text-base">{compactNextBoxLabel}</p>
-                  </div>
-                  <p className="col-span-2 text-center text-[9px] font-black uppercase tracking-[0.12em] text-slate-500 max-[360px]:text-[8px] sm:text-[10px]">
-                    {remainingSlotsSummary}
-                  </p>
                 </div>
-              </div>
+              )}
 
               <div
                 className={`rounded-[2.25rem] border-2 px-4 py-4 transition-all ${
@@ -1393,7 +1430,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     : 'bg-slate-50 dark:bg-black/40 border-slate-100 dark:border-white/5 shadow-inner'
                 }`}
               >
-                <div className="grid grid-cols-3 items-center gap-2 max-[360px]:gap-1">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 max-[360px]:gap-1">
                   <button
                     onClick={() => setEditorMode('standard')}
                     className={`min-w-0 rounded-full px-3 py-2 text-[9px] font-900 uppercase tracking-[0.16em] transition-colors max-[360px]:px-2 max-[360px]:text-[8px] ${
@@ -1406,7 +1443,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <HelpHint
                     label="Standard is for tapping one fare into the current slot. Batch is for counting several passengers with the same fare. The center box shows what will be saved next."
-                    triggerClassName="inline-flex cursor-help justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[360px]:text-[7px]"
+                    triggerClassName="inline-flex cursor-pointer justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[360px]:text-[7px]"
                   >
                     Punch Amount
                   </HelpHint>
@@ -1422,7 +1459,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-2 sm:gap-3">
+                <div className="mt-3 grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 max-[360px]:grid-cols-[40px_minmax(0,1fr)_40px] sm:grid-cols-[48px_minmax(0,1fr)_48px] sm:gap-3">
                   <button
                     onClick={handlePreviousTarget}
                     disabled={!hasPreviousTargetSlot}
@@ -1433,7 +1470,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                   <button
                     onClick={handlePunchBoxPress}
-                    className="mx-auto flex min-h-[124px] w-full max-w-[18.5rem] flex-col rounded-[1.75rem] bg-white/80 px-3 py-4 text-left shadow-sm active:scale-[0.99] dark:bg-black/30 sm:min-h-[132px] sm:px-4"
+                    className="mx-auto flex min-h-[118px] w-full max-w-[18.5rem] flex-col rounded-[1.75rem] bg-white/80 px-3 py-4 text-left shadow-sm active:scale-[0.99] max-[360px]:min-h-[110px] dark:bg-black/30 sm:min-h-[132px] sm:px-4"
                   >
                     <div className="mt-2 flex items-end justify-center gap-2 text-center">
                       <span className="text-2xl font-900 leading-none text-slate-400">{peso}</span>
@@ -1466,17 +1503,17 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                   </button>
                 </div>
 
-                <div className="mt-3 flex flex-col items-center gap-2 sm:flex-row sm:justify-between sm:gap-3">
+                <div className="mt-3 flex flex-col items-center justify-center gap-2 text-center sm:flex-row sm:justify-between sm:gap-3">
                   <HelpHint
                     label="When you press Enter on the keyboard or use the save flow, the current punch amount is staged into the active slot. Next Block saves first, then jumps to the next block."
-                    triggerClassName="inline-flex cursor-help rounded-md text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 max-[360px]:text-[8px]"
+                    triggerClassName="inline-flex cursor-pointer rounded-md text-center text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 max-[360px]:text-[8px]"
                   >
                     Enter saves current amount
                   </HelpHint>
                   <button
                     onClick={() => finalizeDraftAndJumpToBlock(tallyNav.blockIdx + 1)}
                     disabled={!hasNextBlock}
-                    className="rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-sm disabled:bg-slate-300 dark:disabled:bg-white/10"
+                    className="w-full max-w-[13rem] rounded-full bg-primary px-4 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-sm disabled:bg-slate-300 dark:disabled:bg-white/10 sm:w-auto sm:max-w-none"
                   >
                     Next Block
                   </button>
@@ -1530,7 +1567,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                         ? 'Queued batch fares stay here until you finalize. Expand the list to remove any wrong count before saving.'
                         : 'Queued fare taps stay here until you finalize. Expand the list to remove a wrong fare before it is saved into the sheet.'
                     }
-                    triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500"
+                    triggerClassName="inline-flex cursor-pointer rounded-md text-[9px] font-black uppercase tracking-[0.25em] text-slate-500"
                   >
                     Queued Entries
                   </HelpHint>

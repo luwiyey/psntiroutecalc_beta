@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import StopPickerOverlay from './StopPickerOverlay';
+import ManualKMOverlay from './ManualKMOverlay';
 import { calculateFare } from '../utils/fare';
 
 interface Props {
@@ -10,10 +11,11 @@ interface Props {
 const peso = '\u20B1';
 
 const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
-  const { activeRoute, settings, origin, destination, setOrigin, setDestination, addRecord, showToast } = useApp();
+  const { activeRoute, settings, origin, destination, setOrigin, setDestination, showToast } = useApp();
   const [precision, setPrecision] = useState(50);
   const [isOriginPickerOpen, setIsOriginPickerOpen] = useState(false);
   const [isDestPickerOpen, setIsDestPickerOpen] = useState(false);
+  const [isManualKmOpen, setIsManualKmOpen] = useState(false);
 
   const originStop = activeRoute.stops.find(s => s.name === origin) || activeRoute.stops[0];
   const destStop = activeRoute.stops.find(s => s.name === destination) || activeRoute.stops[activeRoute.stops.length - 1];
@@ -29,8 +31,32 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
     });
   }, [activeRoute.stops, estimatedKM]);
 
+  const sortedStops = useMemo(
+    () => [...activeRoute.stops].sort((left, right) => left.km - right.km),
+    [activeRoute.stops]
+  );
+
+  const surroundingStops = useMemo(() => {
+    let beforeStop = sortedStops[0];
+    let afterStop = sortedStops[sortedStops.length - 1];
+
+    for (const stop of sortedStops) {
+      if (stop.km <= estimatedKM) {
+        beforeStop = stop;
+      }
+      if (stop.km >= estimatedKM) {
+        afterStop = stop;
+        break;
+      }
+    }
+
+    return { beforeStop, afterStop };
+  }, [estimatedKM, sortedStops]);
+
   const totalDist = Math.abs(estimatedKM - originStop.km);
+  const remainingDist = Math.abs(destStop.km - estimatedKM);
   const fares = useMemo(() => calculateFare(totalDist, activeRoute.fare), [activeRoute.fare, totalDist]);
+  const isExactTariffStop = surroundingStops.beforeStop.km === surroundingStops.afterStop.km;
 
   const handleSwap = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -38,19 +64,6 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
     setOrigin(destination);
     setDestination(temp);
     showToast('Route reversed');
-  };
-
-  const handleAddToTally = (fare: number, typeLabel: string) => {
-    addRecord({
-      origin: `Est: ${origin}`,
-      destination: `Near ${nearestStop.name} (${precision}%)`,
-      distance: totalDist,
-      regularFare: fare,
-      discountedFare: 0,
-      isFavorite: false,
-      type: 'tally'
-    });
-    showToast(`${typeLabel} fare logged`);
   };
 
   const isCM = settings.conductorMode;
@@ -164,6 +177,45 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
             </div>
           </div>
 
+          <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-3xl border border-slate-100 bg-slate-50/80 px-4 py-4 text-left shadow-sm dark:border-white/10 dark:bg-black/20">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Between KM Posts</p>
+              {isExactTariffStop ? (
+                <>
+                  <p className="text-base font-black uppercase text-slate-900 dark:text-white">
+                    Exact stop at {surroundingStops.beforeStop.name}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-white/60">
+                    KM {surroundingStops.beforeStop.km}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-base font-black uppercase text-slate-900 dark:text-white">
+                    {surroundingStops.beforeStop.name} to {surroundingStops.afterStop.name}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-white/60">
+                    KM {surroundingStops.beforeStop.km} to KM {surroundingStops.afterStop.km}
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-3xl border border-slate-100 bg-slate-50/80 px-4 py-4 text-left shadow-sm dark:border-white/10 dark:bg-black/20">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Trip Progress</p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase text-slate-400">From Pickup</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{totalDist.toFixed(1)} KM</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black uppercase text-slate-400">To Destination</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{remainingDist.toFixed(1)} KM</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="mb-6 grid grid-cols-2 gap-3">
             <div className="flex flex-col justify-center rounded-3xl border border-slate-100 bg-white px-2 py-4 text-center shadow-sm">
               <p className="mb-2 text-[9px] font-black uppercase text-slate-400">Regular</p>
@@ -186,19 +238,22 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
           </div>
 
           <div className={`grid grid-cols-1 ${isCM ? 'gap-4' : 'gap-3'}`}>
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-left shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
+              <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                {isExactTariffStop ? 'Exact tariff stop detected' : 'Manual KM recommended'}
+              </p>
+              <p className="text-sm font-semibold leading-relaxed text-amber-900 dark:text-amber-100">
+                {isExactTariffStop
+                  ? `This estimate lands on ${surroundingStops.beforeStop.name}. You can still open Manual KM if you want to fine-tune the pickup or destination.`
+                  : `This estimate sits between ${surroundingStops.beforeStop.name} and ${surroundingStops.afterStop.name}. Manual KM is safer for an accurate fare in between-stop pickups.`}
+              </p>
+            </div>
             <button
-              onClick={() => handleAddToTally(fares.reg, 'Regular')}
+              onClick={() => setIsManualKmOpen(true)}
               className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 text-[11px] font-black uppercase tracking-widest text-white transition-transform active:scale-95 dark:bg-black ${isCM ? 'py-6' : 'py-4'}`}
             >
-              <span className="material-icons text-sm">add_circle</span>
-              Add Regular to Tally
-            </button>
-            <button
-              onClick={() => handleAddToTally(fares.disc, 'Discounted')}
-              className={`flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-primary text-[11px] font-black uppercase tracking-widest text-primary transition-transform active:scale-95 ${isCM ? 'py-6' : 'py-4'}`}
-            >
-              <span className="material-icons text-sm">stars</span>
-              Add Discounted to Tally
+              <span className="material-icons text-sm">straighten</span>
+              Use Manual KM
             </button>
           </div>
         </div>
@@ -226,6 +281,12 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
           title="To"
         />
       )}
+      <ManualKMOverlay
+        isOpen={isManualKmOpen}
+        onClose={() => setIsManualKmOpen(false)}
+        initialPickupKm={originStop.km}
+        initialDestKm={Number(estimatedKM.toFixed(1))}
+      />
     </div>
   );
 };

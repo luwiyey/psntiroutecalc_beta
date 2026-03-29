@@ -1,15 +1,9 @@
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { LandingScreen } from './components/LandingScreen';
 import LoginScreen from './components/LoginScreen';
-import CalcScreen from './components/CalcScreen';
-import BetweenStopsScreen from './components/BetweenStopsScreen';
-import TallyScreen from './components/TallyScreen';
-import LogsScreen from './components/LogsScreen';
-import SetupScreen from './components/SetupScreen';
-import RouteSelectionScreen from './components/RouteSelectionScreen';
 import InstallAppBanner from './components/InstallAppBanner';
 import UpdateAppBanner from './components/UpdateAppBanner';
 import { flushAnalyticsQueue, trackAnalyticsEvent } from './utils/analytics';
@@ -26,6 +20,12 @@ type Tab = 'calc' | 'between' | 'tally' | 'logs' | 'setup';
 const STARTED_STORAGE_KEY = 'psnti_started';
 const INSTALL_BANNER_DISMISSED_KEY = 'psnti_install_banner_dismissed';
 const SW_UPDATE_EVENT = 'psnti-sw-update';
+const CalcScreen = React.lazy(() => import('./components/CalcScreen'));
+const BetweenStopsScreen = React.lazy(() => import('./components/BetweenStopsScreen'));
+const TallyScreen = React.lazy(() => import('./components/TallyScreen'));
+const LogsScreen = React.lazy(() => import('./components/LogsScreen'));
+const SetupScreen = React.lazy(() => import('./components/SetupScreen'));
+const RouteSelectionScreen = React.lazy(() => import('./components/RouteSelectionScreen'));
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -61,6 +61,15 @@ const playReminderTone = async () => {
     void audioContext.close();
   }, 350);
 };
+
+const ScreenFallback = () => (
+  <div className="flex min-h-[60vh] items-center justify-center px-6">
+    <div className="rounded-[1.75rem] bg-white px-5 py-4 text-center shadow-md dark:bg-night-charcoal">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Loading</p>
+      <p className="mt-2 text-sm font-bold text-slate-600 dark:text-slate-300">Preparing the next screen...</p>
+    </div>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(() => localStorage.getItem(STARTED_STORAGE_KEY) === 'true');
@@ -379,7 +388,11 @@ const AppContent: React.FC = () => {
   }
 
   if (authState.pendingRouteSelection || !settings.hasAssignedRoute) {
-    return <RouteSelectionScreen onComplete={() => setActiveTab('calc')} />;
+    return (
+      <Suspense fallback={<ScreenFallback />}>
+        <RouteSelectionScreen onComplete={() => setActiveTab('calc')} />
+      </Suspense>
+    );
   }
 
   const handleExit = () => setActiveTab('calc');
@@ -406,7 +419,9 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#f8f6f6] dark:bg-black transition-colors flex flex-col max-w-lg mx-auto relative shadow-[0_12px_36px_rgba(15,23,42,0.08)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.35)]">
       <main className="flex-1 overflow-y-auto scrollbar-hide">
-        {renderContent()}
+        <Suspense fallback={<ScreenFallback />}>
+          {renderContent()}
+        </Suspense>
       </main>
 
       {waitingRegistration ? (

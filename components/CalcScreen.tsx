@@ -1,14 +1,11 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import StopPickerOverlay from './StopPickerOverlay';
-import ManualKMOverlay from './ManualKMOverlay';
-import ConductorCalcOverlay, { type VoiceChangePreset } from './ConductorCalcOverlay';
 import FloatingVoiceButton from './FloatingVoiceButton';
-import LocationAssistOverlay from './LocationAssistOverlay';
 import HelpHint from './HelpHint';
 import { calculateFare, formatFareRate } from '../utils/fare';
 import { consumePendingMapsReturnRefresh } from '../utils/google-maps';
 import type { MapPickerPoint } from './MapPickerOverlay';
+import type { VoiceChangePreset } from './ConductorCalcOverlay';
 import { useAuth } from '../context/AuthContext';
 import type {
   CurrentLocationSnapshot,
@@ -70,6 +67,10 @@ type VoiceConfirmationAction =
       retryStep: 'cash';
     };
 const MapPickerOverlay = React.lazy(() => import('./MapPickerOverlay'));
+const StopPickerOverlay = React.lazy(() => import('./StopPickerOverlay'));
+const ManualKMOverlay = React.lazy(() => import('./ManualKMOverlay'));
+const ConductorCalcOverlay = React.lazy(() => import('./ConductorCalcOverlay'));
+const LocationAssistOverlay = React.lazy(() => import('./LocationAssistOverlay'));
 
 const CalcScreen: React.FC = () => {
   const {
@@ -1947,73 +1948,73 @@ const CalcScreen: React.FC = () => {
         onActivate={() => startFareVoiceRecognition(voiceStep)}
       />
 
-      <StopPickerOverlay
-        isOpen={isOriginPickerOpen}
-        onClose={() => setIsOriginPickerOpen(false)}
-        onSelect={(name) => {
-          clearVisibleVoiceState();
-          setOrigin(name);
-          setIsOriginPickerOpen(false);
-        }}
-        title="Pickup"
-        mode="pickup"
-        onRecommendManualKm={handleRecommendManualKmFromPlaceSearch}
-      />
-      <StopPickerOverlay
-        isOpen={isDestPickerOpen}
-        onClose={() => setIsDestPickerOpen(false)}
-        onSelect={(name) => {
-          clearVisibleVoiceState();
-          setDestination(name);
-          setIsDestPickerOpen(false);
-        }}
-        title="Destination"
-        mode="destination"
-      />
-      <ManualKMOverlay
-        isOpen={isManualOpen}
-        onClose={() => {
-          setIsManualOpen(false);
-          setManualPrefill(null);
-        }}
-        initialPickupKm={manualPrefill?.pickupKm ?? null}
-        initialDestKm={manualPrefill?.destKm ?? null}
-      />
-      <ConductorCalcOverlay
-        isOpen={isConductorCalcOpen}
-        onClose={() => {
-          setIsConductorCalcOpen(false);
-          setVoiceChangePreset(null);
-        }}
-        initialValue={calculation.reg}
-        assistantPreset={voiceChangePreset}
-      />
-      <LocationAssistOverlay
-        isOpen={isLocationAssistOpen}
-        isLoading={isLocating}
-        routeLabel={activeRoute.label}
-        routeStartName={routeStart.name}
-        routeEndName={routeEnd.name}
-        routeStartKm={routeStart.km}
-        routeEndKm={routeEnd.km}
-        location={currentLocation}
-        nearestMatch={nearestStopMatch}
-        segmentMatch={nearestSegmentMatch}
-        hasMappedStops={routeHasMappedStops}
-        permissionState={locationPermission}
-        inAppBrowser={inAppBrowser}
-        error={locationError}
-        warning={locationWarning}
-        onClose={() => setIsLocationAssistOpen(false)}
-        onOpenInChrome={handleOpenInChrome}
-        onRetry={requestCurrentLocation}
-        onUseStop={(stop) => handleUseDetectedStop(stop.name)}
-        onUseManualKm={handleUseManualKmFromLocation}
-        onOpenManualKm={handleOpenManualKmWithoutEstimate}
-        onUseCurrentPoint={handleUseCurrentPoint}
-        onOpenMapPicker={openLocationMapPicker}
-      />
       <Suspense fallback={null}>
+        <StopPickerOverlay
+          isOpen={isOriginPickerOpen}
+          onClose={() => setIsOriginPickerOpen(false)}
+          onSelect={(name) => {
+            clearVisibleVoiceState();
+            setOrigin(name);
+            setIsOriginPickerOpen(false);
+          }}
+          title="Pickup"
+          mode="pickup"
+          onRecommendManualKm={handleRecommendManualKmFromPlaceSearch}
+        />
+        <StopPickerOverlay
+          isOpen={isDestPickerOpen}
+          onClose={() => setIsDestPickerOpen(false)}
+          onSelect={(name) => {
+            clearVisibleVoiceState();
+            setDestination(name);
+            setIsDestPickerOpen(false);
+          }}
+          title="Destination"
+          mode="destination"
+        />
+        <ManualKMOverlay
+          isOpen={isManualOpen}
+          onClose={() => {
+            setIsManualOpen(false);
+            setManualPrefill(null);
+          }}
+          initialPickupKm={manualPrefill?.pickupKm ?? null}
+          initialDestKm={manualPrefill?.destKm ?? null}
+        />
+        <ConductorCalcOverlay
+          isOpen={isConductorCalcOpen}
+          onClose={() => {
+            setIsConductorCalcOpen(false);
+            setVoiceChangePreset(null);
+          }}
+          initialValue={calculation.reg}
+          assistantPreset={voiceChangePreset}
+        />
+        <LocationAssistOverlay
+          isOpen={isLocationAssistOpen}
+          isLoading={isLocating}
+          routeLabel={activeRoute.label}
+          routeStartName={routeStart.name}
+          routeEndName={routeEnd.name}
+          routeStartKm={routeStart.km}
+          routeEndKm={routeEnd.km}
+          location={currentLocation}
+          nearestMatch={nearestStopMatch}
+          segmentMatch={nearestSegmentMatch}
+          hasMappedStops={routeHasMappedStops}
+          permissionState={locationPermission}
+          inAppBrowser={inAppBrowser}
+          error={locationError}
+          warning={locationWarning}
+          onClose={() => setIsLocationAssistOpen(false)}
+          onOpenInChrome={handleOpenInChrome}
+          onRetry={requestCurrentLocation}
+          onUseStop={(stop) => handleUseDetectedStop(stop.name)}
+          onUseManualKm={handleUseManualKmFromLocation}
+          onOpenManualKm={handleOpenManualKmWithoutEstimate}
+          onUseCurrentPoint={handleUseCurrentPoint}
+          onOpenMapPicker={openLocationMapPicker}
+        />
         <MapPickerOverlay
           isOpen={isMapPickerOpen}
           title="Map Point Picker"

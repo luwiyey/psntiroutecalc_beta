@@ -131,7 +131,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         </header>
 
         <div className="p-4 bg-slate-50 dark:bg-night-charcoal border-b border-slate-100 dark:border-white/5">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2 max-[360px]:gap-1.5">
             {[
               { key: 'enabled', label: 'Alerts', value: reminderSettings.enabled },
               { key: 'soundEnabled', label: 'Sound', value: reminderSettings.soundEnabled },
@@ -154,7 +154,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="mt-4 flex items-start gap-2">
             <HelpHint
               label="Alerts watch the selected stop while the app is open. Sound and vibration can be turned on or off separately."
-              triggerClassName="inline-flex cursor-help rounded-md text-xs font-semibold text-slate-500 dark:text-slate-300"
+              triggerClassName="inline-flex cursor-pointer rounded-md text-xs font-semibold text-slate-500 dark:text-slate-300"
             >
               Alerts work best while the app is open and GPS is allowed on the phone.
             </HelpHint>
@@ -167,7 +167,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               <div>
                 <HelpHint
                   label="Pick the exact KM-post stop for this drop-off. If you only know the place or landmark, search it first and then use the nearest route stop."
-                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                 >
                   Add Stop
                 </HelpHint>
@@ -213,7 +213,7 @@ const StopReminderOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
                 <div>
                 <HelpHint
                   label="These are the stops currently being watched for reminders. You can turn each one on or off, mark it done, or remove it."
-                  triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
                 >
                   Queued Stops
                 </HelpHint>

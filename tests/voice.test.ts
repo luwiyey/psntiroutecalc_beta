@@ -60,6 +60,19 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toBe('Dau');
     expect(result.fareType).toBe('regular');
   });
+
+  it('collapses near-duplicate fare phrases with minor speech variation', () => {
+    const result = parseFareVoiceTranscript('Cubao to Dau regular Cubao to Dow regular', cubaoBaguioRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result after fuzzy repetition cleanup.');
+    }
+
+    expect(result.originStop.name).toBe('Cubao');
+    expect(result.destinationStop.name).toBe('Dau');
+    expect(result.fareType).toBe('regular');
+  });
 });
 
 describe('parseCalculatorVoiceTranscript', () => {

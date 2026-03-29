@@ -213,7 +213,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           <div>
             <HelpHint
               label="If Supabase is connected, saved stop samples can sync across devices instead of staying only on this phone."
-              triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-slate-400"
+              triggerClassName="inline-flex cursor-pointer rounded-md text-[9px] font-black uppercase tracking-widest text-slate-400"
             >
               Shared Sync
             </HelpHint>
@@ -234,7 +234,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="mt-4 rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-black/30">
           <HelpHint
             label="Calibration improves the saved stop location. Passenger counts are not entered here. Those belong in Drop-Off Alerts."
-            triggerClassName="inline-flex cursor-help rounded-md text-[9px] font-black uppercase tracking-widest text-primary"
+            triggerClassName="inline-flex cursor-pointer rounded-md text-[9px] font-black uppercase tracking-widest text-primary"
           >
             Calibration Only
           </HelpHint>
@@ -248,7 +248,7 @@ const StopCalibrationOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="rounded-[2rem] bg-white p-4 shadow-sm dark:bg-night-charcoal">
           <HelpHint
             label="Pick the stop you are physically near, then capture the phone GPS or choose the point on the in-app map so the app learns a better stop point."
-            triggerClassName="inline-flex cursor-help rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
+            triggerClassName="inline-flex cursor-pointer rounded-md text-[10px] font-black uppercase tracking-widest text-slate-400"
           >
             Choose Stop
           </HelpHint>

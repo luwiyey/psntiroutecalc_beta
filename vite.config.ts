@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      tailwindcss(), // ✅ Tailwind v4 for Vite
+      tailwindcss(),
     ],
     define: {
       "process.env.API_KEY": JSON.stringify(env.GEMINI_API_KEY),
@@ -22,6 +22,16 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "."),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ["react", "react-dom"],
+            maps: ["leaflet"],
+          },
+        },
       },
     },
     test: {

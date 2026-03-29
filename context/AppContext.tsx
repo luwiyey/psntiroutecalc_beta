@@ -4,10 +4,13 @@ import type {
   AppSettings,
   FareRecord,
   ReminderSettings,
+  RouteFareRules,
   RouteLandmark,
+  RouteOverridesMap,
   RouteSegment,
   ShiftRecord,
   StopReminder,
+  StopOverride,
   StopSubmission,
   StopSyncState,
   TallySession,
@@ -50,6 +53,7 @@ const SHIFT_HISTORY_STORAGE_KEY = 'psnti_shifts_v1';
 const STOP_SUBMISSIONS_STORAGE_KEY = 'psnti_stop_submissions_v1';
 const STOP_REMINDERS_STORAGE_KEY = 'psnti_stop_reminders_v1';
 const REMINDER_SETTINGS_STORAGE_KEY = 'psnti_reminder_settings_v1';
+const ROUTE_OVERRIDES_STORAGE_KEY = 'psnti_route_overrides_v1';
 
 const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
   enabled: false,
@@ -225,6 +229,68 @@ const normalizeShiftHistory = (savedShifts: ShiftRecord[] | null): ShiftRecord[]
     .sort((left, right) => right.startedAt - left.startedAt);
 };
 
+const normalizeRouteOverrides = (savedOverrides: RouteOverridesMap | null): RouteOverridesMap => {
+  if (!savedOverrides || typeof savedOverrides !== 'object') {
+    return {};
+  }
+
+  return Object.entries(savedOverrides).reduce<RouteOverridesMap>((accumulator, [routeId, override]) => {
+    if (!override || typeof override !== 'object') {
+      return accumulator;
+    }
+
+    accumulator[routeId] = {
+      fare: override.fare ? { ...override.fare } : undefined,
+      stops: override.stops ? { ...override.stops } : undefined
+    };
+
+    return accumulator;
+  }, {});
+};
+
+const applyStopOverride = (stop: typeof DEFAULT_ROUTE.stops[number], override?: StopOverride) => {
+  if (!override) {
+    return stop;
+  }
+
+  return {
+    ...stop,
+    ...(override.name ? { name: override.name } : {}),
+    ...(typeof override.km === 'number' && Number.isFinite(override.km) ? { km: override.km } : {}),
+    ...(override.coverageRange ? { coverageRange: override.coverageRange } : {}),
+    ...(typeof override.latitude === 'number' && Number.isFinite(override.latitude) ? { latitude: override.latitude } : {}),
+    ...(typeof override.longitude === 'number' && Number.isFinite(override.longitude) ? { longitude: override.longitude } : {}),
+    ...(typeof override.radiusMeters === 'number' && Number.isFinite(override.radiusMeters) ? { radiusMeters: override.radiusMeters } : {}),
+    ...(override.googlePlaceId ? { googlePlaceId: override.googlePlaceId } : {}),
+    ...(override.googleMapsQuery ? { googleMapsQuery: override.googleMapsQuery } : {}),
+    ...(override.aliases ? { aliases: override.aliases } : {})
+  };
+};
+
+const applyRouteOverride = (
+  route: typeof DEFAULT_ROUTE,
+  override?: RouteOverridesMap[string]
+) => {
+  if (!override) {
+    return route;
+  }
+
+  const stopOverrides = new Map<string, StopOverride>(
+    Object.entries(override.stops ?? {}).map(([stopName, stopOverride]) => [stopName.toLowerCase(), stopOverride])
+  );
+
+  return {
+    ...route,
+    fare: override.fare
+      ? {
+          ...route.fare,
+          ...override.fare
+        }
+      : route.fare,
+    stops: route.stops.map(stop => applyStopOverride(stop, stopOverrides.get(stop.name.toLowerCase())))
+  };
+};
+
 const buildDefaultStopSyncState = (pendingCount: number, verifiedCount = 0): StopSyncState => ({
   enabled: hasStopSyncConfig(),
   isSyncing: false,
@@ -243,6 +309,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       : null;
   const initialSettings = normalizeSettings(initialSavedSettings ? JSON.parse(initialSavedSettings) : null);
   const [settings, setSettings] = useState<AppSettings>(initialSettings);
+  const initialSavedRouteOverrides =
+    authState.isAuthenticated && authState.employeeId
+      ? getStoredUserValue(ROUTE_OVERRIDES_STORAGE_KEY, authState.employeeId)
+      : null;
+  const [routeOverrides, setRouteOverrides] = useState<RouteOverridesMap>(
+    initialSavedRouteOverrides ? normalizeRouteOverrides(JSON.parse(initialSavedRouteOverrides)) : {}
+  );
 
   const initialSavedStopSubmissions = localStorage.getItem(STOP_SUBMISSIONS_STORAGE_KEY);
   const initialNormalizedStopSubmissions = initialSavedStopSubmissions
@@ -388,12 +461,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const activeRoute = useMemo(() => {
     const landmarkMergedStops = mergeStopsWithRouteLandmarks(baseActiveRoute.id, baseActiveRoute.stops, routeLandmarks);
-
-    return {
+    const verifiedRoute = {
       ...baseActiveRoute,
       stops: mergeStopsWithVerifiedStops(baseActiveRoute.id, landmarkMergedStops, verifiedStops)
     };
-  }, [baseActiveRoute, routeLandmarks, verifiedStops]);
+
+    return applyRouteOverride(verifiedRoute, routeOverrides[baseActiveRoute.id]);
+  }, [baseActiveRoute, routeLandmarks, routeOverrides, verifiedStops]);
 
   const loadRemoteRouteSubmissions = useCallback(async (routeId: string) => {
     if (!hasStopSyncConfig() || !navigator.onLine || !routeId) {
@@ -505,6 +579,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const savedShiftHistory = getStoredUserValue(SHIFT_HISTORY_STORAGE_KEY, authState.employeeId);
     const savedReminders = getStoredUserValue(STOP_REMINDERS_STORAGE_KEY, authState.employeeId);
     const savedReminderSettings = getStoredUserValue(REMINDER_SETTINGS_STORAGE_KEY, authState.employeeId);
+    const savedRouteOverrides = getStoredUserValue(ROUTE_OVERRIDES_STORAGE_KEY, authState.employeeId);
     const nextSettings = normalizeSettings(savedSettings ? JSON.parse(savedSettings) : null);
     const nextHistory = normalizeHistory(savedHistory ? JSON.parse(savedHistory) : null);
     const nextSessions = normalizeSessions(savedSessions ? JSON.parse(savedSessions) : null);
@@ -513,9 +588,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextReminderSettings = normalizeReminderSettings(
       savedReminderSettings ? JSON.parse(savedReminderSettings) : null
     );
+    const nextRouteOverrides = normalizeRouteOverrides(
+      savedRouteOverrides ? JSON.parse(savedRouteOverrides) : null
+    );
     const nextRoute = getReadyRouteById(nextSettings.activeRouteId) ?? DEFAULT_ROUTE;
 
     setSettings(nextSettings);
+    setRouteOverrides(nextRouteOverrides);
     setOrigin(nextRoute.stops[0]?.name ?? '');
     setDestination(nextRoute.stops[nextRoute.stops.length - 1]?.name ?? '');
     setHistory(nextHistory);
@@ -543,6 +622,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(
       getUserStorageKey(REMINDER_SETTINGS_STORAGE_KEY, authState.employeeId),
       JSON.stringify(nextReminderSettings)
+    );
+    localStorage.setItem(
+      getUserStorageKey(ROUTE_OVERRIDES_STORAGE_KEY, authState.employeeId),
+      JSON.stringify(nextRouteOverrides)
     );
   }, [authState.employeeId, authState.isAuthenticated]);
 
@@ -619,6 +702,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       JSON.stringify(reminderSettings)
     );
   }, [authState.employeeId, authState.isAuthenticated, reminderSettings]);
+
+  useEffect(() => {
+    if (!authState.isAuthenticated || !authState.employeeId) {
+      return;
+    }
+
+    localStorage.setItem(
+      getUserStorageKey(ROUTE_OVERRIDES_STORAGE_KEY, authState.employeeId),
+      JSON.stringify(routeOverrides)
+    );
+  }, [authState.employeeId, authState.isAuthenticated, routeOverrides]);
 
   useEffect(() => {
     if (!hasStopSyncConfig() && !hasRouteGeometrySyncConfig()) {
@@ -854,6 +948,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const saveRouteFareOverride = useCallback((routeId: string, fareOverride: Partial<RouteFareRules>) => {
+    setRouteOverrides(prev => ({
+      ...prev,
+      [routeId]: {
+        ...prev[routeId],
+        fare: {
+          ...(prev[routeId]?.fare ?? {}),
+          ...fareOverride
+        }
+      }
+    }));
+  }, []);
+
+  const saveStopOverride = useCallback((routeId: string, stopName: string, stopOverride: StopOverride) => {
+    setRouteOverrides(prev => ({
+      ...prev,
+      [routeId]: {
+        ...prev[routeId],
+        stops: {
+          ...(prev[routeId]?.stops ?? {}),
+          [stopName]: {
+            ...(prev[routeId]?.stops?.[stopName] ?? {}),
+            ...stopOverride
+          }
+        }
+      }
+    }));
+  }, []);
+
+  const resetRouteOverrides = useCallback((routeId: string) => {
+    setRouteOverrides(prev => {
+      if (!prev[routeId]) {
+        return prev;
+      }
+
+      const nextOverrides = { ...prev };
+      delete nextOverrides[routeId];
+      return nextOverrides;
+    });
+  }, []);
+
   const addStopSubmission: AppContextType['addStopSubmission'] = ({
     stopName,
     latitude,
@@ -985,6 +1120,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       routeLandmarks,
       routeSegments,
       selectRoute,
+      routeOverrides,
+      saveRouteFareOverride,
+      saveStopOverride,
+      resetRouteOverrides,
       settings,
       setSettings,
       origin,

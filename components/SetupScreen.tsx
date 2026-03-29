@@ -1,10 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import NormalCalcOverlay from './NormalCalcOverlay';
-import StopCalibrationOverlay from './StopCalibrationOverlay';
-import StopReminderOverlay from './StopReminderOverlay';
-import SupportContactSheet from './SupportContactSheet';
 import HelpHint from './HelpHint';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
@@ -16,6 +12,12 @@ const peso = '\u20B1';
 const PWD_VERIFICATION_URL = 'https://pwd.doh.gov.ph/tbl_pwd_id_verificationlist.php';
 type AuditScope = 'shift' | 'today' | 'route' | 'all';
 
+const NormalCalcOverlay = React.lazy(() => import('./NormalCalcOverlay'));
+const StopCalibrationOverlay = React.lazy(() => import('./StopCalibrationOverlay'));
+const StopReminderOverlay = React.lazy(() => import('./StopReminderOverlay'));
+const SupportContactSheet = React.lazy(() => import('./SupportContactSheet'));
+const RouteAdminOverlay = React.lazy(() => import('./RouteAdminOverlay'));
+
 const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const {
     activeRoute,
@@ -24,6 +26,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     history,
     sessions,
     verifiedStops,
+    routeLandmarks,
+    routeSegments,
     stopSyncState,
     syncStopSubmissions,
     currentShift,
@@ -40,6 +44,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isStopCalibrationOpen, setIsStopCalibrationOpen] = useState(false);
   const [isStopReminderOpen, setIsStopReminderOpen] = useState(false);
+  const [isRouteAdminOpen, setIsRouteAdminOpen] = useState(false);
   const [auditScope, setAuditScope] = useState<AuditScope>('shift');
 
   useEffect(() => {
@@ -138,6 +143,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
   );
   const calibratedStopCount = activeRoute.stops.filter(stop => (stop.calibrationSamples ?? 0) > 0).length;
   const verifiedStopCount = verifiedStops.length;
+  const routeLandmarkCount = routeLandmarks.length;
+  const routeSegmentCount = routeSegments.length;
   const completedRouteShiftCount = shiftHistory.filter(
     shift => shift.routeId === activeRoute.id && shift.status === 'closed'
   ).length;
@@ -149,6 +156,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
     .sort((a, b) => b.endedAt - a.endedAt)[0];
   const formatShiftTimestamp = (timestamp?: number | null) =>
     timestamp ? new Date(timestamp).toLocaleString() : 'Not recorded yet';
+  const formatSyncTimestamp = (timestamp?: number | null) =>
+    timestamp ? new Date(timestamp).toLocaleString() : 'Not synced yet';
 
   const handleExportAudit = async () => {
     if (auditScope === 'shift' && !activeShiftForRoute) {
@@ -573,6 +582,17 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               </div>
             </div>
 
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Route Landmarks</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{routeLandmarkCount}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center dark:bg-black/30">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Route Segments</p>
+                <p className="mt-2 text-xl font-black text-slate-800 dark:text-white">{routeSegmentCount}</p>
+              </div>
+            </div>
+
             <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
               <p className="text-[10px] font-black uppercase tracking-widest text-primary">Reminder Engine</p>
               <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
@@ -582,19 +602,40 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
               </p>
             </div>
 
-            <div className="mt-4 flex gap-3">
+            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 dark:bg-black/30">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shared Status</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-300">
+                {stopSyncState.enabled
+                  ? `Last sync: ${formatSyncTimestamp(stopSyncState.lastSyncedAt)}`
+                  : 'Saved locally only. Connect Supabase to share stop learning and geometry.'}
+              </p>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <button
                 onClick={() => setIsStopCalibrationOpen(true)}
-                className="flex-1 rounded-2xl bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98]"
+                className="rounded-2xl bg-primary px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98]"
               >
                 Open Calibration
               </button>
               <button
                 onClick={() => void syncStopSubmissions()}
                 disabled={!stopSyncState.enabled || !isOnline || stopSyncState.isSyncing}
-                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] disabled:opacity-50 dark:border-white/10 dark:text-slate-300"
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] disabled:opacity-50 dark:border-white/10 dark:text-slate-300"
               >
                 {stopSyncState.isSyncing ? 'Syncing...' : 'Sync Stop Data'}
+              </button>
+              <button
+                onClick={() => setIsStopReminderOpen(true)}
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all active:scale-[0.98] dark:border-white/10 dark:text-slate-300"
+              >
+                Open Alerts
+              </button>
+              <button
+                onClick={() => setIsRouteAdminOpen(true)}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all active:scale-[0.98] dark:bg-white dark:text-slate-900"
+              >
+                Open Route Editor
               </button>
             </div>
 
@@ -725,10 +766,13 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </button>
       </footer>
 
-      <NormalCalcOverlay isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
-      <StopCalibrationOverlay isOpen={isStopCalibrationOpen} onClose={() => setIsStopCalibrationOpen(false)} />
-      <StopReminderOverlay isOpen={isStopReminderOpen} onClose={() => setIsStopReminderOpen(false)} />
-      <SupportContactSheet isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+      <Suspense fallback={null}>
+        <NormalCalcOverlay isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+        <StopCalibrationOverlay isOpen={isStopCalibrationOpen} onClose={() => setIsStopCalibrationOpen(false)} />
+        <StopReminderOverlay isOpen={isStopReminderOpen} onClose={() => setIsStopReminderOpen(false)} />
+        <SupportContactSheet isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+        <RouteAdminOverlay isOpen={isRouteAdminOpen} onClose={() => setIsRouteAdminOpen(false)} />
+      </Suspense>
     </div>
   );
 };
