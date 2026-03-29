@@ -297,8 +297,8 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       setVoiceConfidence(confidence);
 
       if (parsed.status === 'match') {
-        updateExpression(parsed.expression, parsed.expression.length);
-        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Review it, then tap = when ready.`);
+        applyVoiceExpression(parsed.expression, parsed.prettyExpression);
+        setVoiceFeedback(`Computed ${parsed.prettyExpression}.`);
       } else {
         setVoiceFeedback(parsed.message);
       }
@@ -400,6 +400,22 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setHasEvaluated(true);
   };
 
+  const applyVoiceExpression = (spokenExpression: string, prettyExpression: string) => {
+    const normalized = normalizeExpression(spokenExpression);
+    const nextPreview = findEvaluableExpression(normalized);
+
+    if (!nextPreview) {
+      setVoiceFeedback('I could not safely compute that spoken expression.');
+      return;
+    }
+
+    const result = formatNumber(nextPreview.result);
+    setLastFormula(prettyExpression || nextPreview.pretty);
+    setExpression(result);
+    setCaretPos(result.length);
+    setHasEvaluated(true);
+  };
+
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
@@ -438,25 +454,6 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 visible-scrollbar">
-          {(voiceFeedback || voiceTranscript) && (
-            <div className="mb-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/20">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
-                  <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  {formatVoiceConfidence(voiceConfidence)}
-                </p>
-              </div>
-              {voiceTranscript && (
-                <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                  Heard: "{voiceTranscript}"
-                </p>
-              )}
-            </div>
-          )}
-
           <div className="rounded-[2rem] bg-[#0f172a] p-4 shadow-inner dark:bg-black">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Expression</p>
             <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
@@ -503,6 +500,27 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               </p>
             </div>
           </div>
+
+          {(voiceFeedback || voiceTranscript) && (
+            <div className="mt-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
+                  <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                    {voiceTranscript || voiceFeedback}
+                  </p>
+                  {voiceTranscript && voiceFeedback && voiceFeedback !== voiceTranscript && (
+                    <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+                      {voiceFeedback}
+                    </p>
+                  )}
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {formatVoiceConfidence(voiceConfidence)}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="mt-3 grid grid-cols-4 gap-2">
             <button

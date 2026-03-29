@@ -392,25 +392,6 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
         <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
           <div className="space-y-2">
-            {(voiceFeedback || voiceTranscript) && (
-              <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/20">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Tally</p>
-                    <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
-                  </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    {formatVoiceConfidence(voiceConfidence)}
-                  </p>
-                </div>
-                {voiceTranscript && (
-                  <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-300">
-                    Heard: "{voiceTranscript}"
-                  </p>
-                )}
-              </div>
-            )}
-
             <div className="rounded-[1.75rem] bg-[#0f172a] p-3.5 shadow-inner dark:bg-black sm:rounded-[2rem] sm:p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current Number</p>
 
@@ -477,6 +458,27 @@ const TallyCalcOverlay: React.FC<Props> = ({
                 </div>
               </div>
             </div>
+
+            {(voiceFeedback || voiceTranscript) && (
+              <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/20">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Calculator</p>
+                    <p className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-200">
+                      {voiceTranscript || voiceFeedback}
+                    </p>
+                    {voiceTranscript && voiceFeedback && voiceFeedback !== voiceTranscript && (
+                      <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-300">
+                        {voiceFeedback}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {formatVoiceConfidence(voiceConfidence)}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-2">
               <button

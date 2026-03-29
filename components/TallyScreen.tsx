@@ -6,12 +6,19 @@ import { calculateFare } from '../utils/fare';
 import FloatingVoiceButton from './FloatingVoiceButton';
 import HelpHint from './HelpHint';
 import TallyCalcOverlay from './TallyCalcOverlay';
-import type { BrowserSpeechRecognition, TallyNavigationVoiceParseResult } from '../utils/voice';
+import type {
+  BrowserSpeechRecognition,
+  TallyNavigationVoiceParseResult
+} from '../utils/voice';
 import {
+  cancelVoiceReply,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
-  parseTallyNavigationVoiceTranscript
+  parseBatchCountVoiceTranscript,
+  parseTallyBatchFollowUpTranscript,
+  parseTallyNavigationVoiceTranscript,
+  speakVoiceReply
 } from '../utils/voice';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
@@ -35,6 +42,7 @@ const SLOTS_PER_BLOCK = 25;
 const SLOTS_PER_SHEET = 100;
 
 type PendingVoiceNavigationAction = Extract<TallyNavigationVoiceParseResult, { status: 'match' }>;
+type TallyVoiceStep = 'command' | 'batch-follow-up';
 
 const clampSlotIndex = (slotIdx: number) => Math.max(0, Math.min(slotIdx, SLOTS_PER_SHEET - 1));
 
@@ -58,6 +66,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const voiceRestartTimeoutRef = useRef<number | null>(null);
 
   const routeSessions = useMemo(
     () =>
@@ -119,6 +128,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
   const [pendingVoiceNavAction, setPendingVoiceNavAction] = useState<PendingVoiceNavigationAction | null>(null);
+  const [tallyVoiceStep, setTallyVoiceStep] = useState<TallyVoiceStep>('command');
   const [isEntryTapeExpanded, setIsEntryTapeExpanded] = useState(false);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   
@@ -285,12 +295,23 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setVoiceFeedback(null);
     setVoiceConfidence(null);
     setPendingVoiceNavAction(null);
+    setTallyVoiceStep('command');
+    if (voiceRestartTimeoutRef.current !== null) {
+      window.clearTimeout(voiceRestartTimeoutRef.current);
+      voiceRestartTimeoutRef.current = null;
+    }
+    cancelVoiceReply();
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
   }, [isEditorOpen]);
 
   useEffect(() => {
     return () => {
+      if (voiceRestartTimeoutRef.current !== null) {
+        window.clearTimeout(voiceRestartTimeoutRef.current);
+        voiceRestartTimeoutRef.current = null;
+      }
+      cancelVoiceReply();
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
     };
@@ -739,6 +760,57 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     showToast('Batch entries cleared', 'info');
   };
 
+  const clearVoiceRestartTimer = () => {
+    if (voiceRestartTimeoutRef.current !== null) {
+      window.clearTimeout(voiceRestartTimeoutRef.current);
+      voiceRestartTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleVoiceRestart = (nextStep: TallyVoiceStep) => {
+    if (typeof window === 'undefined') return;
+    clearVoiceRestartTimer();
+    voiceRestartTimeoutRef.current = window.setTimeout(() => {
+      voiceRestartTimeoutRef.current = null;
+      startTallyNavigationVoice(nextStep, true);
+    }, 320);
+  };
+
+  const queueTallyVoicePrompt = (message: string, nextStep: TallyVoiceStep, listenAfterSpeak = false) => {
+    setVoiceFeedback(message);
+    setTallyVoiceStep(nextStep);
+    clearVoiceRestartTimer();
+    cancelVoiceReply();
+
+    if (!listenAfterSpeak) {
+      return;
+    }
+
+    const started = speakVoiceReply(message, {
+      onEnd: () => scheduleVoiceRestart(nextStep),
+      onError: () => scheduleVoiceRestart(nextStep)
+    });
+
+    if (!started) {
+      scheduleVoiceRestart(nextStep);
+    }
+  };
+
+  const applyBatchVoiceCount = (quantity: number, fare: number) => {
+    setEditorMode('batch');
+    inputRef.current?.blur();
+    setBatchCounts(prev => ({ ...prev, [fare]: String(quantity) }));
+    setLastPunched(fare);
+
+    const passengerLabel = `${quantity} passenger${quantity === 1 ? '' : 's'}`;
+    const summary = `Set ${passengerLabel} at ${peso}${fare}.`;
+    const nextPrompt =
+      `${summary} Say another batch fare, say finalize to save the queued batch fares into the current sheet, or say exit.`;
+
+    showToast(`Batch set: ${passengerLabel} x ${peso}${fare}`, 'success');
+    queueTallyVoicePrompt(nextPrompt, 'batch-follow-up', true);
+  };
+
   const handleRemoveStagedEntry = (entryIdx: number) => {
     setStagedStandardEntries(prev => prev.filter((_, idx) => idx !== entryIdx));
     setIsFlashing(false);
@@ -833,8 +905,8 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       case 'batch-mode':
         setEditorMode('batch');
         inputRef.current?.blur();
-        setVoiceFeedback('Switched to Batch mode.');
-        showToast('Switched to Batch mode', 'info');
+        setVoiceFeedback('Switched to Batch.');
+        showToast('Switched to Batch', 'info');
         break;
       case 'open-calculator':
         setIsTallyCalcOpen(true);
@@ -861,9 +933,13 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     }
   };
 
-  const startTallyNavigationVoice = () => {
+  const startTallyNavigationVoice = (requestedStep: TallyVoiceStep = tallyVoiceStep, fromAutoPrompt = false) => {
     if (isVoiceListening) {
+      if (fromAutoPrompt) return;
+      clearVoiceRestartTimer();
+      cancelVoiceReply();
       voiceRecognitionRef.current?.stop();
+      setTallyVoiceStep('command');
       return;
     }
 
@@ -873,9 +949,18 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       return;
     }
 
+    clearVoiceRestartTimer();
+    cancelVoiceReply();
     setVoiceTranscript('');
     setVoiceConfidence(null);
-    setVoiceFeedback('Listening... say next box, previous box, next block, standard mode, batch mode, open calculator, or finalize session.');
+    setTallyVoiceStep(requestedStep);
+    setVoiceFeedback(
+      requestedStep === 'batch-follow-up'
+        ? 'Listening... say another batch fare, say finalize to save the queued fares into the current sheet, or say exit.'
+        : editorMode === 'batch'
+          ? 'Listening... say "10 na 16 pesos", "10 passengers 16 pesos", next box, standard, batch, or finalize session.'
+          : 'Listening... say next box, previous box, next block, standard, batch, open calculator, or finalize session.'
+    );
     setPendingVoiceNavAction(null);
 
     const recognition = new RecognitionCtor();
@@ -894,14 +979,92 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       const alternative = recognitionResult?.[0];
       const transcript = alternative?.transcript?.trim() ?? '';
       const confidence = typeof alternative?.confidence === 'number' ? alternative.confidence : null;
+      const batchCountResult = editorMode === 'batch' || requestedStep === 'batch-follow-up'
+        ? parseBatchCountVoiceTranscript(transcript, allBatchFares)
+        : null;
       const parsed = parseTallyNavigationVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
 
+      if (batchCountResult?.status === 'match') {
+        setPendingVoiceNavAction(null);
+        applyBatchVoiceCount(batchCountResult.quantity, batchCountResult.fare);
+        return;
+      }
+
+      if (requestedStep === 'batch-follow-up') {
+        const followUp = parseTallyBatchFollowUpTranscript(transcript);
+
+        if (followUp.status === 'match') {
+          setPendingVoiceNavAction(null);
+
+          if (followUp.command === 'next-batch') {
+            queueTallyVoicePrompt(
+              'Okay. Say the next batch fare now, like "10 na 16 pesos".',
+              'command',
+              true
+            );
+            return;
+          }
+
+          if (followUp.command === 'finalize-session') {
+            const finalizeMessage =
+              'Finalizing saves the queued batch fares into the current sheet. Review it, then confirm below.';
+            setPendingVoiceNavAction({
+              status: 'match',
+              transcript,
+              normalized: followUp.normalized,
+              command: 'finalize-session',
+              label: 'Finalize Session',
+              requiresConfirmation: true
+            });
+            setTallyVoiceStep('command');
+            setVoiceFeedback(finalizeMessage);
+            speakVoiceReply(finalizeMessage);
+            return;
+          }
+
+          setTallyVoiceStep('command');
+          setVoiceFeedback('Voice batch assistant closed. Tap the mic any time when you are ready again.');
+          speakVoiceReply('Voice batch assistant closed. Tap the mic any time when you are ready again.');
+          return;
+        }
+
+        if (parsed.status === 'match') {
+          if (parsed.command === 'next-block' && !hasNextBlock) {
+            setPendingVoiceNavAction(null);
+            setVoiceFeedback('There is no next block left on this sheet.');
+            return;
+          }
+
+          if (parsed.requiresConfirmation) {
+            setPendingVoiceNavAction(parsed);
+            setVoiceFeedback(
+              parsed.command === 'next-block'
+                ? `Heard ${parsed.label}. Review it, then confirm below because this may save the current entries.`
+                : `Heard ${parsed.label}. Review it, then confirm below before finalizing.`
+            );
+            setTallyVoiceStep('command');
+            return;
+          }
+
+          setPendingVoiceNavAction(null);
+          setTallyVoiceStep('command');
+          applyImmediateVoiceNavigation(parsed);
+          return;
+        }
+
+        setPendingVoiceNavAction(null);
+        queueTallyVoicePrompt(followUp.message, 'batch-follow-up', true);
+        return;
+      }
+
       if (parsed.status !== 'match') {
         setPendingVoiceNavAction(null);
-        setVoiceFeedback(parsed.message);
+        setVoiceFeedback(
+          batchCountResult?.status === 'invalid' ? batchCountResult.message : parsed.message
+        );
         return;
       }
 
@@ -922,6 +1085,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
       }
 
       setPendingVoiceNavAction(null);
+      setTallyVoiceStep('command');
       applyImmediateVoiceNavigation(parsed);
     };
     recognition.onend = () => {
@@ -1192,7 +1356,11 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </div>
             </div>
 
-            <div className="shrink-0 px-5 pb-3 space-y-3">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 pt-1 touch-pan-y visible-scrollbar"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="space-y-3">
               <div className="rounded-[2rem] border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm dark:border-white/5 dark:bg-black/30">
                 <HelpHint
                   label="This card shows the slot you are filling now, the next slot after it, and which trip and sheet you are currently working on."
@@ -1237,7 +1405,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     Standard
                   </button>
                   <HelpHint
-                    label="Standard is for tapping one fare into the current slot. Batch Mode is for counting several passengers with the same fare. The center box shows what will be saved next."
+                    label="Standard is for tapping one fare into the current slot. Batch is for counting several passengers with the same fare. The center box shows what will be saved next."
                     triggerClassName="inline-flex cursor-help justify-center rounded-md text-center text-[8px] font-black uppercase tracking-[0.18em] text-slate-400 max-[360px]:text-[7px]"
                   >
                     Punch Amount
@@ -1250,7 +1418,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                         : 'bg-white text-slate-500 shadow-sm dark:bg-black/30 dark:text-slate-300'
                     }`}
                   >
-                    Batch Mode
+                    Batch
                   </button>
                 </div>
 
@@ -1320,7 +1488,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-black/30">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-primary">Voice Navigation</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-primary">
+                        {tallyVoiceStep === 'batch-follow-up' ? 'Voice Batch Follow-Up' : 'Voice Assistant'}
+                      </p>
                       <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">{voiceFeedback}</p>
                     </div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1351,13 +1521,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               )}
 
-            </div>
-
-            {/* DYNAMIC SCROLLABLE BODY */}
-            <div
-              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 pb-4 touch-pan-y"
-              style={{ WebkitOverflowScrolling: 'touch' }}
-            >
+              {/* SCROLLABLE ENTRY BODY */}
               <div className="mb-3 rounded-[1.5rem] border border-slate-200 bg-white/85 px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/30">
                 <div className="flex items-center justify-between gap-3">
                   <HelpHint
@@ -1536,6 +1700,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 </div>
               )}
             </div>
+            </div>
 
             {/* COLLAPSIBLE FOOTER */}
             <div className={`shrink-0 bg-white dark:bg-night-charcoal border-t dark:border-white/10 transition-all duration-300 overflow-hidden ${isFooterCollapsed ? 'max-h-[70px]' : 'max-h-[300px]'}`}>
@@ -1607,9 +1772,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         <FloatingVoiceButton
           active={isVoiceListening}
           disabled={!canUseVoiceRecognition}
-          label="Voice tally navigation"
-          title={canUseVoiceRecognition ? 'Voice tally navigation' : 'Voice not available in this browser'}
-          onActivate={startTallyNavigationVoice}
+          label="Voice tally assistant"
+          title={canUseVoiceRecognition ? 'Voice tally assistant' : 'Voice not available in this browser'}
+          onActivate={() => startTallyNavigationVoice(tallyVoiceStep)}
         />
       )}
 
@@ -1626,7 +1791,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                  'Confirm Action'}
               </h3>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-6 -mt-4">
-                {pendingAction.type === 'batch-typing-help' ? 'Batch mode uses the plus and minus counters. If you want to type a fare in the punch box, switch to Standard first.' :
+                {pendingAction.type === 'batch-typing-help' ? 'Batch uses the plus and minus counters. If you want to type a fare in the punch box, switch to Standard first.' :
                  pendingAction.type === 'finalize-session' ? `This will save ${previewEntryCount} pending entr${previewEntryCount === 1 ? 'y' : 'ies'} worth ${peso}${grandTotalInEditor} into the current sheet.` :
                  pendingAction.type === 'reset-batch' ? 'This will reset all current ticket counts to zero.' :
                  pendingAction.type === 'delete-sheet' ? 'This removes the current sheet and keeps the remaining sheet numbers in order.' :

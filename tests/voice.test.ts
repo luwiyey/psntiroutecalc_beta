@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { CUBAO_BAGUIO_ROUTE_ID, ROUTES } from '../constants';
 import {
   getSpeechRecognitionErrorMessage,
+  parseBatchCountVoiceTranscript,
   parseCashVoiceTranscript,
   parseCalculatorVoiceTranscript,
   parseFareConversationShortcut,
   parseFareTypeVoiceAnswer,
   parseFareVoiceTranscript,
   parseStopVoiceTranscript,
+  parseTallyBatchFollowUpTranscript,
   parseVoiceBinaryAnswer,
   parseTallyNavigationVoiceTranscript
 } from '../utils/voice';
@@ -217,6 +219,67 @@ describe('parseTallyNavigationVoiceTranscript', () => {
 
     expect(result.command).toBe('standard-mode');
     expect(result.requiresConfirmation).toBe(false);
+  });
+});
+
+describe('parseBatchCountVoiceTranscript', () => {
+  it('reads Taglish quantity plus fare phrases for batch mode', () => {
+    const result = parseBatchCountVoiceTranscript('mayroong 10 na 16 pesos', [16, 20, 22, 24]);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched batch voice result.');
+    }
+
+    expect(result.quantity).toBe(10);
+    expect(result.fare).toBe(16);
+  });
+
+  it('reads numeric English phrases and uses the visible batch fare list to infer the fare', () => {
+    const result = parseBatchCountVoiceTranscript('there are 10 16 pesos', [16, 20, 22, 24]);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched batch voice result.');
+    }
+
+    expect(result.quantity).toBe(10);
+    expect(result.fare).toBe(16);
+  });
+
+  it('rejects a fare that is not visible in the current batch list', () => {
+    const result = parseBatchCountVoiceTranscript('10 na 17 pesos', [16, 20, 22, 24]);
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') {
+      throw new Error('Expected an invalid batch voice result.');
+    }
+
+    expect(result.message).toContain('not in this batch list');
+  });
+});
+
+describe('parseTallyBatchFollowUpTranscript', () => {
+  it('treats next as a continue command', () => {
+    const result = parseTallyBatchFollowUpTranscript('next');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched batch follow-up result.');
+    }
+
+    expect(result.command).toBe('next-batch');
+  });
+
+  it('matches finalize as a follow-up save command', () => {
+    const result = parseTallyBatchFollowUpTranscript('finalize');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched batch follow-up result.');
+    }
+
+    expect(result.command).toBe('finalize-session');
   });
 });
 

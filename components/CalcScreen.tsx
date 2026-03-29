@@ -362,11 +362,13 @@ const CalcScreen: React.FC = () => {
   };
 
   const openLocationMapPicker = () => {
+    clearVisibleVoiceState();
     setIsLocationAssistOpen(true);
     setIsMapPickerOpen(true);
   };
 
   const handleSwap = () => {
+    clearVisibleVoiceState();
     const temp = origin;
     setOrigin(destination);
     setDestination(temp);
@@ -399,12 +401,14 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleReset = () => {
+    clearVisibleVoiceState();
     setOrigin(routeStart.name);
     setDestination(routeEnd.name);
     showToast(`Reset to ${activeRoute.shortLabel}`);
   };
 
   const applyRecentFare = (nextOrigin: string, nextDestination: string) => {
+    clearVisibleVoiceState();
     setOrigin(nextOrigin);
     setDestination(nextDestination);
     showToast(`Loaded ${nextOrigin} to ${nextDestination}`);
@@ -422,6 +426,69 @@ const CalcScreen: React.FC = () => {
     if (voiceSilenceTimeoutRef.current) {
       window.clearTimeout(voiceSilenceTimeoutRef.current);
       voiceSilenceTimeoutRef.current = null;
+    }
+  };
+
+  const clearVisibleVoiceState = (options?: { keepMemory?: boolean }) => {
+    const keepMemory = options?.keepMemory ?? true;
+
+    clearQueuedVoicePrompt();
+    clearVoiceSilenceTimeout();
+    cancelVoiceReply();
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+    latestVoiceTranscriptRef.current = '';
+    latestVoiceConfidenceRef.current = null;
+    voiceTranscriptHandledRef.current = false;
+    pendingVoiceConfirmationRef.current = null;
+    setIsVoiceListening(false);
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setVoiceFeedback(null);
+    setVoiceResult(null);
+    setPendingVoiceFare(null);
+    setVoiceCashAmount(null);
+    setVoiceChangePreset(null);
+    setVoiceStep('fare');
+
+    if (!keepMemory) {
+      lastResolvedVoiceFareRef.current = null;
+      lastVoiceCashAmountRef.current = null;
+    }
+  };
+
+  const closeVoicePanelAfterReply = (message: string) => {
+    clearQueuedVoicePrompt();
+    clearVoiceSilenceTimeout();
+    cancelVoiceReply();
+    setIsVoiceListening(false);
+    setVoiceFeedback(message);
+    setVoiceTranscript('');
+    setVoiceConfidence(null);
+    setPendingVoiceFare(null);
+    setVoiceCashAmount(null);
+    setVoiceChangePreset(null);
+    setVoiceStep('fare');
+    pendingVoiceConfirmationRef.current = null;
+
+    const hidePanel = () => {
+      setVoiceFeedback(null);
+      setVoiceTranscript('');
+      setVoiceConfidence(null);
+      setVoiceResult(null);
+      setPendingVoiceFare(null);
+      setVoiceCashAmount(null);
+      setVoiceChangePreset(null);
+      setVoiceStep('fare');
+    };
+
+    const started = speakVoiceReply(message, {
+      onEnd: hidePanel,
+      onError: hidePanel
+    });
+
+    if (!started) {
+      window.setTimeout(hidePanel, 200);
     }
   };
 
@@ -449,7 +516,7 @@ const CalcScreen: React.FC = () => {
       case 'fare':
         return 'I am still here. Please say the pickup and destination again, or say same route.';
       case 'fare-type':
-        return 'I am still here. Please say regular or discounted.';
+        return 'I am still here. Please say regular or discounted. I will keep waiting for your answer.';
       case 'cash':
         return lastVoiceCashAmountRef.current
           ? `I am still here. Please say how much is their money, or say same amount for ${lastVoiceCashAmountRef.current} pesos.`
@@ -463,19 +530,19 @@ const CalcScreen: React.FC = () => {
 
   const getVoiceSilenceDelay = (step: VoiceAssistantStep, hasFinal: boolean) => {
     if (hasFinal) {
-      return step === 'cash' ? 1800 : step === 'next-passenger' ? 1300 : 950;
+      return step === 'cash' ? 2200 : step === 'fare-type' ? 1700 : step === 'next-passenger' ? 1500 : 1100;
     }
 
     switch (step) {
       case 'cash':
-        return 5200;
+        return 6500;
       case 'next-passenger':
-        return 3600;
+        return 4500;
       case 'fare-type':
-        return 3200;
+        return 5600;
       case 'fare':
       default:
-        return 3200;
+        return 4200;
     }
   };
 
@@ -822,13 +889,7 @@ const CalcScreen: React.FC = () => {
 
     if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(trimmedTranscript)) {
       pendingVoiceConfirmationRef.current = null;
-      setVoiceStep('fare');
-      setVoiceResult(null);
-      setPendingVoiceFare(null);
-      setVoiceCashAmount(null);
-      setVoiceChangePreset(null);
-      setVoiceFeedback('Voice assistant cancelled.');
-      queueVoicePrompt('Voice assistant cancelled.', null);
+      closeVoicePanelAfterReply('Voice assistant cancelled.');
       return;
     }
 
@@ -975,10 +1036,7 @@ const CalcScreen: React.FC = () => {
       }
 
       if (nextAnswer === 'no') {
-        setVoiceStep('fare');
-        setPendingVoiceFare(null);
-        setVoiceFeedback('Voice assistant closed. Tap the mic anytime when you are ready again.');
-        queueVoicePrompt('Voice assistant closed. Tap the mic anytime when you are ready again.', null);
+        closeVoicePanelAfterReply('Voice assistant closed. Tap the mic anytime when you are ready again.');
         return;
       }
 
@@ -1140,6 +1198,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const requestCurrentLocation = async () => {
+    clearVisibleVoiceState();
     setIsLocationAssistOpen(true);
     setIsLocating(true);
     setLocationError(null);
@@ -1271,12 +1330,14 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleUseDetectedStop = (stopName: string) => {
+    clearVisibleVoiceState();
     setOrigin(stopName);
     setIsLocationAssistOpen(false);
     showToast(`Pickup set to ${stopName}`);
   };
 
   const handleUseManualKmFromLocation = (pickupKm: number) => {
+    clearVisibleVoiceState();
     setIsLocationAssistOpen(false);
     setManualPrefill({
       pickupKm,
@@ -1313,6 +1374,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleRecommendManualKmFromPlaceSearch = (pickupKm: number, placeLabel?: string) => {
+    clearVisibleVoiceState();
     setIsOriginPickerOpen(false);
     setManualPrefill({
       pickupKm,
@@ -1466,14 +1528,14 @@ const CalcScreen: React.FC = () => {
                 </p>
                 <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   {voiceStep === 'fare'
-                    ? 'Step: Route and fare'
+                    ? 'Route and fare'
                     : voiceStep === 'fare-type'
-                      ? 'Step: Regular or discounted'
+                      ? 'Regular or discounted'
                       : voiceStep === 'cash'
-                        ? 'Step: Passenger money'
+                        ? 'Passenger money'
                         : voiceStep === 'next-passenger'
-                          ? 'Step: Next passenger or exit'
-                          : 'Step: Confirm what I heard'}
+                          ? 'Next passenger or exit'
+                          : 'Confirm what I heard'}
                 </p>
               </div>
               <div className="text-right">
@@ -1562,10 +1624,7 @@ const CalcScreen: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    setVoiceStep('fare');
-                    setPendingVoiceFare(null);
-                    setVoiceFeedback('Voice assistant closed. Tap the mic anytime when you are ready again.');
-                    queueVoicePrompt('Voice assistant closed. Tap the mic anytime when you are ready again.', null);
+                    closeVoicePanelAfterReply('Voice assistant closed. Tap the mic anytime when you are ready again.');
                   }}
                   className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                 >
@@ -1645,7 +1704,10 @@ const CalcScreen: React.FC = () => {
 
       <div className="px-5 space-y-2 relative mb-6">
         <button
-          onClick={() => setIsOriginPickerOpen(true)}
+          onClick={() => {
+            clearVisibleVoiceState();
+            setIsOriginPickerOpen(true);
+          }}
           className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
           <div className="min-w-0 flex-1">
@@ -1672,7 +1734,10 @@ const CalcScreen: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsDestPickerOpen(true)}
+          onClick={() => {
+            clearVisibleVoiceState();
+            setIsDestPickerOpen(true);
+          }}
           className="w-full bg-white dark:bg-night-charcoal rounded-[2rem] p-8 border border-slate-100 dark:border-white/10 text-left flex items-start justify-between gap-4 shadow-sm active:bg-slate-50 transition-colors"
         >
           <div className="min-w-0 flex-1">
@@ -1888,6 +1953,7 @@ const CalcScreen: React.FC = () => {
         isOpen={isOriginPickerOpen}
         onClose={() => setIsOriginPickerOpen(false)}
         onSelect={(name) => {
+          clearVisibleVoiceState();
           setOrigin(name);
           setIsOriginPickerOpen(false);
         }}
@@ -1899,6 +1965,7 @@ const CalcScreen: React.FC = () => {
         isOpen={isDestPickerOpen}
         onClose={() => setIsDestPickerOpen(false)}
         onSelect={(name) => {
+          clearVisibleVoiceState();
           setDestination(name);
           setIsDestPickerOpen(false);
         }}

@@ -161,6 +161,48 @@ export type TallyNavigationVoiceParseResult =
       requiresConfirmation: boolean;
     };
 
+export type BatchCountVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      quantity: number;
+      fare: number;
+    };
+
+export type TallyBatchFollowUpCommand = 'next-batch' | 'finalize-session' | 'exit';
+
+export type TallyBatchFollowUpVoiceParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: TallyBatchFollowUpCommand;
+      label: string;
+    };
+
 export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
 export type VoiceBinaryAnswer = 'yes' | 'no';
 export type FareConversationShortcut =
@@ -377,6 +419,23 @@ const normalizeTallyVoiceText = (value: string) =>
       .replace(/repeat/g, ' repeat ')
       .replace(/\bn\b/g, ' repeat ')
       .replace(/[^a-z0-9+.\s]/g, ' ')
+  );
+
+const normalizeBatchCountVoiceText = (value: string) =>
+  cleanWhitespace(
+    value
+      .toLowerCase()
+      .replace(/\bthere are\b/g, ' ')
+      .replace(/\bthere is\b/g, ' ')
+      .replace(/\bmayroong\b/g, ' ')
+      .replace(/\bmerong\b/g, ' ')
+      .replace(/\bmeron\b/g, ' ')
+      .replace(/\bmay\b/g, ' ')
+      .replace(/\bwith\b/g, ' ')
+      .replace(/\bworth\b/g, ' ')
+      .replace(/\beach\b/g, ' ')
+      .replace(/\bphp\b/g, ' pesos ')
+      .replace(/[^a-z0-9.\s]/g, ' ')
   );
 
 const normalizeStopVoiceText = (value: string) =>
@@ -607,6 +666,48 @@ const parseFractionTokens = (tokens: string[]) => {
   return parsed ? parsed.replace(/^0+/, '') || '0' : null;
 };
 
+const BATCH_COUNT_IGNORED_TOKENS = new Set([
+  'there',
+  'is',
+  'are',
+  'mayroong',
+  'merong',
+  'meron',
+  'may',
+  'with',
+  'worth',
+  'each',
+  'passenger',
+  'passengers',
+  'ticket',
+  'tickets',
+  'piece',
+  'pieces',
+  'pcs',
+  'tao',
+  'pax',
+  'fare',
+  'fares',
+  'amount',
+  'batch',
+  'please',
+  'po',
+  'lang',
+  'peso',
+  'pesos'
+]);
+
+const parseBatchNumberSegment = (segment: string) => {
+  const parsed = parseNumberPhrase(
+    segment
+      .split(' ')
+      .filter(Boolean)
+      .filter(token => !BATCH_COUNT_IGNORED_TOKENS.has(token))
+  );
+
+  return parsed ? Number(parsed) : null;
+};
+
 export const getSpeechRecognitionCtor = (): BrowserSpeechRecognitionConstructor | null => {
   if (typeof window === 'undefined') return null;
 
@@ -716,7 +817,7 @@ export const speakVoiceReply = (
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = options?.lang ?? 'en-PH';
-    utterance.rate = options?.rate ?? 0.98;
+    utterance.rate = options?.rate ?? 1.14;
     utterance.pitch = options?.pitch ?? 1;
     utterance.volume = options?.volume ?? 1;
     utterance.onend = () => options?.onEnd?.();
@@ -908,7 +1009,7 @@ export const parseTallyNavigationVoiceTranscript = (
     return {
       status: 'empty',
       transcript,
-      message: 'Try saying next box, previous box, next block, standard mode, batch mode, or finalize session.'
+      message: 'Try saying next box, previous box, next block, standard, batch, or finalize session.'
     };
   }
 
@@ -921,8 +1022,8 @@ export const parseTallyNavigationVoiceTranscript = (
     { pattern: /\b(previous|prev|back)\s+(box|slot)\b|\bgo back\b/, command: 'previous-box', label: 'Previous Box', requiresConfirmation: false },
     { pattern: /\bnext\s+(box|slot)\b/, command: 'next-box', label: 'Next Box', requiresConfirmation: false },
     { pattern: /\bnext\s+block\b|\bmove to next block\b|\bgo to next block\b/, command: 'next-block', label: 'Next Block', requiresConfirmation: true },
-    { pattern: /\bstandard\b/, command: 'standard-mode', label: 'Standard Mode', requiresConfirmation: false },
-    { pattern: /\bbatch\b/, command: 'batch-mode', label: 'Batch Mode', requiresConfirmation: false },
+    { pattern: /\bstandard\b/, command: 'standard-mode', label: 'Standard', requiresConfirmation: false },
+    { pattern: /\bbatch\b/, command: 'batch-mode', label: 'Batch', requiresConfirmation: false },
     { pattern: /\b(open|show|use)\s+(calculator|calc)\b|\bcalculator\b/, command: 'open-calculator', label: 'Open Calculator', requiresConfirmation: false },
     { pattern: /\bfinali[sz]e\b|\bsave and finali[sz]e\b/, command: 'finalize-session', label: 'Finalize Session', requiresConfirmation: true }
   ];
@@ -933,7 +1034,7 @@ export const parseTallyNavigationVoiceTranscript = (
       status: 'invalid',
       transcript,
       normalized,
-      message: 'I heard your voice, but not a safe tally command. Try next box, previous box, next block, standard mode, batch mode, or finalize session.'
+      message: 'I heard your voice, but not a safe tally command. Try next box, previous box, next block, standard, batch, or finalize session.'
     };
   }
 
@@ -944,6 +1045,168 @@ export const parseTallyNavigationVoiceTranscript = (
     command: matched.command,
     label: matched.label,
     requiresConfirmation: matched.requiresConfirmation
+  };
+};
+
+export const parseBatchCountVoiceTranscript = (
+  transcript: string,
+  availableFares: number[] = []
+): BatchCountVoiceParseResult => {
+  const normalized = normalizeBatchCountVoiceText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Try saying "10 na 16 pesos" or "10 passengers 16 pesos".'
+    };
+  }
+
+  let quantity: number | null = null;
+  let fare: number | null = null;
+
+  const quantityFirstMatch = normalized.match(
+    /^(.+?)\b(?:passengers?|tickets?|pieces|pcs|tao)\b\s*(.+)$/
+  );
+  if (quantityFirstMatch) {
+    quantity = parseBatchNumberSegment(quantityFirstMatch[1]);
+    fare = parseBatchNumberSegment(quantityFirstMatch[2]);
+  }
+
+  if (quantity === null || fare === null) {
+    const taggedSeparatorMatch = normalized.match(/^(.+?)\b(?:na|ng|of|for|at|times|x)\b\s*(.+)$/);
+    if (taggedSeparatorMatch) {
+      quantity = parseBatchNumberSegment(taggedSeparatorMatch[1]);
+      fare = parseBatchNumberSegment(taggedSeparatorMatch[2]);
+    }
+  }
+
+  if (quantity === null || fare === null) {
+    const fareFirstMatch = normalized.match(/^(.+?)\bpesos?\b\s*(.+)$/);
+    if (fareFirstMatch) {
+      const firstValue = parseBatchNumberSegment(fareFirstMatch[1]);
+      const secondValue = parseBatchNumberSegment(fareFirstMatch[2]);
+      if (firstValue !== null && secondValue !== null) {
+        fare = firstValue;
+        quantity = secondValue;
+      }
+    }
+  }
+
+  if (quantity === null || fare === null) {
+    const numericValues = (normalized.match(/\d+(?:\.\d+)?/g) ?? []).map(Number).filter(Number.isFinite);
+    if (numericValues.length >= 2) {
+      const firstValue = numericValues[0];
+      const secondValue = numericValues[1];
+      const firstLooksLikeFare = availableFares.includes(Math.round(firstValue));
+      const secondLooksLikeFare = availableFares.includes(Math.round(secondValue));
+
+      if (firstLooksLikeFare && !secondLooksLikeFare) {
+        fare = Math.round(firstValue);
+        quantity = Math.round(secondValue);
+      } else {
+        quantity = Math.round(firstValue);
+        fare = Math.round(secondValue);
+      }
+    }
+  }
+
+  if (!Number.isFinite(quantity) || !Number.isFinite(fare) || quantity === null || fare === null) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'I could not hear both the passenger count and the fare. Try saying "10 na 16 pesos".'
+    };
+  }
+
+  const safeQuantity = Math.max(0, Math.round(quantity));
+  const safeFare = Math.max(0, Math.round(fare));
+
+  if (safeQuantity <= 0) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'The passenger count should be greater than zero.'
+    };
+  }
+
+  if (safeFare <= 0) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: 'The fare amount should be greater than zero.'
+    };
+  }
+
+  if (availableFares.length > 0 && !availableFares.includes(safeFare)) {
+    return {
+      status: 'invalid',
+      transcript,
+      normalized,
+      message: `I heard ${safeQuantity} passengers at ${safeFare} pesos, but ${safeFare} is not in this batch list.`
+    };
+  }
+
+  return {
+    status: 'match',
+    transcript,
+    normalized,
+    quantity: safeQuantity,
+    fare: safeFare
+  };
+};
+
+export const parseTallyBatchFollowUpTranscript = (
+  transcript: string
+): TallyBatchFollowUpVoiceParseResult => {
+  const normalized = normalizeStopText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Say another batch fare, say finalize, or say exit.'
+    };
+  }
+
+  if (/\b(finalize|finalise|save|record|apply|enter now|save now|finalize session|save session)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'finalize-session',
+      label: 'Finalize Session'
+    };
+  }
+
+  if (/\b(next|another|continue|more|again|sunod|susunod|tuloy|next one|next fare)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'next-batch',
+      label: 'Next Batch Fare'
+    };
+  }
+
+  if (/\b(exit|stop|close|cancel|end|done|tama na|labas|stop now)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'exit',
+      label: 'Exit Voice Assistant'
+    };
+  }
+
+  return {
+    status: 'invalid',
+    transcript,
+    normalized,
+    message: 'Say another batch fare, say finalize to save the queued fares, or say exit.'
   };
 };
 
