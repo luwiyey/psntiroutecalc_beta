@@ -118,6 +118,8 @@ const CalcScreen: React.FC = () => {
   const latestVoiceTranscriptRef = useRef('');
   const latestVoiceConfidenceRef = useRef<number | null>(null);
   const voiceTranscriptHandledRef = useRef(false);
+  const voiceResultRef = useRef<FareVoiceParseResult | null>(null);
+  const pendingVoiceFareRef = useRef<MatchedFareVoiceResult | null>(null);
   const lastResolvedVoiceFareRef = useRef<MatchedFareVoiceResult | null>(null);
   const lastVoiceCashAmountRef = useRef<number | null>(null);
   const pendingVoiceConfirmationRef = useRef<VoiceConfirmationAction | null>(null);
@@ -145,6 +147,14 @@ const CalcScreen: React.FC = () => {
   useEffect(() => {
     setActiveFare(calculation.reg);
   }, [calculation.reg, setActiveFare]);
+
+  useEffect(() => {
+    voiceResultRef.current = voiceResult;
+  }, [voiceResult]);
+
+  useEffect(() => {
+    pendingVoiceFareRef.current = pendingVoiceFare;
+  }, [pendingVoiceFare]);
 
   useEffect(() => {
     if (!currentLocation) {
@@ -180,6 +190,8 @@ const CalcScreen: React.FC = () => {
     latestVoiceTranscriptRef.current = '';
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
+    voiceResultRef.current = null;
+    pendingVoiceFareRef.current = null;
     lastResolvedVoiceFareRef.current = null;
     lastVoiceCashAmountRef.current = null;
     pendingVoiceConfirmationRef.current = null;
@@ -450,6 +462,8 @@ const CalcScreen: React.FC = () => {
     setVoiceFeedback(null);
     setVoiceResult(null);
     setPendingVoiceFare(null);
+    voiceResultRef.current = null;
+    pendingVoiceFareRef.current = null;
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('fare');
@@ -468,7 +482,10 @@ const CalcScreen: React.FC = () => {
     setVoiceFeedback(message);
     setVoiceTranscript('');
     setVoiceConfidence(null);
+    setVoiceResult(null);
     setPendingVoiceFare(null);
+    voiceResultRef.current = null;
+    pendingVoiceFareRef.current = null;
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('fare');
@@ -633,9 +650,9 @@ const CalcScreen: React.FC = () => {
 
     if (shortcut.command === 'same-cash') {
       const fareContext =
-        pendingVoiceFare ??
-        (voiceResult?.status === 'match' && voiceResult.fareType !== 'either'
-          ? voiceResult
+        pendingVoiceFareRef.current ??
+        (voiceResultRef.current?.status === 'match' && voiceResultRef.current.fareType !== 'either'
+          ? voiceResultRef.current
           : lastResolvedVoiceFareRef.current);
       const lastCashAmount = lastVoiceCashAmountRef.current;
 
@@ -717,6 +734,8 @@ const CalcScreen: React.FC = () => {
     lastResolvedVoiceFareRef.current = matchedFare;
     setVoiceResult(matchedFare);
     setPendingVoiceFare(matchedFare);
+    voiceResultRef.current = matchedFare;
+    pendingVoiceFareRef.current = matchedFare;
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('cash');
@@ -744,6 +763,8 @@ const CalcScreen: React.FC = () => {
     const nextMessage = `${summary} Are you done using the calculator? Say yes if you are done, or say no if you want to compute fare again for the next passenger.`;
     setVoiceResult(matchedFare);
     setPendingVoiceFare(null);
+    voiceResultRef.current = matchedFare;
+    pendingVoiceFareRef.current = null;
     setVoiceCashAmount(cashAmount);
     setVoiceStep('done-check');
     setVoiceFeedback(nextMessage);
@@ -757,6 +778,8 @@ const CalcScreen: React.FC = () => {
     lastVoiceCashAmountRef.current = cashAmount;
     setVoiceResult(matchedFare);
     setPendingVoiceFare(null);
+    voiceResultRef.current = matchedFare;
+    pendingVoiceFareRef.current = null;
     setVoiceCashAmount(cashAmount);
 
     const fareAmount = getResolvedFareAmount(matchedFare);
@@ -783,6 +806,8 @@ const CalcScreen: React.FC = () => {
       applyVoiceRouteSelection(matchedFare);
       setVoiceResult(matchedFare);
       setPendingVoiceFare(matchedFare);
+      voiceResultRef.current = matchedFare;
+      pendingVoiceFareRef.current = matchedFare;
       setVoiceCashAmount(null);
       setVoiceChangePreset(null);
       setVoiceStep('fare-type');
@@ -816,8 +841,8 @@ const CalcScreen: React.FC = () => {
 
   const applyVoiceFareTypeChoice = (nextFareType: FareTypeVoiceAnswer) => {
     const baseFare =
-      pendingVoiceFare ??
-      (voiceResult?.status === 'match' ? voiceResult : null);
+      pendingVoiceFareRef.current ??
+      (voiceResultRef.current?.status === 'match' ? voiceResultRef.current : null);
 
     if (!baseFare) {
       const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
@@ -868,9 +893,9 @@ const CalcScreen: React.FC = () => {
 
   const handleUseSameCashAmount = () => {
     const fareContext =
-      pendingVoiceFare ??
-      (voiceResult?.status === 'match' && voiceResult.fareType !== 'either'
-        ? voiceResult
+      pendingVoiceFareRef.current ??
+      (voiceResultRef.current?.status === 'match' && voiceResultRef.current.fareType !== 'either'
+        ? voiceResultRef.current
         : lastResolvedVoiceFareRef.current);
     const lastCashAmount = lastVoiceCashAmountRef.current;
 
@@ -1006,8 +1031,8 @@ const CalcScreen: React.FC = () => {
     if (requestedStep === 'fare-type') {
       const parsedFareType = parseFareTypeVoiceAnswer(trimmedTranscript);
       const baseFare =
-        pendingVoiceFare ??
-        (voiceResult?.status === 'match' ? voiceResult : null);
+        pendingVoiceFareRef.current ??
+        (voiceResultRef.current?.status === 'match' ? voiceResultRef.current : null);
 
       if (!parsedFareType) {
         const nextMessage = 'Please say regular or discounted fare.';
@@ -1126,10 +1151,10 @@ const CalcScreen: React.FC = () => {
     }
 
     const fareContext =
-      pendingVoiceFare ??
-      (voiceResult?.status === 'match' && voiceResult.fareType !== 'either'
-        ? voiceResult
-        : null);
+      pendingVoiceFareRef.current ??
+      (voiceResultRef.current?.status === 'match' && voiceResultRef.current.fareType !== 'either'
+        ? voiceResultRef.current
+        : lastResolvedVoiceFareRef.current);
 
     if (!fareContext) {
       const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
