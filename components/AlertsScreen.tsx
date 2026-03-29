@@ -111,6 +111,8 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
   const [pendingBulkVoiceAction, setPendingBulkVoiceAction] = useState<'clear-all' | null>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const queuedVoiceTimeoutRef = useRef<number | null>(null);
+  const pendingVoiceStopNameRef = useRef<string | null>(null);
+  const pendingVoiceReminderRef = useRef<PendingVoiceReminder | null>(null);
   const latestVoiceTranscriptRef = useRef('');
   const voiceTranscriptHandledRef = useRef(false);
   const silentRetryCountRef = useRef(0);
@@ -159,6 +161,14 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     setVoiceSuggestions([]);
     setVoiceSuggestionCount(null);
   };
+
+  useEffect(() => {
+    pendingVoiceStopNameRef.current = pendingVoiceStopName;
+  }, [pendingVoiceStopName]);
+
+  useEffect(() => {
+    pendingVoiceReminderRef.current = pendingVoiceReminder;
+  }, [pendingVoiceReminder]);
 
   useEffect(() => {
     setStopPickerInitialSearch('');
@@ -448,6 +458,8 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     }
     setVoiceStep('stop-and-count');
     setPendingVoiceStopName(null);
+    pendingVoiceStopNameRef.current = null;
+    pendingVoiceReminderRef.current = null;
   };
 
   const closeVoiceAssistant = (message?: string) => {
@@ -459,6 +471,8 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     setVoiceStep('stop-and-count');
     setPendingVoiceStopName(null);
     setPendingVoiceReminder(null);
+    pendingVoiceStopNameRef.current = null;
+    pendingVoiceReminderRef.current = null;
     silentRetryCountRef.current = 0;
     latestVoiceTranscriptRef.current = '';
     voiceTranscriptHandledRef.current = false;
@@ -594,28 +608,32 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const confirmPendingVoiceReminder = () => {
-    if (!pendingVoiceReminder) {
+    const reminderToConfirm = pendingVoiceReminderRef.current;
+    if (!reminderToConfirm) {
       queueVoicePrompt('Please say the stop and passenger count again.', 'stop-and-count');
       return;
     }
 
-    queueReminderForStop(pendingVoiceReminder.stopName, pendingVoiceReminder.passengerCount, {
-      matchConfidence: pendingVoiceReminder.matchConfidence,
-      matchedPlaceLabel: pendingVoiceReminder.matchedLabel
+    queueReminderForStop(reminderToConfirm.stopName, reminderToConfirm.passengerCount, {
+      matchConfidence: reminderToConfirm.matchConfidence,
+      matchedPlaceLabel: reminderToConfirm.matchedLabel
     });
-    setDraftStopName(pendingVoiceReminder.stopName);
+    setDraftStopName(reminderToConfirm.stopName);
+    setPassengerCount(String(reminderToConfirm.passengerCount));
     setPendingVoiceStopName(null);
     clearVoiceSuggestions();
     setPendingVoiceReminder(null);
+    pendingVoiceStopNameRef.current = null;
+    pendingVoiceReminderRef.current = null;
     setPendingBulkVoiceAction(null);
     setVoicePlaceStatus(
-      `${describeMatchConfidence(pendingVoiceReminder.matchConfidence)} - ${pendingVoiceReminder.matchedLabel}`
+      `${describeMatchConfidence(reminderToConfirm.matchConfidence)} - ${reminderToConfirm.matchedLabel}`
     );
     showToast(
-      `${pendingVoiceReminder.stopName} queued for ${pendingVoiceReminder.passengerCount} passenger${pendingVoiceReminder.passengerCount > 1 ? 's' : ''}`
+      `${reminderToConfirm.stopName} queued for ${reminderToConfirm.passengerCount} passenger${reminderToConfirm.passengerCount > 1 ? 's' : ''}`
     );
     queueVoicePrompt(
-      `${pendingVoiceReminder.stopName} queued for ${pendingVoiceReminder.passengerCount} passenger${pendingVoiceReminder.passengerCount > 1 ? 's' : ''}. Say the next stop and passenger count, say undo, or say exit.`,
+      `${reminderToConfirm.stopName} queued for ${reminderToConfirm.passengerCount} passenger${reminderToConfirm.passengerCount > 1 ? 's' : ''}. Say the next stop and passenger count, say undo, or say exit.`,
       'next-or-exit'
     );
   };
@@ -633,6 +651,13 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
       matchedLabel
     });
     setPendingVoiceStopName(stopName);
+    pendingVoiceStopNameRef.current = stopName;
+    pendingVoiceReminderRef.current = {
+      stopName,
+      passengerCount: passengerCountValue,
+      matchConfidence,
+      matchedLabel
+    };
     clearVoiceSuggestions();
     setPendingBulkVoiceAction(null);
     setDraftStopName(stopName);
@@ -913,6 +938,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
       const replacementTranscript = extractReplacementTranscript(trimmedTranscript);
       if (answer === 'no' && !replacementTranscript) {
         setPendingVoiceReminder(null);
+        pendingVoiceReminderRef.current = null;
         queueVoicePrompt('Okay. Please say the correct stop and passenger count.', 'stop-and-count');
         return;
       }
@@ -925,7 +951,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
           ...correctedReminder,
           passengerCount:
             correctedReminder.passengerCount ??
-            pendingVoiceReminder?.passengerCount ??
+            pendingVoiceReminderRef.current?.passengerCount ??
             null
         });
 
@@ -935,27 +961,30 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
             suggestedStops: resolvedStop.suggestedStops,
             helperMessage: resolvedStop.message,
             passengerCountValue:
-              correctedReminder.passengerCount ?? pendingVoiceReminder?.passengerCount ?? null
+              correctedReminder.passengerCount ?? pendingVoiceReminderRef.current?.passengerCount ?? null
           });
           return;
         }
 
         const nextPassengerCount =
-          correctedReminder.passengerCount ?? pendingVoiceReminder?.passengerCount ?? null;
+          correctedReminder.passengerCount ?? pendingVoiceReminderRef.current?.passengerCount ?? null;
 
-      if (!nextPassengerCount) {
-        setPendingVoiceStopName(resolvedStop.stopName);
-        setDraftStopName(resolvedStop.stopName);
-        setPendingVoiceReminder({
-          stopName: resolvedStop.stopName,
-          passengerCount: 0,
-          matchConfidence: resolvedStop.matchConfidence,
-          matchedLabel: resolvedStop.matchedLabel
-        });
-        setSuggestedVoiceStops(correctedReminder.suggestions.map(stop => stop.name));
-        setVoicePlaceStatus(`${describeMatchConfidence(resolvedStop.matchConfidence)} - ${resolvedStop.matchedLabel}`);
-        queueVoicePrompt(`I heard ${resolvedStop.stopName}. How many passengers are getting down there?`, 'count-only');
-        return;
+        if (!nextPassengerCount) {
+          setPendingVoiceStopName(resolvedStop.stopName);
+          pendingVoiceStopNameRef.current = resolvedStop.stopName;
+          setDraftStopName(resolvedStop.stopName);
+          const nextPendingReminder = {
+            stopName: resolvedStop.stopName,
+            passengerCount: 0,
+            matchConfidence: resolvedStop.matchConfidence,
+            matchedLabel: resolvedStop.matchedLabel
+          } satisfies PendingVoiceReminder;
+          setPendingVoiceReminder(nextPendingReminder);
+          pendingVoiceReminderRef.current = nextPendingReminder;
+          setSuggestedVoiceStops(correctedReminder.suggestions.map(stop => stop.name));
+          setVoicePlaceStatus(`${describeMatchConfidence(resolvedStop.matchConfidence)} - ${resolvedStop.matchedLabel}`);
+          queueVoicePrompt(`I heard ${resolvedStop.stopName}. How many passengers are getting down there?`, 'count-only');
+          return;
         }
 
         queueVoiceReminderConfirmation(
@@ -978,16 +1007,17 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
         return;
       }
 
-      if (!pendingVoiceStopName) {
+      const rememberedStopName = pendingVoiceStopNameRef.current ?? pendingVoiceStopName;
+      if (!rememberedStopName) {
         queueVoicePrompt('Please say the stop and passenger count again.', 'stop-and-count');
         return;
       }
 
       queueVoiceReminderConfirmation(
-        pendingVoiceStopName,
+        rememberedStopName,
         countResult.passengerCount,
-        pendingVoiceReminder?.matchConfidence ?? 'exact-stop',
-        pendingVoiceReminder?.matchedLabel ?? pendingVoiceStopName
+        pendingVoiceReminderRef.current?.matchConfidence ?? 'exact-stop',
+        pendingVoiceReminderRef.current?.matchedLabel ?? rememberedStopName
       );
       return;
     }
@@ -1079,13 +1109,16 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
 
     if (!reminderResult.passengerCount) {
       setPendingVoiceStopName(resolvedStop.stopName);
+      pendingVoiceStopNameRef.current = resolvedStop.stopName;
       setDraftStopName(resolvedStop.stopName);
-      setPendingVoiceReminder({
+      const nextPendingReminder = {
         stopName: resolvedStop.stopName,
         passengerCount: 0,
         matchConfidence: resolvedStop.matchConfidence,
         matchedLabel: resolvedStop.matchedLabel
-      });
+      } satisfies PendingVoiceReminder;
+      setPendingVoiceReminder(nextPendingReminder);
+      pendingVoiceReminderRef.current = nextPendingReminder;
       setSuggestedVoiceStops(reminderResult.suggestions.map(stop => stop.name));
       setVoicePlaceStatus(`${describeMatchConfidence(resolvedStop.matchConfidence)} - ${resolvedStop.matchedLabel}`);
       queueVoicePrompt(`I heard ${resolvedStop.stopName}. How many passengers are getting down there?`, 'count-only');
@@ -1172,7 +1205,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
         return;
       }
 
-      if (nextStep === 'confirm' && pendingVoiceReminder) {
+      if (nextStep === 'confirm' && pendingVoiceReminderRef.current) {
         confirmPendingVoiceReminder();
         return;
       }

@@ -233,6 +233,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const [caretPos, setCaretPos] = useState(0);
   const [lastFormula, setLastFormula] = useState('');
   const [hasEvaluated, setHasEvaluated] = useState(false);
+  const [displaySource, setDisplaySource] = useState<'manual' | 'change'>('manual');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
@@ -244,6 +245,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     resultText: string;
     usesPemdas: boolean;
   } | null>(null);
+  const voiceHideTimeoutRef = useRef<number | null>(null);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   const baseFareDue = assistantPreset?.fareAmount ?? initialValue;
@@ -260,6 +262,10 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setVoiceConfidence(null);
     setVoiceStep('expression');
     setPendingVoiceExpression(null);
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
 
     if (assistantPreset) {
       const result = formatNumber(assistantPreset.changeAmount);
@@ -267,7 +273,8 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       setCaretPos(result.length);
       setLastFormula(`${formatNumber(assistantPreset.cashAmount)} - ${formatNumber(assistantPreset.fareAmount)}`);
       setHasEvaluated(true);
-      setVoiceFeedback(assistantPreset.summary);
+      setDisplaySource('change');
+      setVoiceFeedback(null);
       return;
     }
 
@@ -275,6 +282,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setCaretPos(0);
     setLastFormula('');
     setHasEvaluated(false);
+    setDisplaySource('manual');
     setVoiceFeedback(null);
   }, [assistantPreset, baseFareDue, isOpen]);
 
@@ -287,6 +295,10 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
   useEffect(() => {
     return () => {
+      if (voiceHideTimeoutRef.current) {
+        window.clearTimeout(voiceHideTimeoutRef.current);
+        voiceHideTimeoutRef.current = null;
+      }
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
       cancelVoiceReply();
@@ -296,11 +308,35 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   if (!isOpen) return null;
 
   const handleClose = () => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
     cancelVoiceReply();
     setIsVoiceListening(false);
     onClose();
+  };
+
+  const clearVoicePanel = () => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
+    setVoiceTranscript('');
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
+  };
+
+  const scheduleVoicePanelHide = (delay = 180) => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+    }
+    voiceHideTimeoutRef.current = window.setTimeout(() => {
+      clearVoicePanel();
+      voiceHideTimeoutRef.current = null;
+    }, delay);
   };
 
   const getSelection = () => ({
@@ -313,6 +349,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setExpression(normalized);
     setCaretPos(Math.min(nextCaret, normalized.length));
     setHasEvaluated(false);
+    setDisplaySource('manual');
     if (!preserveFormula) setLastFormula('');
   };
 
@@ -366,6 +403,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setCaretPos(0);
     setLastFormula('');
     setHasEvaluated(false);
+    setDisplaySource('manual');
   };
 
   const handlePercent = () => {
@@ -398,6 +436,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setExpression(result);
     setCaretPos(result.length);
     setHasEvaluated(true);
+    setDisplaySource('manual');
   };
 
   const applyVoiceExpression = (spokenExpression: string, prettyExpression: string) => {
@@ -414,32 +453,51 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     setExpression(result);
     setCaretPos(result.length);
     setHasEvaluated(true);
+    setDisplaySource('manual');
+  };
+
+  const resolveSubtractBase = () => {
+    const currentShownAmount = preview ? preview.result : Number(expression || 0);
+
+    if (displaySource === 'manual' && expression.trim()) {
+      return Number.isFinite(currentShownAmount) ? currentShownAmount : baseFareDue;
+    }
+
+    if (typeof baseFareDue === 'number' && Number.isFinite(baseFareDue) && baseFareDue > 0) {
+      return baseFareDue;
+    }
+
+    return Number.isFinite(currentShownAmount) ? currentShownAmount : 0;
   };
 
   const applyCashTender = (cashAmount: number, shouldSpeak = true) => {
-    const changeAmount = Number((cashAmount - baseFareDue).toFixed(2));
+    const subtractBase = resolveSubtractBase();
+    const changeAmount = Number((cashAmount - subtractBase).toFixed(2));
     const result = formatNumber(changeAmount);
     const summary =
       changeAmount >= 0
         ? `Passenger money is ${formatNumber(cashAmount)}. Change is ${result} pesos.`
         : `Passenger money is ${formatNumber(cashAmount)}. Still lacking ${formatNumber(Math.abs(changeAmount))} pesos.`;
 
-    setLastFormula(`${formatNumber(cashAmount)} - ${formatNumber(baseFareDue)}`);
+    setLastFormula(`${formatNumber(cashAmount)} - ${formatNumber(subtractBase)}`);
     setExpression(result);
     setCaretPos(result.length);
     setHasEvaluated(true);
+    setDisplaySource('change');
     setVoiceFeedback(summary);
 
     if (shouldSpeak) {
-      void speakVoiceReply(summary, { rate: 1.28 });
+      const hidePanel = () => scheduleVoicePanelHide();
+      const started = speakVoiceReply(summary, { rate: 1.45, onEnd: hidePanel, onError: hidePanel });
+      if (!started) hidePanel();
+    } else {
+      scheduleVoicePanelHide();
     }
   };
 
   const handleQuickBill = (amount: number) => {
     applyCashTender(amount, false);
-    setVoiceTranscript('');
-    setVoiceConfidence(null);
-    setVoiceFeedback(`Using ${amount} pesos. Change is ${formatNumber(amount - baseFareDue)} pesos.`);
+    clearVoicePanel();
   };
 
   const beginVoiceRecognition = (requestedStep: VoiceCalculatorStep = 'expression') => {
@@ -447,10 +505,14 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     if (!RecognitionCtor) {
       const message = 'Voice command is not available in this browser. Use Chrome on Android for the best result.';
       setVoiceFeedback(message);
-      void speakVoiceReply(message, { rate: 1.28 });
+      void speakVoiceReply(message, { rate: 1.45 });
       return;
     }
 
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
     setVoiceTranscript('');
     setVoiceConfidence(null);
     setVoiceStep(requestedStep);
@@ -471,7 +533,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       const message = getSpeechRecognitionErrorMessage(event.error);
       setVoiceFeedback(message);
       setIsVoiceListening(false);
-      void speakVoiceReply(message, { rate: 1.28 });
+      void speakVoiceReply(message, { rate: 1.45 });
     };
     recognition.onresult = event => {
       const { transcript, confidence } = extractRecognitionTranscript(event);
@@ -486,7 +548,9 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           setPendingVoiceExpression(null);
           setVoiceStep('expression');
           setVoiceFeedback(summary);
-          void speakVoiceReply(summary, { rate: 1.28 });
+          const hidePanel = () => scheduleVoicePanelHide();
+          const started = speakVoiceReply(summary, { rate: 1.45, onEnd: hidePanel, onError: hidePanel });
+          if (!started) hidePanel();
           return;
         }
 
@@ -495,7 +559,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           const retryMessage = 'Okay. Keep speaking the full expression now. Say equals if you want me to calculate right away.';
           setVoiceFeedback(retryMessage);
           const beginRetry = () => window.setTimeout(() => beginVoiceRecognition('expression'), 320);
-          const started = speakVoiceReply(retryMessage, { rate: 1.28, onEnd: beginRetry, onError: beginRetry });
+          const started = speakVoiceReply(retryMessage, { rate: 1.45, onEnd: beginRetry, onError: beginRetry });
           if (!started) beginRetry();
           return;
         }
@@ -503,7 +567,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
         const nextMessage = 'Please say yes if you are finished speaking, or say no if you want to keep speaking.';
         setVoiceFeedback(nextMessage);
         const restartConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
-        const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: restartConfirm, onError: restartConfirm });
+        const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restartConfirm, onError: restartConfirm });
         if (!started) restartConfirm();
         return;
       }
@@ -523,7 +587,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
         if (!computedPreview) {
           const nextMessage = 'I heard the math words, but I could not safely compute them. Please say the expression again.';
           setVoiceFeedback(nextMessage);
-          void speakVoiceReply(nextMessage, { rate: 1.28 });
+          void speakVoiceReply(nextMessage, { rate: 1.45 });
           return;
         }
 
@@ -541,7 +605,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           const nextMessage = `I heard ${parsedExpression.prettyExpression}.${pemdasMessage} Are you finished speaking? Say yes to calculate now or no to keep speaking.`;
           setVoiceFeedback(nextMessage);
           const beginConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
-          const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: beginConfirm, onError: beginConfirm });
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: beginConfirm, onError: beginConfirm });
           if (!started) beginConfirm();
           return;
         }
@@ -551,7 +615,9 @@ const ConductorCalcOverlay: React.FC<Props> = ({
         setVoiceStep('expression');
         const summary = `Computed ${parsedExpression.prettyExpression} = ${resultText}.`;
         setVoiceFeedback(summary);
-        void speakVoiceReply(summary, { rate: 1.28 });
+        const hidePanel = () => scheduleVoicePanelHide();
+        const started = speakVoiceReply(summary, { rate: 1.45, onEnd: hidePanel, onError: hidePanel });
+        if (!started) hidePanel();
         return;
       }
 
@@ -564,7 +630,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       setPendingVoiceExpression(null);
       setVoiceStep('expression');
       setVoiceFeedback(fallbackMessage);
-      void speakVoiceReply(fallbackMessage, { rate: 1.28 });
+      void speakVoiceReply(fallbackMessage, { rate: 1.45 });
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -577,13 +643,14 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       const message = 'Voice recognition could not start. Please try again.';
       setVoiceFeedback(message);
       setIsVoiceListening(false);
-      void speakVoiceReply(message, { rate: 1.28 });
+      void speakVoiceReply(message, { rate: 1.45 });
     }
   };
 
   const startVoiceCalculator = (requestedStep: VoiceCalculatorStep = 'expression') => {
     if (isVoiceListening) {
       voiceRecognitionRef.current?.stop();
+      clearVoicePanel();
       return;
     }
 
@@ -638,8 +705,8 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-5 visible-scrollbar">
-          <div className="rounded-[2rem] bg-[#0f172a] p-4 shadow-inner dark:bg-black">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 visible-scrollbar sm:px-5">
+          <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner dark:bg-black sm:p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Expression</p>
               <span className="rounded-full bg-white/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-200">
@@ -647,7 +714,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
               </span>
             </div>
 
-            <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3 py-2.5">
               <input
                 ref={inputRef}
                 type="text"
@@ -661,36 +728,46 @@ const ConductorCalcOverlay: React.FC<Props> = ({
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
-                className="w-full bg-transparent text-lg font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white"
+                className="w-full bg-transparent text-base font-900 leading-tight tracking-wide text-white outline-none placeholder:text-slate-500 caret-white sm:text-lg"
               />
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => moveCaret(-1)}
-                  disabled={caretPos === 0}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
-                >
-                  Cursor Left
-                </button>
-                <button
-                  onClick={() => moveCaret(1)}
-                  disabled={caretPos >= expression.length}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
-                >
-                  Cursor Right
-                </button>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => moveCaret(-1)}
+                    disabled={caretPos === 0}
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                    aria-label="Cursor left"
+                  >
+                    <span className="material-icons text-base">chevron_left</span>
+                  </button>
+                  <button
+                    onClick={() => moveCaret(1)}
+                    disabled={caretPos >= expression.length}
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                    aria-label="Cursor right"
+                  >
+                    <span className="material-icons text-base">chevron_right</span>
+                  </button>
+                </div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                  Cursor {Math.min(caretPos + 1, Math.max(expression.length, 1))}/{Math.max(expression.length, 1)}
+                </p>
               </div>
               <p className="mt-2 min-h-[16px] overflow-x-auto whitespace-nowrap text-[10px] font-black tracking-widest text-slate-400 scrollbar-hide">
                 {formulaLine}
               </p>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Result</p>
-              <p className="mt-2 text-5xl font-900 leading-none tracking-tight text-white">{previewResult}</p>
+              <div className="mt-3 rounded-[1.35rem] border border-white/10 bg-white/5 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Result</p>
+                  <p className="overflow-x-auto whitespace-nowrap text-[clamp(2rem,10vw,3rem)] font-900 leading-none tracking-tight text-white scrollbar-hide">
+                    {previewResult}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {(voiceFeedback || voiceTranscript) && (
+          {(voiceFeedback || voiceTranscript || isVoiceListening) && (
             <div className="mt-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/20">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

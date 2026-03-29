@@ -93,6 +93,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
   } | null>(null);
   const [thresholdNotice, setThresholdNotice] = useState<ThresholdNotice | null>(null);
   const [isUndoMenuOpen, setIsUndoMenuOpen] = useState(false);
+  const voiceHideTimeoutRef = useRef<number | null>(null);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   useEffect(() => {
@@ -110,6 +111,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
     setPendingVoiceExpression(null);
     setThresholdNotice(null);
     setIsUndoMenuOpen(false);
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
     previousEntryCountRef.current = initialExpression ? 1 : 0;
   }, [initialInput, isOpen]);
 
@@ -123,6 +128,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
   useEffect(() => {
     return () => {
+      if (voiceHideTimeoutRef.current) {
+        window.clearTimeout(voiceHideTimeoutRef.current);
+        voiceHideTimeoutRef.current = null;
+      }
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
       cancelVoiceReply();
@@ -165,11 +174,35 @@ const TallyCalcOverlay: React.FC<Props> = ({
   if (!isOpen) return null;
 
   const handleClose = () => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
     cancelVoiceReply();
     setIsVoiceListening(false);
     onClose();
+  };
+
+  const clearVoicePanel = () => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
+    setVoiceTranscript('');
+    setVoiceFeedback(null);
+    setVoiceConfidence(null);
+  };
+
+  const scheduleVoicePanelHide = (delay = 180) => {
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+    }
+    voiceHideTimeoutRef.current = window.setTimeout(() => {
+      clearVoicePanel();
+      voiceHideTimeoutRef.current = null;
+    }, delay);
   };
 
   const getSelection = () => {
@@ -322,6 +355,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
       return;
     }
 
+    if (voiceHideTimeoutRef.current) {
+      window.clearTimeout(voiceHideTimeoutRef.current);
+      voiceHideTimeoutRef.current = null;
+    }
     setVoiceTranscript('');
     setVoiceConfidence(null);
     setVoiceStep(requestedStep);
@@ -357,7 +394,9 @@ const TallyCalcOverlay: React.FC<Props> = ({
           setPendingVoiceExpression(null);
           setVoiceStep('expression');
           setVoiceFeedback(summary);
-          void speakVoiceReply(summary, { rate: 1.28 });
+          const hidePanel = () => scheduleVoicePanelHide();
+          const started = speakVoiceReply(summary, { rate: 1.45, onEnd: hidePanel, onError: hidePanel });
+          if (!started) hidePanel();
           return;
         }
 
@@ -366,7 +405,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
           const retryMessage = 'Okay. Keep speaking the tally now. Say equals if you want me to load it right away.';
           setVoiceFeedback(retryMessage);
           const beginRetry = () => window.setTimeout(() => beginVoiceTally('expression'), 320);
-          const started = speakVoiceReply(retryMessage, { rate: 1.28, onEnd: beginRetry, onError: beginRetry });
+          const started = speakVoiceReply(retryMessage, { rate: 1.45, onEnd: beginRetry, onError: beginRetry });
           if (!started) beginRetry();
           return;
         }
@@ -374,7 +413,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
         const nextMessage = 'Please say yes to load the tally now, or say no if you want to keep speaking.';
         setVoiceFeedback(nextMessage);
         const restartConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
-        const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: restartConfirm, onError: restartConfirm });
+        const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restartConfirm, onError: restartConfirm });
         if (!started) restartConfirm();
         return;
       }
@@ -390,7 +429,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
           const nextMessage = `I heard ${parsed.prettyExpression}. Say yes to load it now or no if you want to keep speaking.`;
           setVoiceFeedback(nextMessage);
           const beginConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
-          const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: beginConfirm, onError: beginConfirm });
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: beginConfirm, onError: beginConfirm });
           if (!started) beginConfirm();
           return;
         }
@@ -401,14 +440,16 @@ const TallyCalcOverlay: React.FC<Props> = ({
         setVoiceStep('expression');
         const summary = `Loaded ${parsed.prettyExpression}. Review it, then tap Add To Tally Sheet when ready.`;
         setVoiceFeedback(summary);
-        void speakVoiceReply(summary, { rate: 1.28 });
+        const hidePanel = () => scheduleVoicePanelHide();
+        const started = speakVoiceReply(summary, { rate: 1.45, onEnd: hidePanel, onError: hidePanel });
+        if (!started) hidePanel();
         return;
       }
 
       setPendingVoiceExpression(null);
       setVoiceStep('expression');
       setVoiceFeedback(parsed.message);
-      void speakVoiceReply(parsed.message, { rate: 1.28 });
+      void speakVoiceReply(parsed.message, { rate: 1.45 });
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -426,6 +467,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
   const startVoiceTally = (requestedStep: VoiceTallyStep = 'expression') => {
     if (isVoiceListening) {
       voiceRecognitionRef.current?.stop();
+      clearVoicePanel();
       return;
     }
 
@@ -479,10 +521,10 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
         <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
           <div className="space-y-2">
-            <div className="rounded-[1.75rem] bg-[#0f172a] p-3.5 shadow-inner dark:bg-black sm:rounded-[2rem] sm:p-4">
+            <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner dark:bg-black sm:rounded-[2rem] sm:p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Current Number</p>
 
-              <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3.5 py-3">
+              <div className="mt-2 rounded-[1.5rem] border border-white/10 bg-white/5 px-3 py-2.5">
                 <p className="text-[clamp(2.5rem,11vw,3.25rem)] font-900 leading-[0.92] tracking-tight text-white">
                   {currentToken}
                 </p>
@@ -501,25 +543,32 @@ const TallyCalcOverlay: React.FC<Props> = ({
                   spellCheck={false}
                   className="mt-2 w-full bg-transparent text-[1.05rem] font-black tracking-wide text-slate-400 outline-none placeholder:text-slate-500 caret-white"
                 />
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => moveCaret(-1)}
-                    disabled={caretPos === 0}
-                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
-                  >
-                    Cursor Left
-                  </button>
-                  <button
-                    onClick={() => moveCaret(1)}
-                    disabled={caretPos >= expression.length}
-                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300 active:scale-95 disabled:opacity-40"
-                  >
-                    Cursor Right
-                  </button>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => moveCaret(-1)}
+                      disabled={caretPos === 0}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                      aria-label="Cursor left"
+                    >
+                      <span className="material-icons text-base">chevron_left</span>
+                    </button>
+                    <button
+                      onClick={() => moveCaret(1)}
+                      disabled={caretPos >= expression.length}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 disabled:opacity-40"
+                      aria-label="Cursor right"
+                    >
+                      <span className="material-icons text-base">chevron_right</span>
+                    </button>
+                  </div>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                    Cursor {Math.min(caretPos + 1, Math.max(expression.length, 1))}/{Math.max(expression.length, 1)}
+                  </p>
                 </div>
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-2.5 space-y-2">
                 <div className="flex items-center justify-between rounded-[1.25rem] bg-white/5 px-3 py-2.5">
                   <div>
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Running Total</p>
@@ -546,7 +595,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
               </div>
             </div>
 
-            {(voiceFeedback || voiceTranscript) && (
+            {(voiceFeedback || voiceTranscript || isVoiceListening) && (
               <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-black/20">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

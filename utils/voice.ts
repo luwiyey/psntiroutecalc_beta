@@ -1282,7 +1282,7 @@ export const speakVoiceReply = (
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = options?.lang ?? 'en-PH';
-    utterance.rate = options?.rate ?? 1.28;
+    utterance.rate = options?.rate ?? 1.45;
     utterance.pitch = options?.pitch ?? 1;
     utterance.volume = options?.volume ?? 1;
     utterance.onend = () => options?.onEnd?.();

@@ -69,7 +69,7 @@ const BetweenStopsScreen: React.FC<Props> = ({ onExit }) => {
   const isCM = settings.conductorMode;
 
   return (
-    <div className="flex flex-col min-h-full animate-fade-in bg-[#f8f6f6] transition-all dark:bg-black">
+    <div className="flex h-full min-h-full flex-col overflow-y-auto overscroll-contain animate-fade-in bg-[#f8f6f6] transition-all dark:bg-black">
       <header className="sticky top-0 z-40 h-[72px] shrink-0 bg-primary px-6 py-4 shadow-md flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="material-icons text-2xl text-white">map</span>

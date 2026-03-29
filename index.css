@@ -4,10 +4,21 @@
 /* Tailwind v4 theme tokens */
 @theme {
   --color-primary: #c91629;
-  --color-night-charcoal: #1C1C1E;
+  --color-night-charcoal: #090909;
   --color-neon-green: #39FF14;
 
   --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --app-page-bg: #f4f5f7;
+  --app-card-bg: #f7f9fc;
+  --app-card-soft: #edf3fb;
+  --app-card-muted: #e8eef7;
+  --app-dark-page-bg: #000000;
+  --app-dark-surface: #0a0a0a;
+  --app-dark-soft: #121315;
+  --app-dark-elevated: #181a1d;
 }
 
 html {

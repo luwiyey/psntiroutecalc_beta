@@ -1246,14 +1246,14 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </div>
            </div>
          </div>
-        <div className="flex gap-2 border-t border-slate-200 bg-slate-100 p-2 dark:border-white/10 dark:bg-[#05070b]">
+        <div className="flex gap-2 border-t border-slate-200 bg-slate-100 p-2 dark:border-white/10 dark:bg-[var(--app-dark-surface)]">
           {[0, 1, 2, 3].map(b => (
             <div key={b} className="flex-1 flex flex-col items-stretch">
                <button type="button" onClick={() => jumpToBlock(b)}
                  className={`w-full rounded-xl border py-2 font-black transition-all active:scale-[0.99] ${
                    tallyNav.blockIdx === b
-                     ? 'border-primary/25 bg-white text-primary shadow-sm dark:border-primary/30 dark:bg-night-charcoal'
-                     : 'border-slate-200 bg-white text-slate-500 shadow-sm dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200'
+                    ? 'border-primary/25 bg-white text-primary shadow-sm dark:border-primary/30 dark:bg-night-charcoal'
+                    : 'border-slate-200 bg-white text-slate-500 shadow-sm dark:border-white/10 dark:bg-[var(--app-dark-soft)] dark:text-slate-200'
                  }`}>
                  <span className="block text-[8px] uppercase tracking-tighter opacity-70">Block {b + 1} ({blockCounts[b]}/{SLOTS_PER_BLOCK})</span>
                  <span className="mt-1 block text-[10px]">{peso}{blockTotals[b]}</span>
@@ -1283,7 +1283,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                 className={`h-full w-full cursor-pointer touch-manipulation select-none rounded-[1.25rem] border transition-all ${
                   val > 0
                     ? 'border-primary bg-primary text-white shadow-md'
-                    : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-primary/40 hover:bg-slate-50 dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-100 dark:hover:border-primary/40 dark:hover:bg-white/[0.08]'
+                    : 'border-slate-200 bg-white text-slate-500 shadow-sm hover:border-primary/40 hover:bg-slate-50 dark:border-white/10 dark:bg-[var(--app-dark-soft)] dark:text-slate-100 dark:hover:border-primary/40 dark:hover:bg-white/[0.08]'
                 } flex flex-col items-center justify-center`}
               >
               <span className={`absolute left-2 top-2 text-[7px] font-black ${val > 0 ? 'opacity-40' : 'opacity-60 dark:text-slate-400'}`}>{idx + 1}</span>
