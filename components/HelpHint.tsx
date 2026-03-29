@@ -79,7 +79,7 @@ const HelpHint: React.FC<Props> = ({
               handleToggle(event);
             }
           }}
-          className={`absolute top-[calc(100%+8px)] z-[210] max-h-[40vh] w-[min(13rem,calc(100vw-3rem))] overflow-y-auto rounded-[1.25rem] bg-slate-900 px-3 py-2 text-[10px] font-semibold leading-snug text-white shadow-2xl outline-none dark:bg-night-charcoal sm:w-[min(14.5rem,calc(100vw-2.5rem))] ${popupAlignmentClass}`}
+          className={`absolute top-[calc(100%+8px)] z-[210] max-h-[34vh] w-[min(11rem,calc(100vw-4rem))] overflow-y-auto rounded-[1rem] bg-slate-900 px-3 py-2 text-[9px] font-semibold leading-snug text-white shadow-2xl outline-none dark:bg-night-charcoal sm:w-[min(12rem,calc(100vw-3rem))] ${popupAlignmentClass}`}
         >
           {label}
         </span>

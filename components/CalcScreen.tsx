@@ -52,7 +52,7 @@ import { trackAnalyticsEvent } from '../utils/analytics';
 
 const peso = '\u20B1';
 const RECENT_FARE_LIMIT = 4;
-type VoiceAssistantStep = 'fare' | 'fare-type' | 'cash' | 'next-passenger' | 'confirm';
+type VoiceAssistantStep = 'fare' | 'fare-type' | 'cash' | 'done-check' | 'next-passenger' | 'confirm';
 type MatchedFareVoiceResult = Extract<FareVoiceParseResult, { status: 'match' }>;
 type VoiceConfirmationAction =
   | {
@@ -507,8 +507,10 @@ const CalcScreen: React.FC = () => {
         return lastVoiceCashAmountRef.current
           ? `Listening... say how much is their money, or say same amount for ${lastVoiceCashAmountRef.current} pesos.`
           : 'Listening... say how much is their money, like "one thousand pesos".';
+      case 'done-check':
+        return 'Listening... say yes if you are done, or say no if you want to compute fare again.';
       case 'next-passenger':
-        return 'Listening... say next passenger, same route, or exit.';
+        return 'Listening... say same route, say the new pickup and destination, or say exit.';
       case 'confirm':
         return 'Listening... say yes to confirm or no to try again.';
     }
@@ -524,8 +526,10 @@ const CalcScreen: React.FC = () => {
         return lastVoiceCashAmountRef.current
           ? `I am still here. Please say how much is their money, or say same amount for ${lastVoiceCashAmountRef.current} pesos.`
           : 'I am still here. Please say how much is their money, or say exit.';
+      case 'done-check':
+        return 'I am still here. Please say yes if you are done, or say no if you want another fare.';
       case 'next-passenger':
-        return 'I am still here. Please say next passenger, same route, or exit.';
+        return 'I am still here. Please say same route, say the new pickup and destination, or say exit.';
       case 'confirm':
         return 'I am still here. Please say yes to confirm or no to try again.';
     }
@@ -533,19 +537,21 @@ const CalcScreen: React.FC = () => {
 
   const getVoiceSilenceDelay = (step: VoiceAssistantStep, hasFinal: boolean) => {
     if (hasFinal) {
-      return step === 'cash' ? 2200 : step === 'fare-type' ? 1700 : step === 'next-passenger' ? 1500 : 1100;
+      return step === 'cash' ? 2600 : step === 'fare-type' ? 2200 : step === 'done-check' ? 2000 : step === 'next-passenger' ? 2000 : 1200;
     }
 
     switch (step) {
       case 'cash':
-        return 6500;
+        return 7600;
+      case 'done-check':
+        return 6200;
       case 'next-passenger':
-        return 4500;
+        return 6200;
       case 'fare-type':
-        return 5600;
+        return 7200;
       case 'fare':
       default:
-        return 4200;
+        return 5200;
     }
   };
 
@@ -673,7 +679,7 @@ const CalcScreen: React.FC = () => {
 
     const beginListening = () => {
       queuedVoiceTimeoutRef.current = null;
-      startFareVoiceRecognition(nextStep);
+      window.setTimeout(() => startFareVoiceRecognition(nextStep), 420);
     };
 
     cancelVoiceReply();
@@ -735,13 +741,13 @@ const CalcScreen: React.FC = () => {
     summary: string
   ) => {
     pendingVoiceConfirmationRef.current = null;
-    const nextMessage = `${summary} Next passenger or exit?`;
+    const nextMessage = `${summary} Are you done using the calculator? Say yes if you are done, or say no if you want to compute fare again for the next passenger.`;
     setVoiceResult(matchedFare);
     setPendingVoiceFare(null);
     setVoiceCashAmount(cashAmount);
-    setVoiceStep('next-passenger');
+    setVoiceStep('done-check');
     setVoiceFeedback(nextMessage);
-    queueVoicePrompt(nextMessage, 'next-passenger');
+    queueVoicePrompt(nextMessage, 'done-check');
   };
 
   const finishVoiceChangeFlow = (matchedFare: MatchedFareVoiceResult, cashAmount: number) => {
@@ -900,11 +906,29 @@ const CalcScreen: React.FC = () => {
       const stillHereMessage =
         requestedStep === 'cash'
           ? 'Yes, I am still here. Please say how much is their money, or say same amount.'
+          : requestedStep === 'done-check'
+            ? 'Yes, I am still here. Say yes if you are done, or say no if you want another fare.'
           : requestedStep === 'next-passenger'
-            ? 'Yes, I am still here. Please say next passenger, same route, or exit.'
+            ? 'Yes, I am still here. Please say same route, say the new pickup and destination, or say exit.'
             : getListeningPrompt(requestedStep);
       setVoiceFeedback(stillHereMessage);
       queueVoicePrompt(stillHereMessage, requestedStep);
+      return;
+    }
+
+    if (/\b(sorry|wrong|mali|not that|hindi iyon|hindi yun|ulitin)\b/i.test(trimmedTranscript)) {
+      const correctionMessage =
+        requestedStep === 'cash'
+          ? 'Okay. Please say how much is their money again.'
+          : requestedStep === 'fare-type'
+            ? 'Okay. Please say regular or discounted again.'
+            : requestedStep === 'done-check'
+              ? 'Okay. Say yes if you are done, or say no if you want another fare.'
+              : requestedStep === 'next-passenger'
+                ? 'Okay. Say same route, say the new pickup and destination, or say exit.'
+                : 'Okay. Please say the pickup and destination again.';
+      setVoiceFeedback(correctionMessage);
+      queueVoicePrompt(correctionMessage, requestedStep);
       return;
     }
 
@@ -1016,9 +1040,56 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
+    if (requestedStep === 'done-check') {
+      const doneAnswer = parseVoiceBinaryAnswer(trimmedTranscript);
+
+      if (doneAnswer === 'yes') {
+        setIsConductorCalcOpen(false);
+        setVoiceChangePreset(null);
+        closeVoicePanelAfterReply('Okay. Calculator closed. Tap the mic anytime when you are ready again.');
+        return;
+      }
+
+      if (doneAnswer === 'no') {
+        setIsConductorCalcOpen(false);
+        setVoiceChangePreset(null);
+        const nextMessage = lastResolvedVoiceFareRef.current
+          ? 'Okay. Compute fare again for the next passenger. Say same route, or say the new pickup and destination now.'
+          : 'Okay. Compute fare again for the next passenger. Say the pickup and destination now, or say exit.';
+        setVoiceStep('next-passenger');
+        setVoiceFeedback(nextMessage);
+        queueVoicePrompt(nextMessage, 'next-passenger');
+        return;
+      }
+
+      const nextMessage = 'Please say yes if you are done, or say no if you want another fare.';
+      setVoiceFeedback(nextMessage);
+      queueVoicePrompt(nextMessage, 'done-check');
+      return;
+    }
+
     if (requestedStep === 'next-passenger') {
       const shortcut = parseFareConversationShortcut(trimmedTranscript);
       if (shortcut && applyVoiceShortcut(shortcut, confidence, 'fare')) {
+        return;
+      }
+
+      const parsedFare = parseFareVoiceTranscript(trimmedTranscript, activeRoute);
+      if (parsedFare.status === 'match') {
+        if (shouldConfirmVoiceInterpretation(confidence)) {
+          const confirmMessage =
+            parsedFare.fareType === 'either'
+              ? `I heard ${parsedFare.originStop.name} to ${parsedFare.destinationStop.name}. Say yes to continue or no to try again.`
+              : `I heard ${getResolvedFareLabel(parsedFare).toLowerCase()} fare from ${parsedFare.originStop.name} to ${parsedFare.destinationStop.name}. Say yes or no.`;
+          queueVoiceConfirmation(confirmMessage, {
+            kind: 'fare-match',
+            matchedFare: parsedFare,
+            retryStep: 'fare'
+          });
+          return;
+        }
+
+        handleMatchedFare(parsedFare, 'queued');
         return;
       }
 
@@ -1043,7 +1114,7 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      const nextMessage = 'Please say next passenger, same route, or exit.';
+      const nextMessage = 'Please say same route, say the new pickup and destination, or say exit.';
       setVoiceFeedback(nextMessage);
       queueVoicePrompt(nextMessage, 'next-passenger');
       return;
@@ -1534,8 +1605,10 @@ const CalcScreen: React.FC = () => {
                       ? 'Regular or discounted'
                       : voiceStep === 'cash'
                         ? 'Passenger money'
+                        : voiceStep === 'done-check'
+                          ? 'Done or continue'
                         : voiceStep === 'next-passenger'
-                          ? 'Next passenger or exit'
+                          ? 'Next fare'
                           : 'Confirm what I heard'}
                 </p>
               </div>
@@ -1604,8 +1677,44 @@ const CalcScreen: React.FC = () => {
               </div>
             )}
 
+            {voiceStep === 'done-check' && (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setIsConductorCalcOpen(false);
+                    setVoiceChangePreset(null);
+                    closeVoicePanelAfterReply('Okay. Calculator closed. Tap the mic anytime when you are ready again.');
+                  }}
+                  className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                >
+                  Yes, Done
+                </button>
+                <button
+                  onClick={() => {
+                    setIsConductorCalcOpen(false);
+                    setVoiceChangePreset(null);
+                    const nextMessage = lastResolvedVoiceFareRef.current
+                      ? 'Okay. Compute fare again for the next passenger. Say same route, or say the new pickup and destination now.'
+                      : 'Okay. Compute fare again for the next passenger. Say the pickup and destination now, or say exit.';
+                    setVoiceStep('next-passenger');
+                    setVoiceFeedback(nextMessage);
+                    queueVoicePrompt(nextMessage, 'next-passenger');
+                  }}
+                  className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                >
+                  No, Next Fare
+                </button>
+              </div>
+            )}
+
             {voiceStep === 'next-passenger' && (
               <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleUseSameRoute}
+                  className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
+                >
+                  Same Route
+                </button>
                 <button
                   onClick={() => {
                     setVoiceStep('fare');
@@ -1613,23 +1722,13 @@ const CalcScreen: React.FC = () => {
                     setPendingVoiceFare(null);
                     setVoiceCashAmount(null);
                     setVoiceChangePreset(null);
-                    const nextMessage = lastResolvedVoiceFareRef.current
-                      ? 'Ready for the next passenger. Say same route, or say the new pickup and destination now.'
-                      : 'Ready for the next passenger. Say the pickup and destination now.';
+                    const nextMessage = 'Okay. Say the new pickup and destination now.';
                     setVoiceFeedback(nextMessage);
                     queueVoicePrompt(nextMessage, 'fare');
                   }}
-                  className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
-                >
-                  Next Passenger
-                </button>
-                <button
-                  onClick={() => {
-                    closeVoicePanelAfterReply('Voice assistant closed. Tap the mic anytime when you are ready again.');
-                  }}
                   className="rounded-[1.5rem] border border-slate-200 bg-white py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
                 >
-                  Exit
+                  New Route
                 </button>
               </div>
             )}

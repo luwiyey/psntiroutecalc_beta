@@ -89,6 +89,9 @@ export type CalculatorVoiceParseResult =
       normalized: string;
       expression: string;
       prettyExpression: string;
+      explicitEquals: boolean;
+      operatorCount: number;
+      usesPemdas: boolean;
     };
 
 export type TallyVoiceParseResult =
@@ -110,6 +113,7 @@ export type TallyVoiceParseResult =
       expression: string;
       prettyExpression: string;
       entries: number[];
+      explicitEquals: boolean;
     };
 
 export type StopVoiceParseResult =
@@ -432,15 +436,22 @@ const normalizeCalculatorText = (value: string) =>
       .replace(/equals?/g, ' = ')
       .replace(/equal to/g, ' = ')
       .replace(/multiplied by/g, ' * ')
+      .replace(/multiplied/g, ' * ')
       .replace(/multiply by/g, ' * ')
+      .replace(/multiply/g, ' * ')
       .replace(/times/g, ' * ')
       .replace(/x/g, ' * ')
       .replace(/divided by/g, ' / ')
+      .replace(/divided/g, ' / ')
       .replace(/divide by/g, ' / ')
+      .replace(/divide/g, ' / ')
       .replace(/over/g, ' / ')
       .replace(/plus/g, ' + ')
       .replace(/add/g, ' + ')
+      .replace(/added to/g, ' + ')
       .replace(/minus/g, ' - ')
+      .replace(/subtract/g, ' - ')
+      .replace(/subtracted by/g, ' - ')
       .replace(/less/g, ' - ')
       .replace(/point/g, ' point ')
       .replace(/dot/g, ' point ')
@@ -903,7 +914,7 @@ export const speakVoiceReply = (
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = options?.lang ?? 'en-PH';
-    utterance.rate = options?.rate ?? 1.14;
+    utterance.rate = options?.rate ?? 1.28;
     utterance.pitch = options?.pitch ?? 1;
     utterance.volume = options?.volume ?? 1;
     utterance.onend = () => options?.onEnd?.();
@@ -1302,6 +1313,7 @@ export const parseTallyBatchFollowUpTranscript = (
 export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVoiceParseResult => {
   const cleanedTranscript = collapseRepeatedSpeech(transcript);
   const normalized = normalizeCalculatorText(cleanedTranscript);
+  const explicitEquals = /\bequals?\b|=/.test(cleanedTranscript.toLowerCase());
   if (!normalized) {
     return {
       status: 'empty',
@@ -1374,6 +1386,11 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
   }
 
   const expression = parts.join('');
+  const operatorCount = (expression.match(/[+\-*/]/g) ?? []).length;
+  const usesPemdas =
+    operatorCount > 1 &&
+    (expression.includes('*') || expression.includes('/')) &&
+    (expression.includes('+') || expression.includes('-'));
   const prettyExpression = expression.replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/-/g, ' - ');
 
   return {
@@ -1385,7 +1402,10 @@ export const parseCalculatorVoiceTranscript = (transcript: string): CalculatorVo
       .replace(/\*/g, ' x ')
       .replace(/\//g, ' / ')
       .replace(/\+/g, ' + ')
-      .replace(/-/g, ' - ')
+      .replace(/-/g, ' - '),
+    explicitEquals,
+    operatorCount,
+    usesPemdas
   };
 };
 
@@ -1432,6 +1452,7 @@ export const parseCashVoiceTranscript = (transcript: string): CashVoiceParseResu
 };
 
 export const parseTallyVoiceTranscript = (transcript: string): TallyVoiceParseResult => {
+  const explicitEquals = /\bequals?\b|=/.test(transcript.toLowerCase());
   const normalized = normalizeTallyVoiceText(transcript);
   if (!normalized) {
     return {
@@ -1527,6 +1548,7 @@ export const parseTallyVoiceTranscript = (transcript: string): TallyVoiceParseRe
     normalized,
     expression,
     prettyExpression: expression,
-    entries
+    entries,
+    explicitEquals
   };
 };

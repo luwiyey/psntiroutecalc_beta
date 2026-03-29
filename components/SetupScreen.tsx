@@ -368,7 +368,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
         </section>
 
         <section className="space-y-3">
-          <details className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
+          <details open className="group rounded-[1.75rem] bg-white shadow-md dark:bg-night-charcoal">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -473,8 +473,8 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                   <span className="material-icons">calculate</span>
                 </div>
                 <div className="text-left">
-                  <p className="font-bold dark:text-white">Calculator</p>
-                  <p className="text-xs text-slate-500">Open a standard calculator</p>
+                  <p className="font-bold dark:text-white">Standard Calculator</p>
+                  <p className="text-xs text-slate-500">Open the regular calculator with voice and cursor editing</p>
                 </div>
               </div>
               <span className="material-icons text-slate-400">chevron_right</span>

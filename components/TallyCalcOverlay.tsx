@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import FloatingVoiceButton from './FloatingVoiceButton';
 import type { BrowserSpeechRecognition } from '../utils/voice';
 import {
+  cancelVoiceReply,
   extractRecognitionTranscript,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
-  parseTallyVoiceTranscript
+  parseTallyVoiceTranscript,
+  parseVoiceBinaryAnswer,
+  speakVoiceReply
 } from '../utils/voice';
 
 interface Props {
@@ -30,6 +32,8 @@ interface ThresholdNotice {
   count: number;
   total: number;
 }
+
+type VoiceTallyStep = 'expression' | 'confirm-expression';
 
 const sanitizeExpression = (value: string) => value.replace(/[^\d+ ]/g, '').replace(/\s{2,}/g, ' ');
 
@@ -81,6 +85,12 @@ const TallyCalcOverlay: React.FC<Props> = ({
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [voiceStep, setVoiceStep] = useState<VoiceTallyStep>('expression');
+  const [pendingVoiceExpression, setPendingVoiceExpression] = useState<{
+    expression: string;
+    prettyExpression: string;
+    entries: number[];
+  } | null>(null);
   const [thresholdNotice, setThresholdNotice] = useState<ThresholdNotice | null>(null);
   const [isUndoMenuOpen, setIsUndoMenuOpen] = useState(false);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
@@ -96,6 +106,8 @@ const TallyCalcOverlay: React.FC<Props> = ({
     setVoiceTranscript('');
     setVoiceFeedback(null);
     setVoiceConfidence(null);
+    setVoiceStep('expression');
+    setPendingVoiceExpression(null);
     setThresholdNotice(null);
     setIsUndoMenuOpen(false);
     previousEntryCountRef.current = initialExpression ? 1 : 0;
@@ -113,6 +125,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
     return () => {
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
+      cancelVoiceReply();
     };
   }, []);
 
@@ -150,6 +163,14 @@ const TallyCalcOverlay: React.FC<Props> = ({
   }, [blockTotal, entries.length, isOpen, sheetTotal]);
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+    cancelVoiceReply();
+    setIsVoiceListening(false);
+    onClose();
+  };
 
   const getSelection = () => {
     const start = expressionRef.current?.selectionStart ?? caretPos;
@@ -294,12 +315,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
     onClose();
   };
 
-  const startVoiceTally = () => {
-    if (isVoiceListening) {
-      voiceRecognitionRef.current?.stop();
-      return;
-    }
-
+  const beginVoiceTally = (requestedStep: VoiceTallyStep = 'expression') => {
     const RecognitionCtor = getSpeechRecognitionCtor();
     if (!RecognitionCtor) {
       setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
@@ -308,7 +324,12 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
     setVoiceTranscript('');
     setVoiceConfidence(null);
-    setVoiceFeedback('Listening... say something like "657 plus 20 plus 20" or "657 plus n plus n".');
+    setVoiceStep(requestedStep);
+    setVoiceFeedback(
+      requestedStep === 'confirm-expression'
+        ? 'Listening... say yes to load the tally now or no to keep speaking.'
+        : 'Listening... say something like "657 plus 20 plus 20" or "657 plus n plus n".'
+    );
 
     const recognition = new RecognitionCtor();
     voiceRecognitionRef.current = recognition;
@@ -323,18 +344,71 @@ const TallyCalcOverlay: React.FC<Props> = ({
     };
     recognition.onresult = event => {
       const { transcript, confidence } = extractRecognitionTranscript(event);
-      const parsed = parseTallyVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
 
+      if (requestedStep === 'confirm-expression') {
+        const answer = parseVoiceBinaryAnswer(transcript);
+        if (answer === 'yes' && pendingVoiceExpression) {
+          saveHistory();
+          applyExpression(pendingVoiceExpression.expression, pendingVoiceExpression.expression.length);
+          const summary = `Loaded ${pendingVoiceExpression.prettyExpression}. Review it, then tap Add To Tally Sheet when ready.`;
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          setVoiceFeedback(summary);
+          void speakVoiceReply(summary, { rate: 1.28 });
+          return;
+        }
+
+        if (answer === 'no') {
+          setPendingVoiceExpression(null);
+          const retryMessage = 'Okay. Keep speaking the tally now. Say equals if you want me to load it right away.';
+          setVoiceFeedback(retryMessage);
+          const beginRetry = () => window.setTimeout(() => beginVoiceTally('expression'), 320);
+          const started = speakVoiceReply(retryMessage, { rate: 1.28, onEnd: beginRetry, onError: beginRetry });
+          if (!started) beginRetry();
+          return;
+        }
+
+        const nextMessage = 'Please say yes to load the tally now, or say no if you want to keep speaking.';
+        setVoiceFeedback(nextMessage);
+        const restartConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
+        const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: restartConfirm, onError: restartConfirm });
+        if (!started) restartConfirm();
+        return;
+      }
+
+      const parsed = parseTallyVoiceTranscript(transcript);
       if (parsed.status === 'match') {
+        if (!parsed.explicitEquals && parsed.entries.length > 0) {
+          setPendingVoiceExpression({
+            expression: parsed.expression,
+            prettyExpression: parsed.prettyExpression,
+            entries: parsed.entries
+          });
+          const nextMessage = `I heard ${parsed.prettyExpression}. Say yes to load it now or no if you want to keep speaking.`;
+          setVoiceFeedback(nextMessage);
+          const beginConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
+          const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: beginConfirm, onError: beginConfirm });
+          if (!started) beginConfirm();
+          return;
+        }
+
         saveHistory();
         applyExpression(parsed.expression, parsed.expression.length);
-        setVoiceFeedback(`Loaded ${parsed.prettyExpression}. Review it, then tap Add To Tally Sheet when ready.`);
-      } else {
-        setVoiceFeedback(parsed.message);
+        setPendingVoiceExpression(null);
+        setVoiceStep('expression');
+        const summary = `Loaded ${parsed.prettyExpression}. Review it, then tap Add To Tally Sheet when ready.`;
+        setVoiceFeedback(summary);
+        void speakVoiceReply(summary, { rate: 1.28 });
+        return;
       }
+
+      setPendingVoiceExpression(null);
+      setVoiceStep('expression');
+      setVoiceFeedback(parsed.message);
+      void speakVoiceReply(parsed.message, { rate: 1.28 });
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -349,9 +423,22 @@ const TallyCalcOverlay: React.FC<Props> = ({
     }
   };
 
+  const startVoiceTally = (requestedStep: VoiceTallyStep = 'expression') => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    cancelVoiceReply();
+    if (requestedStep === 'expression') {
+      setPendingVoiceExpression(null);
+    }
+    beginVoiceTally(requestedStep);
+  };
+
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
 
       <div className="relative flex max-h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
         <div
@@ -368,12 +455,26 @@ const TallyCalcOverlay: React.FC<Props> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-          >
-            <span className="material-icons text-base">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => startVoiceTally('expression')}
+              disabled={!canUseVoiceRecognition}
+              className={`flex h-9 w-9 items-center justify-center rounded-full transition-all active:scale-90 ${
+                isVoiceListening
+                  ? 'bg-primary text-white shadow-md'
+                  : 'bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-300'
+              } ${!canUseVoiceRecognition ? 'opacity-50' : ''}`}
+              title={canUseVoiceRecognition ? 'Voice tally calculator' : 'Voice not available in this browser'}
+            >
+              <span className="material-icons text-base">{isVoiceListening ? 'graphic_eq' : 'mic'}</span>
+            </button>
+            <button
+              onClick={handleClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+            >
+              <span className="material-icons text-base">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="visible-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 sm:px-5">
@@ -605,13 +706,6 @@ const TallyCalcOverlay: React.FC<Props> = ({
         </div>
       )}
 
-      <FloatingVoiceButton
-        active={isVoiceListening}
-        disabled={!canUseVoiceRecognition}
-        label="Voice tally calculator"
-        title={canUseVoiceRecognition ? 'Voice tally calculator' : 'Voice not available in this browser'}
-        onActivate={startVoiceTally}
-      />
     </div>
   );
 };

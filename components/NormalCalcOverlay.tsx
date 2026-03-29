@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import FloatingVoiceButton from './FloatingVoiceButton';
 import type { BrowserSpeechRecognition } from '../utils/voice';
 import {
+  cancelVoiceReply,
   extractRecognitionTranscript,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
-  parseCalculatorVoiceTranscript
+  parseCalculatorVoiceTranscript,
+  parseVoiceBinaryAnswer,
+  speakVoiceReply
 } from '../utils/voice';
 
 type Operator = '+' | '-' | '*' | '/';
@@ -18,6 +20,8 @@ type Token =
 type AstNode =
   | { type: 'number'; raw: string; value: number }
   | { type: 'binary'; op: Operator; left: AstNode; right: AstNode };
+
+type VoiceCalculatorStep = 'expression' | 'confirm-expression';
 
 interface Props {
   isOpen: boolean;
@@ -213,6 +217,13 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [voiceConfidence, setVoiceConfidence] = useState<number | null>(null);
+  const [voiceStep, setVoiceStep] = useState<VoiceCalculatorStep>('expression');
+  const [pendingVoiceExpression, setPendingVoiceExpression] = useState<{
+    expression: string;
+    prettyExpression: string;
+    resultText: string;
+    usesPemdas: boolean;
+  } | null>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
@@ -226,6 +237,8 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setVoiceTranscript('');
     setVoiceFeedback(null);
     setVoiceConfidence(null);
+    setVoiceStep('expression');
+    setPendingVoiceExpression(null);
   }, [isOpen]);
 
   useEffect(() => {
@@ -239,6 +252,7 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     return () => {
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
+      cancelVoiceReply();
     };
   }, []);
 
@@ -247,6 +261,14 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const formulaLine = hasEvaluated && lastFormula ? `${lastFormula} =` : (preview?.pretty || '');
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+    cancelVoiceReply();
+    setIsVoiceListening(false);
+    onClose();
+  };
 
   const getSelection = () => ({
     start: inputRef.current?.selectionStart ?? caretPos,
@@ -261,12 +283,23 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!preserveFormula) setLastFormula('');
   };
 
-  const startVoiceCalculator = () => {
-    if (isVoiceListening) {
-      voiceRecognitionRef.current?.stop();
+  const applyVoiceExpression = (spokenExpression: string, prettyExpression: string) => {
+    const normalized = normalizeExpression(spokenExpression);
+    const nextPreview = findEvaluableExpression(normalized);
+
+    if (!nextPreview) {
+      setVoiceFeedback('I could not safely compute that spoken expression.');
       return;
     }
 
+    const result = formatNumber(nextPreview.result);
+    setLastFormula(prettyExpression || nextPreview.pretty);
+    setExpression(result);
+    setCaretPos(result.length);
+    setHasEvaluated(true);
+  };
+
+  const beginVoiceRecognition = (requestedStep: VoiceCalculatorStep = 'expression') => {
     const RecognitionCtor = getSpeechRecognitionCtor();
     if (!RecognitionCtor) {
       setVoiceFeedback('Voice command is not available in this browser. Use Chrome on Android for the best result.');
@@ -275,7 +308,12 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
 
     setVoiceTranscript('');
     setVoiceConfidence(null);
-    setVoiceFeedback('Listening... say something like "12 plus 45" or "60 times point eight".');
+    setVoiceStep(requestedStep);
+    setVoiceFeedback(
+      requestedStep === 'confirm-expression'
+        ? 'Listening... say yes to calculate now or no to keep speaking.'
+        : 'Listening... say something like "12 plus 45" or "60 times point eight".'
+    );
 
     const recognition = new RecognitionCtor();
     voiceRecognitionRef.current = recognition;
@@ -290,19 +328,82 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     };
     recognition.onresult = event => {
       const { transcript, confidence } = extractRecognitionTranscript(event);
-      const parsed = parseCalculatorVoiceTranscript(transcript);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
 
-      if (parsed.status === 'match') {
-        applyVoiceExpression(parsed.expression, parsed.prettyExpression);
-        const computedPreview = findEvaluableExpression(parsed.expression);
-        const resultText = computedPreview ? formatNumber(computedPreview.result) : '0';
-        setVoiceFeedback(`Computed ${parsed.prettyExpression} = ${resultText}.`);
-      } else {
-        setVoiceFeedback(parsed.message);
+      if (requestedStep === 'confirm-expression') {
+        const answer = parseVoiceBinaryAnswer(transcript);
+        if (answer === 'yes' && pendingVoiceExpression) {
+          applyVoiceExpression(pendingVoiceExpression.expression, pendingVoiceExpression.prettyExpression);
+          const summary = `Computed ${pendingVoiceExpression.prettyExpression} = ${pendingVoiceExpression.resultText}.`;
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          setVoiceFeedback(summary);
+          void speakVoiceReply(summary, { rate: 1.28 });
+          return;
+        }
+
+        if (answer === 'no') {
+          setPendingVoiceExpression(null);
+          const retryMessage = 'Okay. Keep speaking the full expression now. Say equals if you want me to calculate right away.';
+          setVoiceFeedback(retryMessage);
+          const beginRetry = () => window.setTimeout(() => beginVoiceRecognition('expression'), 320);
+          const started = speakVoiceReply(retryMessage, { rate: 1.28, onEnd: beginRetry, onError: beginRetry });
+          if (!started) beginRetry();
+          return;
+        }
+
+        const nextMessage = 'Please say yes if you are finished speaking, or say no if you want to keep speaking.';
+        setVoiceFeedback(nextMessage);
+        const restartConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
+        const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: restartConfirm, onError: restartConfirm });
+        if (!started) restartConfirm();
+        return;
       }
+
+      const parsed = parseCalculatorVoiceTranscript(transcript);
+      if (parsed.status === 'match') {
+        const computedPreview = findEvaluableExpression(parsed.expression);
+        if (!computedPreview) {
+          const nextMessage = 'I heard the math words, but I could not safely compute them. Please say the expression again.';
+          setVoiceFeedback(nextMessage);
+          void speakVoiceReply(nextMessage, { rate: 1.28 });
+          return;
+        }
+
+        const resultText = formatNumber(computedPreview.result);
+        if (!parsed.explicitEquals && parsed.operatorCount > 0) {
+          setPendingVoiceExpression({
+            expression: parsed.expression,
+            prettyExpression: parsed.prettyExpression,
+            resultText,
+            usesPemdas: parsed.usesPemdas
+          });
+          const pemdasMessage = parsed.usesPemdas
+            ? ' I will use PEMDAS, so multiply and divide happen before add and subtract.'
+            : '';
+          const nextMessage = `I heard ${parsed.prettyExpression}.${pemdasMessage} Are you finished speaking? Say yes to calculate now or no to keep speaking.`;
+          setVoiceFeedback(nextMessage);
+          const beginConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
+          const started = speakVoiceReply(nextMessage, { rate: 1.28, onEnd: beginConfirm, onError: beginConfirm });
+          if (!started) beginConfirm();
+          return;
+        }
+
+        applyVoiceExpression(parsed.expression, parsed.prettyExpression);
+        setPendingVoiceExpression(null);
+        setVoiceStep('expression');
+        const summary = `Computed ${parsed.prettyExpression} = ${resultText}.`;
+        setVoiceFeedback(summary);
+        void speakVoiceReply(summary, { rate: 1.28 });
+        return;
+      }
+
+      setPendingVoiceExpression(null);
+      setVoiceStep('expression');
+      setVoiceFeedback(parsed.message);
+      void speakVoiceReply(parsed.message, { rate: 1.28 });
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -315,6 +416,19 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       setVoiceFeedback('Voice recognition could not start. Please try again.');
       setIsVoiceListening(false);
     }
+  };
+
+  const startVoiceCalculator = (requestedStep: VoiceCalculatorStep = 'expression') => {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+
+    cancelVoiceReply();
+    if (requestedStep === 'expression') {
+      setPendingVoiceExpression(null);
+    }
+    beginVoiceRecognition(requestedStep);
   };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -401,25 +515,9 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setHasEvaluated(true);
   };
 
-  const applyVoiceExpression = (spokenExpression: string, prettyExpression: string) => {
-    const normalized = normalizeExpression(spokenExpression);
-    const nextPreview = findEvaluableExpression(normalized);
-
-    if (!nextPreview) {
-      setVoiceFeedback('I could not safely compute that spoken expression.');
-      return;
-    }
-
-    const result = formatNumber(nextPreview.result);
-    setLastFormula(prettyExpression || nextPreview.pretty);
-    setExpression(result);
-    setCaretPos(result.length);
-    setHasEvaluated(true);
-  };
-
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
 
       <div className="relative flex max-h-[92vh] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl animate-fade-in dark:bg-night-charcoal">
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
@@ -433,12 +531,26 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
-          >
-            <span className="material-icons text-base">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => startVoiceCalculator('expression')}
+              disabled={!canUseVoiceRecognition}
+              className={`flex h-9 w-9 items-center justify-center rounded-full transition-all active:scale-90 ${
+                isVoiceListening
+                  ? 'bg-primary text-white shadow-md'
+                  : 'bg-slate-100 text-slate-400 dark:bg-white/10 dark:text-slate-300'
+              } ${!canUseVoiceRecognition ? 'opacity-50' : ''}`}
+              title={canUseVoiceRecognition ? 'Voice calculator' : 'Voice not available in this browser'}
+            >
+              <span className="material-icons text-base">{isVoiceListening ? 'graphic_eq' : 'mic'}</span>
+            </button>
+            <button
+              onClick={handleClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-400 active:scale-90 dark:bg-white/10"
+            >
+              <span className="material-icons text-base">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 visible-scrollbar">
@@ -573,13 +685,6 @@ const NormalCalcOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
-      <FloatingVoiceButton
-        active={isVoiceListening}
-        disabled={!canUseVoiceRecognition}
-        label="Voice calculator"
-        title={canUseVoiceRecognition ? 'Voice calculator' : 'Voice not available in this browser'}
-        onActivate={startVoiceCalculator}
-      />
     </div>
   );
 };

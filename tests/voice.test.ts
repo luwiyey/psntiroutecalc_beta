@@ -86,6 +86,9 @@ describe('parseCalculatorVoiceTranscript', () => {
 
     expect(result.expression).toBe('12+45');
     expect(result.prettyExpression).toBe('12 + 45');
+    expect(result.explicitEquals).toBe(false);
+    expect(result.operatorCount).toBe(1);
+    expect(result.usesPemdas).toBe(false);
   });
 
   it('turns decimal multiplication into an expression', () => {
@@ -98,6 +101,8 @@ describe('parseCalculatorVoiceTranscript', () => {
 
     expect(result.expression).toBe('60*0.8');
     expect(result.prettyExpression).toBe('60 x 0.8');
+    expect(result.explicitEquals).toBe(false);
+    expect(result.operatorCount).toBe(1);
   });
 
   it('accepts compact calculator phrases with an equals ending', () => {
@@ -110,6 +115,20 @@ describe('parseCalculatorVoiceTranscript', () => {
 
     expect(result.expression).toBe('75+67');
     expect(result.prettyExpression).toBe('75 + 67');
+    expect(result.explicitEquals).toBe(true);
+  });
+
+  it('flags mixed operators so calculators can explain pemdas', () => {
+    const result = parseCalculatorVoiceTranscript('10 plus 5 times 2');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched calculator result with mixed operators.');
+    }
+
+    expect(result.expression).toBe('10+5*2');
+    expect(result.operatorCount).toBe(2);
+    expect(result.usesPemdas).toBe(true);
   });
 
   it('returns empty when the transcript has no usable content', () => {
