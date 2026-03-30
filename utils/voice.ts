@@ -493,6 +493,28 @@ const areSimilarSpeechChunks = (leftWords: string[], rightWords: string[]) => {
   return overlap / maxLen >= 0.8;
 };
 
+const areSpeechTokenVariants = (leftWord: string, rightWord: string) => {
+  const left = normalizeSpeechToken(leftWord);
+  const right = normalizeSpeechToken(rightWord);
+
+  if (!left || !right || left === right) {
+    return false;
+  }
+
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+
+  if (shorter.length < 4) {
+    return false;
+  }
+
+  if (longer.startsWith(shorter) || shorter.startsWith(longer)) {
+    return true;
+  }
+
+  return getLevenshteinDistance(left, right) <= 1 && Math.min(left.length, right.length) >= 5;
+};
+
 const collapseRepeatedSpeech = (value: string) => {
   const normalized = cleanWhitespace(value.replace(SPEECH_FILLER_PATTERN, ' '));
   if (!normalized) return '';
@@ -530,9 +552,13 @@ const collapseRepeatedSpeech = (value: string) => {
     const previous = nextWords[nextWords.length - 1];
     if (
       previous &&
-      current === previous &&
-      (current.length > 3 || DEDUPABLE_SHORT_SPEECH_TOKENS.has(current))
+      ((current === previous &&
+        (current.length > 3 || DEDUPABLE_SHORT_SPEECH_TOKENS.has(current))) ||
+        areSpeechTokenVariants(previous, current))
     ) {
+      if (previous && current.length > previous.length && areSpeechTokenVariants(previous, current)) {
+        nextWords[nextWords.length - 1] = current;
+      }
       index += 1;
       continue;
     }
@@ -559,7 +585,7 @@ export const mergeSpeechTranscript = (existing: string, nextChunk: string) => {
   }
 
   if (normalizedNext === normalizedBase || normalizedNext.startsWith(`${normalizedBase} `)) {
-    return next;
+    return collapseRepeatedSpeech(next);
   }
 
   return collapseRepeatedSpeech(`${base} ${next}`);

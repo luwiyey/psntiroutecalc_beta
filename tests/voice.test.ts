@@ -123,6 +123,18 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toContain('Urdaneta');
     expect(result.fareType).toBe('regular');
   });
+
+  it('collapses rolling partial stop fragments from browser speech', () => {
+    const result = parseFareVoiceTranscript('Rosario Rosario Rosari to Urdaneta', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result after rolling fragment cleanup.');
+    }
+
+    expect(result.originStop.name).toContain('Rosario');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+  });
 });
 
 describe('parseCalculatorVoiceTranscript', () => {
