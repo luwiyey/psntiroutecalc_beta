@@ -1300,12 +1300,12 @@ export const speakVoiceReply = (
     return false;
   }
 
-  try {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.lang = options?.lang ?? 'en-PH';
-    utterance.rate = options?.rate ?? 1.45;
-    utterance.pitch = options?.pitch ?? 1;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(message);
+      utterance.lang = options?.lang ?? 'en-PH';
+      utterance.rate = options?.rate ?? 1.6;
+      utterance.pitch = options?.pitch ?? 1;
     utterance.volume = options?.volume ?? 1;
     utterance.onend = () => options?.onEnd?.();
     utterance.onerror = () => options?.onError?.();
@@ -1340,14 +1340,14 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   if (!normalized) return null;
 
   if (
-    /\b(yes|yeah|yep|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na|im done|i m done|okay done|ok done|done na|tapos na)\b/.test(
+    /\b(yes|yeah|yea|yep|yup|yas|ya|uh huh|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na|correct|tama|thats right|that s right|right|affirmative|im done|i m done|yes im done|yes i m done|yes done|okay done|ok done|done na|tapos na)\b/.test(
       normalized
     )
   ) {
     return 'yes';
   }
 
-  if (/\b(no|nope|exit|stop|close|finish|done|cancel|end|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
+  if (/\b(no|nope|exit|stop|close|finish|cancel|end|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
     return 'no';
   }
 

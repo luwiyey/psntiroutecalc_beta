@@ -39,8 +39,8 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toBe('Dau');
     expect(result.fareType).toBe('regular');
     expect(result.distance).toBe(94);
-    expect(result.regularFare).toBe(254);
-    expect(result.discountedFare).toBe(203);
+    expect(result.regularFare).toBe(221);
+    expect(result.discountedFare).toBe(177);
   });
 
   it('rejects the same stop for origin and destination', () => {
@@ -268,6 +268,10 @@ describe('parseCashVoiceTranscript', () => {
 describe('parseVoiceBinaryAnswer', () => {
   it('matches Taglish yes responses', () => {
     expect(parseVoiceBinaryAnswer('oo susunod')).toBe('yes');
+  });
+
+  it('matches short yes responses that browsers often return in noise', () => {
+    expect(parseVoiceBinaryAnswer('ya tama')).toBe('yes');
   });
 
   it('matches Taglish no responses', () => {

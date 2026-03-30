@@ -7,6 +7,7 @@ import { consumePendingMapsReturnRefresh } from '../utils/google-maps';
 import type { MapPickerPoint } from './MapPickerOverlay';
 import type { VoiceChangePreset } from './ConductorCalcOverlay';
 import { useAuth } from '../context/AuthContext';
+import type { Stop } from '../types';
 import type {
   CurrentLocationSnapshot,
   LocationPermissionState,
@@ -43,6 +44,7 @@ import type {
 import {
   cancelVoiceReply,
   extractRecognitionTranscript,
+  findTopStopVoiceSuggestions,
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
@@ -52,14 +54,30 @@ import {
   parseCashVoiceTranscript,
   parseFareTypeVoiceAnswer,
   parseFareVoiceTranscript,
+  parsePassengerCountVoiceTranscript,
+  parseStopVoiceTranscript,
   speakVoiceReply
 } from '../utils/voice';
 import { trackAnalyticsEvent } from '../utils/analytics';
 
 const peso = '\u20B1';
 const RECENT_FARE_LIMIT = 4;
-type VoiceAssistantStep = 'fare' | 'fare-type' | 'cash' | 'done-check' | 'next-passenger' | 'confirm';
+type VoiceAssistantStep =
+  | 'fare'
+  | 'fare-type'
+  | 'passenger-count'
+  | 'cash'
+  | 'done-check'
+  | 'next-passenger'
+  | 'confirm';
 type MatchedFareVoiceResult = Extract<FareVoiceParseResult, { status: 'match' }>;
+interface VoiceRouteClarificationContext {
+  routePart: 'origin' | 'destination';
+  otherStop: Stop;
+  fareType: FareTypeVoiceAnswer | 'either';
+  ambiguousLabel: string;
+  candidateStops: Stop[];
+}
 type VoiceConfirmationAction =
   | {
       kind: 'fare-match';
@@ -117,6 +135,7 @@ const CalcScreen: React.FC = () => {
   const [voiceResult, setVoiceResult] = useState<FareVoiceParseResult | null>(null);
   const [voiceStep, setVoiceStep] = useState<VoiceAssistantStep>('fare');
   const [pendingVoiceFare, setPendingVoiceFare] = useState<MatchedFareVoiceResult | null>(null);
+  const [voicePassengerCount, setVoicePassengerCount] = useState<number | null>(null);
   const [voiceCashAmount, setVoiceCashAmount] = useState<number | null>(null);
   const [voiceChangePreset, setVoiceChangePreset] = useState<VoiceChangePreset | null>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -130,8 +149,10 @@ const CalcScreen: React.FC = () => {
   const pendingVoiceFareRef = useRef<MatchedFareVoiceResult | null>(null);
   const lastResolvedVoiceFareRef = useRef<MatchedFareVoiceResult | null>(null);
   const activeVoiceFareRef = useRef<MatchedFareVoiceResult | null>(null);
+  const activeVoicePassengerCountRef = useRef<number | null>(null);
   const lastVoiceCashAmountRef = useRef<number | null>(null);
   const pendingVoiceConfirmationRef = useRef<VoiceConfirmationAction | null>(null);
+  const pendingVoiceClarificationRef = useRef<VoiceRouteClarificationContext | null>(null);
   const inAppBrowser = useMemo(() => isLikelyInAppBrowser(), []);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
@@ -183,6 +204,7 @@ const CalcScreen: React.FC = () => {
     setVoiceResult(null);
     setVoiceStep('fare');
     setPendingVoiceFare(null);
+    setVoicePassengerCount(null);
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setIsVoiceListening(false);
@@ -203,8 +225,10 @@ const CalcScreen: React.FC = () => {
     pendingVoiceFareRef.current = null;
     lastResolvedVoiceFareRef.current = null;
     activeVoiceFareRef.current = null;
+    activeVoicePassengerCountRef.current = null;
     lastVoiceCashAmountRef.current = null;
     pendingVoiceConfirmationRef.current = null;
+    pendingVoiceClarificationRef.current = null;
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
   }, [activeRoute.id]);
@@ -226,6 +250,7 @@ const CalcScreen: React.FC = () => {
       voiceTranscriptHandledRef.current = false;
       activeVoiceFareRef.current = null;
       pendingVoiceConfirmationRef.current = null;
+      pendingVoiceClarificationRef.current = null;
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
     };
@@ -467,6 +492,7 @@ const CalcScreen: React.FC = () => {
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
     pendingVoiceConfirmationRef.current = null;
+    pendingVoiceClarificationRef.current = null;
     setIsVoiceListening(false);
     setVoiceTranscript('');
     setVoiceConfidence(null);
@@ -476,6 +502,8 @@ const CalcScreen: React.FC = () => {
     voiceResultRef.current = null;
     pendingVoiceFareRef.current = null;
     activeVoiceFareRef.current = null;
+    activeVoicePassengerCountRef.current = null;
+    setVoicePassengerCount(null);
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('fare');
@@ -499,10 +527,13 @@ const CalcScreen: React.FC = () => {
     voiceResultRef.current = null;
     pendingVoiceFareRef.current = null;
     activeVoiceFareRef.current = null;
+    activeVoicePassengerCountRef.current = null;
+    setVoicePassengerCount(null);
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('fare');
     pendingVoiceConfirmationRef.current = null;
+    pendingVoiceClarificationRef.current = null;
 
     const hidePanel = () => {
       setVoiceFeedback(null);
@@ -510,10 +541,12 @@ const CalcScreen: React.FC = () => {
       setVoiceConfidence(null);
       setVoiceResult(null);
       setPendingVoiceFare(null);
+      setVoicePassengerCount(null);
       setVoiceCashAmount(null);
       setVoiceChangePreset(null);
       setVoiceStep('fare');
       activeVoiceFareRef.current = null;
+      activeVoicePassengerCountRef.current = null;
     };
 
     const started = speakVoiceReply(message, {
@@ -529,11 +562,15 @@ const CalcScreen: React.FC = () => {
   const getListeningPrompt = (step: VoiceAssistantStep) => {
     switch (step) {
       case 'fare':
-        return lastResolvedVoiceFareRef.current
-          ? 'Listening... say a fare like "Bayambang to Baguio discounted", or say same route.'
-          : 'Listening... say a fare like "Bayambang to Baguio discounted".';
+        return pendingVoiceClarificationRef.current
+          ? 'Listening... say the city, municipality, province, or nearby KM-post landmark.'
+          : lastResolvedVoiceFareRef.current
+            ? 'Listening... say a fare like "Bayambang to Baguio discounted", or say same route.'
+            : 'Listening... say a fare like "Bayambang to Baguio discounted".';
       case 'fare-type':
         return 'Listening... say regular or discounted.';
+      case 'passenger-count':
+        return 'Listening... say how many passengers, like one passenger or two passengers.';
       case 'cash':
         return lastVoiceCashAmountRef.current
           ? `Listening... say how much is their money, or say same amount for ${lastVoiceCashAmountRef.current} pesos.`
@@ -550,9 +587,13 @@ const CalcScreen: React.FC = () => {
   const getNoSpeechPrompt = (step: VoiceAssistantStep) => {
     switch (step) {
       case 'fare':
-        return 'I am still here. Please say the pickup and destination again, or say same route.';
+        return pendingVoiceClarificationRef.current
+          ? `I am still here. Please say where ${pendingVoiceClarificationRef.current.ambiguousLabel} is near, like the city, municipality, province, or nearby KM-post landmark.`
+          : 'I am still here. Please say the pickup and destination again, or say same route.';
       case 'fare-type':
         return 'I am still here. Please say regular or discounted. I will keep waiting for your answer.';
+      case 'passenger-count':
+        return 'I am still here. Please say how many passengers there are, like one passenger or two passengers.';
       case 'cash':
         return lastVoiceCashAmountRef.current
           ? `I am still here. Please say how much is their money, or say same amount for ${lastVoiceCashAmountRef.current} pesos.`
@@ -568,22 +609,302 @@ const CalcScreen: React.FC = () => {
 
   const getVoiceSilenceDelay = (step: VoiceAssistantStep, hasFinal: boolean) => {
     if (hasFinal) {
-      return step === 'cash' ? 2600 : step === 'fare-type' ? 2200 : step === 'done-check' ? 2000 : step === 'next-passenger' ? 2000 : 1200;
+      switch (step) {
+        case 'cash':
+          return 260;
+        case 'fare-type':
+          return 220;
+        case 'passenger-count':
+          return 220;
+        case 'done-check':
+          return 200;
+        case 'next-passenger':
+          return 260;
+        case 'confirm':
+          return 180;
+        case 'fare':
+        default:
+          return 320;
+      }
     }
 
     switch (step) {
       case 'cash':
-        return 7600;
+        return 1800;
       case 'done-check':
-        return 6200;
+        return 1300;
       case 'next-passenger':
-        return 6200;
+        return 1600;
       case 'fare-type':
-        return 7200;
+        return 1500;
+      case 'passenger-count':
+        return 1500;
+      case 'confirm':
+        return 1100;
       case 'fare':
       default:
-        return 5200;
+        return 1800;
     }
+  };
+
+  const buildMatchedFareFromStops = (
+    nextOriginStop: Stop,
+    nextDestinationStop: Stop,
+    nextFareType: FareTypeVoiceAnswer | 'either'
+  ): MatchedFareVoiceResult => {
+    const nextDistance = Math.abs(nextDestinationStop.km - nextOriginStop.km);
+    const nextCalculation = calculateFare(nextDistance, activeRoute.fare);
+
+    return {
+      status: 'match',
+      transcript: `${nextOriginStop.name} to ${nextDestinationStop.name}`,
+      normalized: `${nextOriginStop.name.toLowerCase()} to ${nextDestinationStop.name.toLowerCase()}`,
+      fareType: nextFareType,
+      originStop: nextOriginStop,
+      destinationStop: nextDestinationStop,
+      distance: nextDistance,
+      regularFare: nextCalculation.reg,
+      discountedFare: nextCalculation.disc
+    };
+  };
+
+  const splitFareQueries = (value: string) => {
+    const normalized = value
+      .toLowerCase()
+      .replace(/\bti\b/g, ' to ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const connectorMatch = normalized.match(/\bto\b/);
+
+    if (!connectorMatch?.index && connectorMatch?.index !== 0) {
+      return null;
+    }
+
+    const originQuery = normalized
+      .slice(0, connectorMatch.index)
+      .replace(/\bfrom\b/g, ' ')
+      .trim();
+    const destinationQuery = normalized
+      .slice(connectorMatch.index + connectorMatch[0].length)
+      .trim();
+
+    if (!originQuery || !destinationQuery) {
+      return null;
+    }
+
+    return { originQuery, destinationQuery };
+  };
+
+  const describeStopChoices = (choices: Stop[]) => choices.map(choice => choice.name).join(', ');
+
+  const buildLandmarkClarificationMessage = (
+    context: VoiceRouteClarificationContext,
+    options?: { followUp?: boolean }
+  ) => {
+    const subject = context.ambiguousLabel || (context.routePart === 'origin' ? 'that pickup' : 'that destination');
+    const baseMessage = options?.followUp
+      ? `I still need to know which ${context.routePart} stop you mean for ${subject}. Please say the city, municipality, province, or a nearby KM-post landmark.`
+      : `I heard ${subject} as the ${context.routePart}. Which city, municipality, province, or nearby KM-post landmark is it near?`;
+
+    if (context.candidateStops.length > 0) {
+      return `${baseMessage} Closest KM-post matches are ${describeStopChoices(context.candidateStops)}.`;
+    }
+
+    return baseMessage;
+  };
+
+  const buildRouteClarificationFromTranscript = (
+    transcript: string,
+    fallbackFareType: FareTypeVoiceAnswer | 'either' = 'either'
+  ) => {
+    const splitQueries = splitFareQueries(transcript);
+    if (!splitQueries) {
+      return null;
+    }
+
+    const originResult = parseStopVoiceTranscript(splitQueries.originQuery, activeRoute);
+    const destinationResult = parseStopVoiceTranscript(splitQueries.destinationQuery, activeRoute);
+    const detectedFareType = parseFareTypeVoiceAnswer(transcript) ?? fallbackFareType;
+
+    const createContext = (
+      routePart: 'origin' | 'destination',
+      ambiguousLabel: string,
+      otherStop: Stop,
+      candidateStops: Stop[]
+    ) => {
+      const nextContext: VoiceRouteClarificationContext = {
+        routePart,
+        ambiguousLabel,
+        otherStop,
+        fareType: detectedFareType,
+        candidateStops
+      };
+
+      return {
+        context: nextContext,
+        message: buildLandmarkClarificationMessage(nextContext)
+      };
+    };
+
+    if (originResult.status === 'match' && destinationResult.status !== 'match') {
+      const destinationCandidates =
+        destinationResult.suggestions && destinationResult.suggestions.length > 0
+          ? destinationResult.suggestions
+          : findTopStopVoiceSuggestions(splitQueries.destinationQuery, activeRoute, 4);
+      return createContext(
+        'destination',
+        splitQueries.destinationQuery,
+        originResult.stop,
+        destinationCandidates.filter(candidate => candidate.name !== originResult.stop.name)
+      );
+    }
+
+    if (destinationResult.status === 'match' && originResult.status !== 'match') {
+      const originCandidates =
+        originResult.suggestions && originResult.suggestions.length > 0
+          ? originResult.suggestions
+          : findTopStopVoiceSuggestions(splitQueries.originQuery, activeRoute, 4);
+      return createContext(
+        'origin',
+        splitQueries.originQuery,
+        destinationResult.stop,
+        originCandidates.filter(candidate => candidate.name !== destinationResult.stop.name)
+      );
+    }
+
+    return null;
+  };
+
+  const resolvePendingRouteClarification = (replyTranscript: string) => {
+    const clarification = pendingVoiceClarificationRef.current;
+    if (!clarification) {
+      return null;
+    }
+
+    const queryVariants = [
+      replyTranscript,
+      `${clarification.ambiguousLabel} ${replyTranscript}`.trim(),
+      `${replyTranscript} ${clarification.ambiguousLabel}`.trim()
+    ];
+
+    const aggregatedCandidates: Stop[] = [];
+    queryVariants.forEach(query => {
+      findTopStopVoiceSuggestions(query, activeRoute, 6).forEach(candidate => {
+        if (!aggregatedCandidates.some(existing => existing.name === candidate.name)) {
+          aggregatedCandidates.push(candidate);
+        }
+      });
+    });
+
+    const allowedNames = new Set(clarification.candidateStops.map(stop => stop.name));
+    const narrowedCandidates =
+      allowedNames.size > 0
+        ? aggregatedCandidates.filter(candidate => allowedNames.has(candidate.name))
+        : aggregatedCandidates;
+
+    const candidates = narrowedCandidates.length > 0 ? narrowedCandidates : aggregatedCandidates;
+
+    if (candidates.length === 0) {
+      return {
+        status: 'retry' as const,
+        context: clarification,
+        message: buildLandmarkClarificationMessage(clarification, { followUp: true })
+      };
+    }
+
+    if (candidates.length > 1) {
+      const nextContext: VoiceRouteClarificationContext = {
+        ...clarification,
+        candidateStops: candidates.slice(0, 4)
+      };
+      return {
+        status: 'retry' as const,
+        context: nextContext,
+        message: buildLandmarkClarificationMessage(nextContext, { followUp: true })
+      };
+    }
+
+    const resolvedStop = candidates[0];
+    const matchedFare =
+      clarification.routePart === 'origin'
+        ? buildMatchedFareFromStops(resolvedStop, clarification.otherStop, clarification.fareType)
+        : buildMatchedFareFromStops(clarification.otherStop, resolvedStop, clarification.fareType);
+
+    return {
+      status: 'resolved' as const,
+      matchedFare
+    };
+  };
+
+  const parseFareStepBinaryAnswer = (
+    step: Extract<VoiceAssistantStep, 'confirm' | 'done-check' | 'next-passenger'>,
+    transcript: string
+  ): 'yes' | 'no' | null => {
+    const normalized = transcript
+      .toLowerCase()
+      .replace(/[^a-z0-9\s']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    const matches = (pattern: RegExp) => pattern.test(normalized);
+
+    if (step === 'done-check') {
+      if (
+        matches(
+          /\b(yes|yeah|yea|yep|yup|yas|oo|opo|sige|okay|ok|correct|tama|yes done|im done|i m done|done|done na|tapos|tapos na|finished|all done|yes im done|yes i m done)\b/
+        )
+      ) {
+        return 'yes';
+      }
+
+      if (
+        matches(
+          /\b(no|nope|not yet|hindi|hindi pa|another|again|one more|next passenger|compute again|huwag muna|wag muna)\b/
+        )
+      ) {
+        return 'no';
+      }
+
+      return null;
+    }
+
+    if (step === 'next-passenger') {
+      if (
+        matches(
+          /\b(yes|yeah|yea|yep|yup|yas|oo|opo|continue|another|again|more|next passenger|go on|sunod|susunod|sige)\b/
+        )
+      ) {
+        return 'yes';
+      }
+
+      if (
+        matches(
+          /\b(no|nope|exit|stop|close|cancel|end|done|finished|tapos|tapos na|labas|tama na|ayaw)\b/
+        )
+      ) {
+        return 'no';
+      }
+
+      return null;
+    }
+
+    if (
+      matches(
+        /\b(yes|yeah|yea|yep|yup|yas|oo|opo|correct|tama|right|affirmative|that s right|thats right)\b/
+      )
+    ) {
+      return 'yes';
+    }
+
+    if (matches(/\b(no|nope|wrong|mali|not that|hindi|hindi iyon|hindi yun)\b/)) {
+      return 'no';
+    }
+
+    return null;
   };
 
   const queueVoicePrompt = (message: string, nextStep: VoiceAssistantStep | null) => {
@@ -621,6 +942,16 @@ const CalcScreen: React.FC = () => {
   const getResolvedFareAmount = (matchedFare: MatchedFareVoiceResult) =>
     matchedFare.fareType === 'discounted' ? matchedFare.discountedFare : matchedFare.regularFare;
 
+  const setActiveVoicePassengerCount = (nextPassengerCount: number | null) => {
+    activeVoicePassengerCountRef.current = nextPassengerCount;
+    setVoicePassengerCount(nextPassengerCount);
+  };
+
+  const getResolvedFareTotal = (
+    matchedFare: MatchedFareVoiceResult,
+    passengerCount = Math.max(activeVoicePassengerCountRef.current ?? 1, 1)
+  ) => Number((getResolvedFareAmount(matchedFare) * passengerCount).toFixed(2));
+
   const getResolvedFareLabel = (matchedFare: MatchedFareVoiceResult) =>
     matchedFare.fareType === 'discounted' ? 'Discounted' : 'Regular';
 
@@ -649,24 +980,12 @@ const CalcScreen: React.FC = () => {
       return null;
     }
 
-    const nextDistance = Math.abs(nextDestStop.km - nextOriginStop.km);
-    const nextCalculation = calculateFare(nextDistance, activeRoute.fare);
     const nextFareType =
       smartResult.fareType === 'regular' || smartResult.fareType === 'discounted'
         ? smartResult.fareType
         : 'either';
 
-    return {
-      status: 'match',
-      transcript: smartResult.correctedTranscript || `${nextOriginStop.name} to ${nextDestStop.name}`,
-      normalized: (smartResult.correctedTranscript || `${nextOriginStop.name} to ${nextDestStop.name}`).toLowerCase(),
-      fareType: nextFareType,
-      originStop: nextOriginStop,
-      destinationStop: nextDestStop,
-      distance: nextDistance,
-      regularFare: nextCalculation.reg,
-      discountedFare: nextCalculation.disc
-    };
+    return buildMatchedFareFromStops(nextOriginStop, nextDestStop, nextFareType);
   };
 
   const buildScreenFareContext = (
@@ -830,7 +1149,7 @@ const CalcScreen: React.FC = () => {
     speakPromptAndListen(queuedPrompt.message, queuedPrompt.nextStep);
   };
 
-  const beginCashFollowUp = (
+  const beginPassengerCountFollowUp = (
     matchedFare: MatchedFareVoiceResult,
     mode: 'queued' | 'immediate' = 'queued'
   ) => {
@@ -842,13 +1161,46 @@ const CalcScreen: React.FC = () => {
     setPendingVoiceFare(matchedFare);
     voiceResultRef.current = matchedFare;
     pendingVoiceFareRef.current = matchedFare;
+    setActiveVoicePassengerCount(null);
+    setVoiceCashAmount(null);
+    setVoiceChangePreset(null);
+    setVoiceStep('passenger-count');
+
+    const fareAmount = getResolvedFareAmount(matchedFare);
+    const nextMessage = `${getResolvedFareLabel(matchedFare)} fare from ${matchedFare.originStop.name} to ${matchedFare.destinationStop.name} is ${fareAmount} pesos each. How many passengers?`;
+
+    if (mode === 'queued') {
+      setVoiceFeedback(nextMessage);
+      queueVoicePrompt(nextMessage, 'passenger-count');
+      return;
+    }
+
+    speakPromptAndListen(nextMessage, 'passenger-count');
+  };
+
+  const beginCashFollowUp = (
+    matchedFare: MatchedFareVoiceResult,
+    passengerCount: number,
+    mode: 'queued' | 'immediate' = 'queued'
+  ) => {
+    pendingVoiceConfirmationRef.current = null;
+    applyVoiceRouteSelection(matchedFare);
+    lastResolvedVoiceFareRef.current = matchedFare;
+    activeVoiceFareRef.current = matchedFare;
+    setVoiceResult(matchedFare);
+    setPendingVoiceFare(matchedFare);
+    voiceResultRef.current = matchedFare;
+    pendingVoiceFareRef.current = matchedFare;
+    setActiveVoicePassengerCount(passengerCount);
     setVoiceCashAmount(null);
     setVoiceChangePreset(null);
     setVoiceStep('cash');
 
     const fareAmount = getResolvedFareAmount(matchedFare);
+    const totalFareAmount = getResolvedFareTotal(matchedFare, passengerCount);
     const sameCashHint = lastVoiceCashAmountRef.current ? ' You can also say same amount.' : '';
-    const nextMessage = `${getResolvedFareLabel(matchedFare)} fare from ${matchedFare.originStop.name} to ${matchedFare.destinationStop.name} is ${fareAmount} pesos. How much is their money?${sameCashHint}`;
+    const passengerLabel = passengerCount === 1 ? 'passenger' : 'passengers';
+    const nextMessage = `${getResolvedFareLabel(matchedFare)} fare from ${matchedFare.originStop.name} to ${matchedFare.destinationStop.name} is ${fareAmount} pesos each. For ${passengerCount} ${passengerLabel}, total fare is ${totalFareAmount} pesos. How much is their money?${sameCashHint}`;
 
     if (mode === 'queued') {
       setVoiceFeedback(nextMessage);
@@ -861,6 +1213,7 @@ const CalcScreen: React.FC = () => {
 
   const beginNextPassengerFollowUp = (
     matchedFare: MatchedFareVoiceResult,
+    passengerCount: number,
     cashAmount: number,
     changeAmount: number,
     summary: string
@@ -872,14 +1225,20 @@ const CalcScreen: React.FC = () => {
     voiceResultRef.current = matchedFare;
     pendingVoiceFareRef.current = null;
     activeVoiceFareRef.current = matchedFare;
+    setActiveVoicePassengerCount(passengerCount);
     setVoiceCashAmount(cashAmount);
     setVoiceStep('done-check');
     setVoiceFeedback(nextMessage);
     queueVoicePrompt(nextMessage, 'done-check');
   };
 
-  const finishVoiceChangeFlow = (matchedFare: MatchedFareVoiceResult, cashAmount: number) => {
+  const finishVoiceChangeFlow = (
+    matchedFare: MatchedFareVoiceResult,
+    cashAmount: number,
+    passengerCount = Math.max(activeVoicePassengerCountRef.current ?? 1, 1)
+  ) => {
     pendingVoiceConfirmationRef.current = null;
+    pendingVoiceClarificationRef.current = null;
     applyVoiceRouteSelection(matchedFare);
     lastResolvedVoiceFareRef.current = matchedFare;
     lastVoiceCashAmountRef.current = cashAmount;
@@ -887,14 +1246,16 @@ const CalcScreen: React.FC = () => {
     setPendingVoiceFare(null);
     voiceResultRef.current = matchedFare;
     pendingVoiceFareRef.current = null;
+    setActiveVoicePassengerCount(passengerCount);
     setVoiceCashAmount(cashAmount);
 
-    const fareAmount = getResolvedFareAmount(matchedFare);
+    const fareAmount = getResolvedFareTotal(matchedFare, passengerCount);
     const changeAmount = Number((cashAmount - fareAmount).toFixed(2));
+    const passengerLabel = passengerCount === 1 ? 'passenger' : 'passengers';
     const summary =
       changeAmount >= 0
-        ? `${getResolvedFareLabel(matchedFare)} fare is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Change is ${changeAmount} pesos.`
-        : `${getResolvedFareLabel(matchedFare)} fare is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Still lacking ${Math.abs(changeAmount)} pesos.`;
+        ? `${getResolvedFareLabel(matchedFare)} fare for ${passengerCount} ${passengerLabel} is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Change is ${changeAmount} pesos.`
+        : `${getResolvedFareLabel(matchedFare)} fare for ${passengerCount} ${passengerLabel} is ${fareAmount} pesos. Passenger money is ${cashAmount} pesos. Still lacking ${Math.abs(changeAmount)} pesos.`;
 
     setVoiceFeedback(summary);
     setVoiceChangePreset({
@@ -904,11 +1265,12 @@ const CalcScreen: React.FC = () => {
       summary
     });
     setIsConductorCalcOpen(true);
-    beginNextPassengerFollowUp(matchedFare, cashAmount, changeAmount, summary);
+    beginNextPassengerFollowUp(matchedFare, passengerCount, cashAmount, changeAmount, summary);
     showToast('Voice change result ready.', 'success');
   };
 
   const handleMatchedFare = (matchedFare: MatchedFareVoiceResult, mode: 'queued' | 'immediate' = 'queued') => {
+    pendingVoiceClarificationRef.current = null;
     if (matchedFare.fareType === 'either') {
       applyVoiceRouteSelection(matchedFare);
       activeVoiceFareRef.current = matchedFare;
@@ -932,8 +1294,8 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    beginCashFollowUp(matchedFare, mode);
-    showToast('Voice fare heard. Asking for passenger money.', 'success');
+    beginPassengerCountFollowUp(matchedFare, mode);
+    showToast('Voice fare heard. Asking for passenger count.', 'success');
   };
 
   const applyVoiceFare = () => {
@@ -944,7 +1306,7 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    beginCashFollowUp(voiceResult, 'immediate');
+    beginPassengerCountFollowUp(voiceResult, 'immediate');
   };
 
   const applyVoiceFareTypeChoice = (nextFareType: FareTypeVoiceAnswer) => {
@@ -957,7 +1319,7 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    beginCashFollowUp(resolveVoiceFareType(baseFare, nextFareType), 'immediate');
+    beginPassengerCountFollowUp(resolveVoiceFareType(baseFare, nextFareType), 'immediate');
   };
 
   const handleVoiceConfirmationChoice = (confirmed: boolean) => {
@@ -1020,73 +1382,109 @@ const CalcScreen: React.FC = () => {
     }
 
     voiceTranscriptHandledRef.current = true;
-    const smartResult = await analyzeSmartVoiceTranscript({
-      step: requestedStep,
-      transcript: trimmedTranscript,
-      routeLabel: activeRoute.label,
-      routeStops: activeRoute.stops.map(stop => ({
-        name: stop.name,
-        km: stop.km,
-        aliases: stop.aliases ?? []
-      })),
-      activeFare: (() => {
-        const activeFare = getActiveVoiceFareContext('fare-type');
-        if (!activeFare) return null;
-        return {
-          originStopName: activeFare.originStop.name,
-          destinationStopName: activeFare.destinationStop.name,
-          fareType: activeFare.fareType
-        };
-      })(),
-      lastResolvedFare: lastResolvedVoiceFareRef.current
-        ? {
-            originStopName: lastResolvedVoiceFareRef.current.originStop.name,
-            destinationStopName: lastResolvedVoiceFareRef.current.destinationStop.name,
-            fareType: lastResolvedVoiceFareRef.current.fareType
-          }
-        : null,
-      lastCashAmount: lastVoiceCashAmountRef.current
-    });
-
-    const effectiveTranscript = smartResult?.correctedTranscript?.trim() || trimmedTranscript;
-    const smartConfidence = smartResult?.confidence ?? null;
-    const smartFareType =
-      smartResult?.fareType === 'regular' || smartResult?.fareType === 'discounted'
-        ? smartResult.fareType
-        : null;
-    const smartBinaryAnswer =
-      smartResult && smartResult.binaryAnswer !== 'unknown' ? smartResult.binaryAnswer : null;
-    const smartCashAmount =
-      typeof smartResult?.cashAmount === 'number' && Number.isFinite(smartResult.cashAmount)
-        ? smartResult.cashAmount
-        : null;
-    const smartShortcut: FareConversationShortcut | null =
-      smartResult && smartResult.shortcut !== 'none'
-        ? smartResult.shortcut === 'same-route'
-          ? {
-              command: 'same-route',
-              fareType: smartFareType
-            }
-          : smartResult.shortcut === 'same-cash'
-            ? { command: 'same-cash' }
-            : { command: 'new-route' }
-        : null;
-    const smartMatchedFare = buildMatchedFareFromSmartVoice(smartResult);
-    const smartClarificationMessage = smartResult?.clarificationQuestion
-      ? [
-          smartResult.clarificationQuestion,
-          smartResult.clarificationChoices.length > 0
-            ? `Choices: ${smartResult.clarificationChoices.join(', ')}.`
-            : ''
-        ]
-          .filter(Boolean)
-          .join(' ')
-      : null;
-
-    setVoiceTranscript(effectiveTranscript);
+    setVoiceTranscript(trimmedTranscript);
     setVoiceConfidence(confidence);
 
-    const shiftCommand = parseShiftVoiceCommand(effectiveTranscript);
+    let smartAnalysisPromise:
+      | Promise<{
+          smartResult: SmartVoiceAssistResult | null;
+          effectiveTranscript: string;
+          smartConfidence: SmartVoiceConfidence | null;
+          smartFareType: FareTypeVoiceAnswer | null;
+          smartBinaryAnswer: 'yes' | 'no' | null;
+          smartCashAmount: number | null;
+          smartShortcut: FareConversationShortcut | null;
+          smartMatchedFare: MatchedFareVoiceResult | null;
+          smartClarificationMessage: string | null;
+        } | null>
+      | null = null;
+
+    const getSmartAnalysis = async () => {
+      if (smartAnalysisPromise) {
+        return smartAnalysisPromise;
+      }
+
+      smartAnalysisPromise = (async () => {
+        const smartResult = await analyzeSmartVoiceTranscript({
+          step: requestedStep === 'passenger-count' ? 'cash' : requestedStep,
+          transcript: trimmedTranscript,
+          routeLabel: activeRoute.label,
+          routeStops: activeRoute.stops.map(stop => ({
+            name: stop.name,
+            km: stop.km,
+            aliases: stop.aliases ?? []
+          })),
+          activeFare: (() => {
+            const activeFare = getActiveVoiceFareContext('fare-type');
+            if (!activeFare) return null;
+            return {
+              originStopName: activeFare.originStop.name,
+              destinationStopName: activeFare.destinationStop.name,
+              fareType: activeFare.fareType
+            };
+          })(),
+          lastResolvedFare: lastResolvedVoiceFareRef.current
+            ? {
+                originStopName: lastResolvedVoiceFareRef.current.originStop.name,
+                destinationStopName: lastResolvedVoiceFareRef.current.destinationStop.name,
+                fareType: lastResolvedVoiceFareRef.current.fareType
+              }
+            : null,
+          lastCashAmount: lastVoiceCashAmountRef.current
+        });
+
+        if (!smartResult) {
+          return null;
+        }
+
+        const effectiveTranscript = smartResult.correctedTranscript?.trim() || trimmedTranscript;
+        const smartFareType =
+          smartResult.fareType === 'regular' || smartResult.fareType === 'discounted'
+            ? smartResult.fareType
+            : null;
+
+        const smartShortcut: FareConversationShortcut | null =
+          smartResult.shortcut !== 'none'
+            ? smartResult.shortcut === 'same-route'
+              ? {
+                  command: 'same-route',
+                  fareType: smartFareType
+                }
+              : smartResult.shortcut === 'same-cash'
+                ? { command: 'same-cash' }
+                : { command: 'new-route' }
+            : null;
+
+        return {
+          smartResult,
+          effectiveTranscript,
+          smartConfidence: smartResult.confidence ?? null,
+          smartFareType,
+          smartBinaryAnswer:
+            smartResult.binaryAnswer !== 'unknown' ? smartResult.binaryAnswer : null,
+          smartCashAmount:
+            typeof smartResult.cashAmount === 'number' && Number.isFinite(smartResult.cashAmount)
+              ? smartResult.cashAmount
+              : null,
+          smartShortcut,
+          smartMatchedFare: buildMatchedFareFromSmartVoice(smartResult),
+          smartClarificationMessage: smartResult.clarificationQuestion
+            ? [
+                smartResult.clarificationQuestion,
+                smartResult.clarificationChoices.length > 0
+                  ? `Choices: ${smartResult.clarificationChoices.join(', ')}.`
+                  : ''
+              ]
+                .filter(Boolean)
+                .join(' ')
+            : null
+        };
+      })();
+
+      return smartAnalysisPromise;
+    };
+
+    const shiftCommand = parseShiftVoiceCommand(trimmedTranscript);
     if (shiftCommand.status === 'match') {
       if (shiftCommand.command === 'start-shift') {
         const startedShift = startShift('manual');
@@ -1106,16 +1504,18 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(effectiveTranscript)) {
+    if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(trimmedTranscript)) {
       pendingVoiceConfirmationRef.current = null;
       closeVoicePanelAfterReply('Voice assistant cancelled.');
       return;
     }
 
-    if (/\b(are you still there|still there|nandiyan ka pa|naririnig mo ako|hello)\b/i.test(effectiveTranscript)) {
+    if (/\b(are you still there|still there|nandiyan ka pa|naririnig mo ako|hello)\b/i.test(trimmedTranscript)) {
       const stillHereMessage =
         requestedStep === 'cash'
           ? 'Yes, I am still here. Please say how much is their money, or say same amount.'
+          : requestedStep === 'passenger-count'
+            ? 'Yes, I am still here. Please say how many passengers there are.'
           : requestedStep === 'done-check'
             ? 'Yes, I am still here. Say yes if you are done, or say no if you want another fare.'
           : requestedStep === 'next-passenger'
@@ -1126,10 +1526,12 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    if (/\b(sorry|wrong|mali|not that|hindi iyon|hindi yun|ulitin)\b/i.test(effectiveTranscript)) {
+    if (/\b(sorry|wrong|mali|not that|hindi iyon|hindi yun|ulitin)\b/i.test(trimmedTranscript)) {
       const correctionMessage =
         requestedStep === 'cash'
           ? 'Okay. Please say how much is their money again.'
+          : requestedStep === 'passenger-count'
+            ? 'Okay. Please say how many passengers there are again.'
           : requestedStep === 'fare-type'
             ? 'Okay. Please say regular or discounted again.'
             : requestedStep === 'done-check'
@@ -1142,9 +1544,38 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
+    if (
+      pendingVoiceClarificationRef.current &&
+      (requestedStep === 'fare' || requestedStep === 'next-passenger') &&
+      !/\b(?:to|ti)\b/i.test(trimmedTranscript)
+    ) {
+      const clarificationResult = resolvePendingRouteClarification(trimmedTranscript);
+      if (clarificationResult?.status === 'resolved') {
+        pendingVoiceClarificationRef.current = null;
+        handleMatchedFare(clarificationResult.matchedFare, 'queued');
+        return;
+      }
+
+      if (clarificationResult?.status === 'retry') {
+        pendingVoiceClarificationRef.current = clarificationResult.context;
+        setVoiceFeedback(clarificationResult.message);
+        queueVoicePrompt(clarificationResult.message, requestedStep);
+        return;
+      }
+    }
+
     if (requestedStep === 'confirm') {
-      const confirmationAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
+      const localAnswer = parseFareStepBinaryAnswer('confirm', trimmedTranscript);
+      const smartAnalysis = localAnswer ? null : await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const confirmationAnswer =
+        localAnswer ??
+        smartAnalysis?.smartBinaryAnswer ??
+        parseFareStepBinaryAnswer('confirm', effectiveTranscript) ??
+        parseVoiceBinaryAnswer(effectiveTranscript);
       const pendingConfirmation = pendingVoiceConfirmationRef.current;
+
+      setVoiceTranscript(effectiveTranscript);
 
       if (!confirmationAnswer) {
         const nextMessage = 'Please say yes to confirm or no to try again.';
@@ -1180,24 +1611,16 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'fare') {
-      const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
-      if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep, smartConfidence)) {
+      const localShortcut = parseFareConversationShortcut(trimmedTranscript);
+      if (localShortcut && applyVoiceShortcut(localShortcut, confidence, requestedStep)) {
         return;
       }
 
-      if (smartClarificationMessage && !smartMatchedFare) {
-        setPendingVoiceFare(null);
-        setVoiceCashAmount(null);
-        setVoiceFeedback(smartClarificationMessage);
-        queueVoicePrompt(smartClarificationMessage, 'fare');
-        return;
-      }
-
-      const parsed = smartMatchedFare ?? parseFareVoiceTranscript(effectiveTranscript, activeRoute);
+      const parsed = parseFareVoiceTranscript(trimmedTranscript, activeRoute);
       setVoiceResult(parsed);
 
       if (parsed.status === 'match') {
-        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
+        if (shouldConfirmVoiceInterpretation(confidence)) {
           const confirmMessage =
             parsed.fareType === 'either'
               ? `I heard ${parsed.originStop.name} to ${parsed.destinationStop.name}. Say yes to continue or no to try again.`
@@ -1214,6 +1637,56 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
+      const localClarification = buildRouteClarificationFromTranscript(trimmedTranscript);
+      if (localClarification) {
+        pendingVoiceClarificationRef.current = localClarification.context;
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        setVoiceFeedback(localClarification.message);
+        queueVoicePrompt(localClarification.message, 'fare');
+        return;
+      }
+
+      const smartAnalysis = await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const smartShortcut = smartAnalysis?.smartShortcut ?? null;
+      const smartMatchedFare = smartAnalysis?.smartMatchedFare ?? null;
+      const smartClarificationMessage = smartAnalysis?.smartClarificationMessage ?? null;
+      const smartConfidence = smartAnalysis?.smartConfidence ?? null;
+
+      setVoiceTranscript(effectiveTranscript);
+
+      if (smartShortcut && applyVoiceShortcut(smartShortcut, confidence, requestedStep, smartConfidence)) {
+        return;
+      }
+
+      if (smartMatchedFare) {
+        setVoiceResult(smartMatchedFare);
+        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
+          const confirmMessage =
+            smartMatchedFare.fareType === 'either'
+              ? `I heard ${smartMatchedFare.originStop.name} to ${smartMatchedFare.destinationStop.name}. Say yes to continue or no to try again.`
+              : `I heard ${getResolvedFareLabel(smartMatchedFare).toLowerCase()} fare from ${smartMatchedFare.originStop.name} to ${smartMatchedFare.destinationStop.name}. Say yes or no.`;
+          queueVoiceConfirmation(confirmMessage, {
+            kind: 'fare-match',
+            matchedFare: smartMatchedFare,
+            retryStep: 'fare'
+          });
+          return;
+        }
+
+        handleMatchedFare(smartMatchedFare, 'queued');
+        return;
+      }
+
+      if (smartClarificationMessage) {
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        setVoiceFeedback(smartClarificationMessage);
+        queueVoicePrompt(smartClarificationMessage, 'fare');
+        return;
+      }
+
       setPendingVoiceFare(null);
       setVoiceCashAmount(null);
       setVoiceFeedback(parsed.message);
@@ -1222,20 +1695,30 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'fare-type') {
-      const parsedFareType = smartFareType ?? parseFareTypeVoiceAnswer(effectiveTranscript);
       const baseFare = getActiveVoiceFareContext('fare-type');
-
-      if (!parsedFareType) {
-        const nextMessage = 'Please say regular or discounted fare.';
-        setVoiceFeedback(nextMessage);
-        queueVoicePrompt(nextMessage, 'fare-type');
-        return;
-      }
+      const localFareType = parseFareTypeVoiceAnswer(trimmedTranscript);
 
       if (!baseFare) {
         const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
         setVoiceFeedback(nextMessage);
         queueVoicePrompt(nextMessage, 'fare');
+        return;
+      }
+
+      const smartAnalysis = localFareType ? null : await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const parsedFareType =
+        localFareType ??
+        smartAnalysis?.smartFareType ??
+        parseFareTypeVoiceAnswer(effectiveTranscript);
+      const smartConfidence = smartAnalysis?.smartConfidence ?? null;
+
+      setVoiceTranscript(effectiveTranscript);
+
+      if (!parsedFareType) {
+        const nextMessage = 'Please say regular or discounted fare.';
+        setVoiceFeedback(nextMessage);
+        queueVoicePrompt(nextMessage, 'fare-type');
         return;
       }
 
@@ -1252,12 +1735,52 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      beginCashFollowUp(resolvedFare, 'queued');
+      beginPassengerCountFollowUp(resolvedFare, 'queued');
+      return;
+    }
+
+    if (requestedStep === 'passenger-count') {
+      const fareContext = getActiveVoiceFareContext('resolved');
+
+      if (!fareContext) {
+        const unresolvedFare = getActiveVoiceFareContext('fare-type');
+        if (unresolvedFare) {
+          const nextMessage = 'I still need to know if this fare is regular or discounted. Please say regular or discounted.';
+          activeVoiceFareRef.current = unresolvedFare;
+          setVoiceStep('fare-type');
+          setVoiceFeedback(nextMessage);
+          queueVoicePrompt(nextMessage, 'fare-type');
+          return;
+        }
+
+        const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
+        setVoiceFeedback(nextMessage);
+        queueVoicePrompt(nextMessage, 'fare');
+        return;
+      }
+
+      const passengerCountResult = parsePassengerCountVoiceTranscript(trimmedTranscript);
+      if (passengerCountResult.status === 'match') {
+        beginCashFollowUp(fareContext, passengerCountResult.passengerCount, 'queued');
+        return;
+      }
+
+      setVoiceFeedback(passengerCountResult.message);
+      queueVoicePrompt(passengerCountResult.message, 'passenger-count');
       return;
     }
 
     if (requestedStep === 'done-check') {
-      const doneAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
+      const localAnswer = parseFareStepBinaryAnswer('done-check', trimmedTranscript);
+      const smartAnalysis = localAnswer ? null : await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const doneAnswer =
+        localAnswer ??
+        smartAnalysis?.smartBinaryAnswer ??
+        parseFareStepBinaryAnswer('done-check', effectiveTranscript) ??
+        parseVoiceBinaryAnswer(effectiveTranscript);
+
+      setVoiceTranscript(effectiveTranscript);
 
       if (doneAnswer === 'yes') {
         setIsConductorCalcOpen(false);
@@ -1269,6 +1792,7 @@ const CalcScreen: React.FC = () => {
       if (doneAnswer === 'no') {
         setIsConductorCalcOpen(false);
         setVoiceChangePreset(null);
+        setActiveVoicePassengerCount(null);
         const nextMessage = lastResolvedVoiceFareRef.current
           ? 'Okay. Compute fare again for the next passenger. Say same route, or say the new pickup and destination now.'
           : 'Okay. Compute fare again for the next passenger. Say the pickup and destination now, or say exit.';
@@ -1285,20 +1809,14 @@ const CalcScreen: React.FC = () => {
     }
 
     if (requestedStep === 'next-passenger') {
-      const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
-      if (shortcut && applyVoiceShortcut(shortcut, confidence, 'fare', smartConfidence)) {
+      const localShortcut = parseFareConversationShortcut(trimmedTranscript);
+      if (localShortcut && applyVoiceShortcut(localShortcut, confidence, 'fare')) {
         return;
       }
 
-      if (smartClarificationMessage && !smartMatchedFare) {
-        setVoiceFeedback(smartClarificationMessage);
-        queueVoicePrompt(smartClarificationMessage, 'next-passenger');
-        return;
-      }
-
-      const parsedFare = smartMatchedFare ?? parseFareVoiceTranscript(effectiveTranscript, activeRoute);
+      const parsedFare = parseFareVoiceTranscript(trimmedTranscript, activeRoute);
       if (parsedFare.status === 'match') {
-        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
+        if (shouldConfirmVoiceInterpretation(confidence)) {
           const confirmMessage =
             parsedFare.fareType === 'either'
               ? `I heard ${parsedFare.originStop.name} to ${parsedFare.destinationStop.name}. Say yes to continue or no to try again.`
@@ -1315,12 +1833,65 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      const nextAnswer = smartBinaryAnswer ?? parseVoiceBinaryAnswer(effectiveTranscript);
+      const localClarification = buildRouteClarificationFromTranscript(trimmedTranscript);
+      if (localClarification) {
+        pendingVoiceClarificationRef.current = localClarification.context;
+        setVoiceFeedback(localClarification.message);
+        queueVoicePrompt(localClarification.message, 'next-passenger');
+        return;
+      }
+
+      const localAnswer = parseFareStepBinaryAnswer('next-passenger', trimmedTranscript);
+      const smartAnalysis =
+        localAnswer || localShortcut
+          ? null
+          : await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const smartShortcut = smartAnalysis?.smartShortcut ?? null;
+      const smartMatchedFare = smartAnalysis?.smartMatchedFare ?? null;
+      const smartClarificationMessage = smartAnalysis?.smartClarificationMessage ?? null;
+      const smartConfidence = smartAnalysis?.smartConfidence ?? null;
+      const nextAnswer =
+        localAnswer ??
+        smartAnalysis?.smartBinaryAnswer ??
+        parseFareStepBinaryAnswer('next-passenger', effectiveTranscript) ??
+        parseVoiceBinaryAnswer(effectiveTranscript);
+
+      setVoiceTranscript(effectiveTranscript);
+
+      if (smartShortcut && applyVoiceShortcut(smartShortcut, confidence, 'fare', smartConfidence)) {
+        return;
+      }
+
+      if (smartMatchedFare) {
+        if (shouldConfirmVoiceInterpretation(confidence, smartConfidence)) {
+          const confirmMessage =
+            smartMatchedFare.fareType === 'either'
+              ? `I heard ${smartMatchedFare.originStop.name} to ${smartMatchedFare.destinationStop.name}. Say yes to continue or no to try again.`
+              : `I heard ${getResolvedFareLabel(smartMatchedFare).toLowerCase()} fare from ${smartMatchedFare.originStop.name} to ${smartMatchedFare.destinationStop.name}. Say yes or no.`;
+          queueVoiceConfirmation(confirmMessage, {
+            kind: 'fare-match',
+            matchedFare: smartMatchedFare,
+            retryStep: 'fare'
+          });
+          return;
+        }
+
+        handleMatchedFare(smartMatchedFare, 'queued');
+        return;
+      }
+
+      if (smartClarificationMessage) {
+        setVoiceFeedback(smartClarificationMessage);
+        queueVoicePrompt(smartClarificationMessage, 'next-passenger');
+        return;
+      }
 
       if (nextAnswer === 'yes') {
         setVoiceStep('fare');
         setVoiceResult(null);
         setPendingVoiceFare(null);
+        setActiveVoicePassengerCount(null);
         setVoiceCashAmount(null);
         setVoiceChangePreset(null);
         const nextMessage = lastResolvedVoiceFareRef.current
@@ -1342,8 +1913,8 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    const shortcut = smartShortcut ?? parseFareConversationShortcut(effectiveTranscript);
-    if (shortcut && applyVoiceShortcut(shortcut, confidence, requestedStep, smartConfidence)) {
+    const localShortcut = parseFareConversationShortcut(trimmedTranscript);
+    if (localShortcut && applyVoiceShortcut(localShortcut, confidence, requestedStep)) {
       return;
     }
 
@@ -1363,6 +1934,41 @@ const CalcScreen: React.FC = () => {
       const nextMessage = `Please say the route first, like ${routeStart.name} to ${routeEnd.name}.`;
       setVoiceFeedback(nextMessage);
       queueVoicePrompt(nextMessage, 'fare');
+      return;
+    }
+
+    const localCashResult = parseCashVoiceTranscript(trimmedTranscript);
+    if (localCashResult.status === 'match') {
+      if (shouldConfirmVoiceInterpretation(confidence)) {
+        queueVoiceConfirmation(
+          `I heard ${localCashResult.amount} pesos for the passenger money. Say yes or no.`,
+          {
+            kind: 'cash-amount',
+            matchedFare: fareContext,
+            cashAmount: localCashResult.amount,
+            retryStep: 'cash'
+          }
+        );
+        return;
+      }
+
+      finishVoiceChangeFlow(
+        fareContext,
+        localCashResult.amount,
+        Math.max(activeVoicePassengerCountRef.current ?? 1, 1)
+      );
+      return;
+    }
+
+    const smartAnalysis = await getSmartAnalysis();
+    const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+    const smartCashAmount = smartAnalysis?.smartCashAmount ?? null;
+    const smartConfidence = smartAnalysis?.smartConfidence ?? null;
+    const smartShortcut = smartAnalysis?.smartShortcut ?? null;
+
+    setVoiceTranscript(effectiveTranscript);
+
+    if (smartShortcut && applyVoiceShortcut(smartShortcut, confidence, requestedStep, smartConfidence)) {
       return;
     }
 
@@ -1390,11 +1996,15 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
-      finishVoiceChangeFlow(fareContext, cashResult.amount);
-      return;
-    }
+        finishVoiceChangeFlow(
+          fareContext,
+          cashResult.amount,
+          Math.max(activeVoicePassengerCountRef.current ?? 1, 1)
+        );
+        return;
+      }
 
-    setVoiceFeedback(cashResult.message);
+    setVoiceFeedback(localCashResult.message ?? cashResult.message);
     queueVoicePrompt(cashResult.message, 'cash');
   };
 
@@ -1431,6 +2041,7 @@ const CalcScreen: React.FC = () => {
     if (requestedStep === 'fare') {
       setVoiceResult(null);
       setPendingVoiceFare(null);
+      setActiveVoicePassengerCount(null);
       setVoiceCashAmount(null);
       setVoiceChangePreset(null);
       activeVoiceFareRef.current = null;
@@ -1439,8 +2050,8 @@ const CalcScreen: React.FC = () => {
     const recognition = new RecognitionCtor();
     voiceRecognitionRef.current = recognition;
     recognition.lang = 'en-PH';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       setIsVoiceListening(true);
@@ -1466,6 +2077,31 @@ const CalcScreen: React.FC = () => {
       }
       void speakVoiceReply(nextMessage);
     };
+
+    const flushTranscriptAfterSilence = (hasFinal: boolean) => {
+      clearVoiceSilenceTimeout();
+      if (!latestVoiceTranscriptRef.current.trim()) {
+        return;
+      }
+
+      const silenceDelay = getVoiceSilenceDelay(requestedStep, hasFinal);
+      voiceSilenceTimeoutRef.current = window.setTimeout(() => {
+        const finalTranscript = latestVoiceTranscriptRef.current.trim();
+        if (!finalTranscript || voiceTranscriptHandledRef.current) {
+          return;
+        }
+
+        voiceTranscriptHandledRef.current = true;
+        setVoiceFeedback(`Heard "${finalTranscript}". Processing...`);
+        void processFareVoiceTranscript(
+          requestedStep,
+          finalTranscript,
+          latestVoiceConfidenceRef.current
+        );
+        recognition.stop();
+      }, silenceDelay);
+    };
+
     recognition.onresult = event => {
       const { transcript, confidence, hasFinal } = extractRecognitionTranscript(event);
       if (!transcript) {
@@ -1477,15 +2113,7 @@ const CalcScreen: React.FC = () => {
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
       setVoiceFeedback(hasFinal ? `Heard "${transcript}". Processing...` : `Heard "${transcript}".`);
-
-      if (hasFinal) {
-        clearVoiceSilenceTimeout();
-        if (!voiceTranscriptHandledRef.current) {
-          voiceTranscriptHandledRef.current = true;
-          void processFareVoiceTranscript(requestedStep, transcript, confidence);
-        }
-        recognition.stop();
-      }
+      flushTranscriptAfterSilence(hasFinal);
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -1846,6 +2474,8 @@ const CalcScreen: React.FC = () => {
                     ? 'Route and fare'
                     : voiceStep === 'fare-type'
                       ? 'Regular or discounted'
+                      : voiceStep === 'passenger-count'
+                        ? 'Passenger count'
                       : voiceStep === 'cash'
                         ? 'Passenger money'
                         : voiceStep === 'done-check'
@@ -1926,6 +2556,7 @@ const CalcScreen: React.FC = () => {
                   onClick={() => {
                     setIsConductorCalcOpen(false);
                     setVoiceChangePreset(null);
+                    setActiveVoicePassengerCount(null);
                     closeVoicePanelAfterReply('Okay. Calculator closed. Tap the mic anytime when you are ready again.');
                   }}
                   className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
@@ -1936,6 +2567,7 @@ const CalcScreen: React.FC = () => {
                   onClick={() => {
                     setIsConductorCalcOpen(false);
                     setVoiceChangePreset(null);
+                    setActiveVoicePassengerCount(null);
                     const nextMessage = lastResolvedVoiceFareRef.current
                       ? 'Okay. Compute fare again for the next passenger. Say same route, or say the new pickup and destination now.'
                       : 'Okay. Compute fare again for the next passenger. Say the pickup and destination now, or say exit.';
@@ -1963,6 +2595,7 @@ const CalcScreen: React.FC = () => {
                     setVoiceStep('fare');
                     setVoiceResult(null);
                     setPendingVoiceFare(null);
+                    setActiveVoicePassengerCount(null);
                     setVoiceCashAmount(null);
                     setVoiceChangePreset(null);
                     const nextMessage = 'Okay. Say the new pickup and destination now.';
@@ -2002,6 +2635,12 @@ const CalcScreen: React.FC = () => {
                     Passenger Money: {peso}{voiceCashAmount}
                   </div>
                 )}
+                {voicePassengerCount !== null && (
+                  <div className="rounded-[1.5rem] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:bg-black/30 dark:text-slate-300">
+                    Passengers: {voicePassengerCount} / Total Fare: {peso}
+                    {getResolvedFareTotal(voiceResult, voicePassengerCount)}
+                  </div>
+                )}
                 {voiceResult.fareType === 'either' ? (
                   <div className="grid grid-cols-3 gap-2">
                     <button
@@ -2029,7 +2668,7 @@ const CalcScreen: React.FC = () => {
                       onClick={applyVoiceFare}
                       className="rounded-[1.5rem] bg-primary py-3 text-[10px] font-black uppercase tracking-widest text-white active:scale-95"
                     >
-                      Ask For Money
+                      Ask For Passengers
                     </button>
                     <button
                       onClick={() => startFareVoiceRecognition('fare')}
