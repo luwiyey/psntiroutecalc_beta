@@ -3,7 +3,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
-type SmartVoiceStep = 'fare' | 'fare-type' | 'cash' | 'confirm' | 'done-check' | 'next-passenger';
+type SmartVoiceStep = 'fare' | 'fare-type' | 'passenger-count' | 'cash' | 'confirm' | 'done-check' | 'next-passenger';
 type SmartVoiceShortcut = 'same-route' | 'same-cash' | 'new-route' | 'none';
 type SmartVoiceBinaryAnswer = 'yes' | 'no' | 'unknown';
 type SmartVoiceConfidence = 'low' | 'medium' | 'high';
@@ -38,6 +38,7 @@ interface SmartVoiceAssistResponse {
   shortcut: SmartVoiceShortcut;
   binaryAnswer: SmartVoiceBinaryAnswer;
   fareType: SmartVoiceFareType;
+  passengerCount: number | null;
   cashAmount: number | null;
   originStopName: string | null;
   destinationStopName: string | null;
@@ -124,6 +125,7 @@ Rules:
 - If the user likely meant "discounted", accept common noisy variants like counted, discounted, dis counted, may discount, student, senior, pwd.
 - If the user likely meant yes, accept phrases like yes, yeah, yup, im done, i'm done, done, okay done, oo, opo, sige, tuloy.
 - If the user likely meant no, accept phrases like no, not yet, stop, cancel, hindi, wag, tama na, exit.
+- For passenger-count step, extract only the passenger count as passengerCount. Accept noisy variants like to/too for two, for/fore for four, couple for two, and single for one when they clearly mean the count.
 - For fare and next-passenger steps, identify originStopName and destinationStopName only from the provided stop list.
 - If a stop is ambiguous among similar route stops, do not guess. Instead fill clarificationQuestion and clarificationChoices.
 - For vague landmarks like SM, Robinsons, or terminal, ask which city, municipality, province, or nearby KM-post landmark they mean.
@@ -140,6 +142,7 @@ Return exactly this JSON shape:
   "shortcut": "same-route|same-cash|new-route|none",
   "binaryAnswer": "yes|no|unknown",
   "fareType": "regular|discounted|either|unknown",
+  "passengerCount": null,
   "cashAmount": null,
   "originStopName": null,
   "destinationStopName": null,

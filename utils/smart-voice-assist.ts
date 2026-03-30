@@ -22,7 +22,7 @@ const getSupabaseConfig = () => {
 
 const isBrowser = () => typeof window !== 'undefined' && typeof fetch === 'function';
 
-export type SmartVoiceStep = 'fare' | 'fare-type' | 'cash' | 'confirm' | 'done-check' | 'next-passenger';
+export type SmartVoiceStep = 'fare' | 'fare-type' | 'passenger-count' | 'cash' | 'confirm' | 'done-check' | 'next-passenger';
 export type SmartVoiceShortcut = 'same-route' | 'same-cash' | 'new-route' | 'none';
 export type SmartVoiceBinaryAnswer = 'yes' | 'no' | 'unknown';
 export type SmartVoiceConfidence = 'low' | 'medium' | 'high';
@@ -55,6 +55,7 @@ export interface SmartVoiceAssistResult {
   shortcut: SmartVoiceShortcut;
   binaryAnswer: SmartVoiceBinaryAnswer;
   fareType: FareVoiceType | 'unknown';
+  passengerCount: number | null;
   cashAmount: number | null;
   originStopName: string | null;
   destinationStopName: string | null;
@@ -125,6 +126,7 @@ export const analyzeSmartVoiceTranscript = async (
         shortcut?: unknown;
         binaryAnswer?: unknown;
         fareType?: unknown;
+        passengerCount?: unknown;
         cashAmount?: unknown;
         originStopName?: unknown;
         destinationStopName?: unknown;
@@ -151,6 +153,10 @@ export const analyzeSmartVoiceTranscript = async (
         shortcut: isShortcut(parsedFallback.shortcut) ? parsedFallback.shortcut : 'none',
         binaryAnswer: isBinary(parsedFallback.binaryAnswer) ? parsedFallback.binaryAnswer : 'unknown',
         fareType: isFareType(parsedFallback.fareType) ? parsedFallback.fareType : 'unknown',
+        passengerCount:
+          typeof parsedFallback.passengerCount === 'number' && Number.isFinite(parsedFallback.passengerCount)
+            ? parsedFallback.passengerCount
+            : null,
         cashAmount:
           typeof parsedFallback.cashAmount === 'number' && Number.isFinite(parsedFallback.cashAmount)
             ? parsedFallback.cashAmount
@@ -186,6 +192,10 @@ export const analyzeSmartVoiceTranscript = async (
       shortcut: isShortcut(result.shortcut) ? result.shortcut : 'none',
       binaryAnswer: isBinary(result.binaryAnswer) ? result.binaryAnswer : 'unknown',
       fareType: isFareType(result.fareType) ? result.fareType : 'unknown',
+      passengerCount:
+        typeof result.passengerCount === 'number' && Number.isFinite(result.passengerCount)
+          ? result.passengerCount
+          : null,
       cashAmount:
         typeof result.cashAmount === 'number' && Number.isFinite(result.cashAmount)
           ? result.cashAmount

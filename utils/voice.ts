@@ -720,6 +720,25 @@ const normalizeCashText = (value: string) =>
       .replace(/[^a-z0-9.\s]/g, ' ')
   );
 
+const normalizePassengerCountText = (value: string) =>
+  cleanWhitespace(
+    normalizeStopText(value)
+      .replace(/\btoo\b/g, ' two ')
+      .replace(/\bto\b/g, ' two ')
+      .replace(/\bfor\b/g, ' four ')
+      .replace(/\bfore\b/g, ' four ')
+      .replace(/\bwon\b/g, ' one ')
+      .replace(/\bone lang\b/g, ' one ')
+      .replace(/\bisa lang\b/g, ' one ')
+      .replace(/\bdalawa lang\b/g, ' two ')
+      .replace(/\bcouple\b/g, ' two ')
+      .replace(/\bpair\b/g, ' two ')
+      .replace(/\bsingle\b/g, ' one ')
+      .replace(/\bjust\b/g, ' ')
+      .replace(/\blang\b/g, ' ')
+      .replace(/\bna\b/g, ' ')
+  );
+
 const normalizeTallyVoiceText = (value: string) =>
   cleanWhitespace(
     value
@@ -1666,7 +1685,7 @@ export const parsePassengerCountVoiceTranscript = (
   transcript: string
 ): PassengerCountVoiceParseResult => {
   const cleanedTranscript = collapseRepeatedSpeech(transcript);
-  const normalized = normalizeStopText(cleanedTranscript);
+  const normalized = normalizePassengerCountText(cleanedTranscript);
 
   if (!normalized) {
     return {

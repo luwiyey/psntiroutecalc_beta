@@ -476,6 +476,29 @@ describe('parsePassengerCountVoiceTranscript', () => {
 
     expect(result.passengerCount).toBe(2);
   });
+
+  it('treats to and too as two for noisy passenger-count replies', () => {
+    expect(parsePassengerCountVoiceTranscript('to').status).toBe('match');
+    const result = parsePassengerCountVoiceTranscript('too');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched noisy passenger count result.');
+    }
+
+    expect(result.passengerCount).toBe(2);
+  });
+
+  it('treats couple as two for passenger-count replies', () => {
+    const result = parsePassengerCountVoiceTranscript('couple');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched couple passenger count result.');
+    }
+
+    expect(result.passengerCount).toBe(2);
+  });
 });
 
 describe('parseStopReminderFollowUpTranscript', () => {

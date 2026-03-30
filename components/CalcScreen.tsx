@@ -1520,11 +1520,12 @@ const CalcScreen: React.FC = () => {
     setVoiceConfidence(confidence);
 
     let smartAnalysisPromise:
-      | Promise<{
+        | Promise<{
           smartResult: SmartVoiceAssistResult | null;
           effectiveTranscript: string;
           smartConfidence: SmartVoiceConfidence | null;
           smartFareType: FareTypeVoiceAnswer | null;
+          smartPassengerCount: number | null;
           smartBinaryAnswer: 'yes' | 'no' | null;
           smartCashAmount: number | null;
           smartShortcut: FareConversationShortcut | null;
@@ -1540,7 +1541,7 @@ const CalcScreen: React.FC = () => {
 
       smartAnalysisPromise = (async () => {
         const smartResult = await analyzeSmartVoiceTranscript({
-          step: requestedStep === 'passenger-count' ? 'cash' : requestedStep,
+          step: requestedStep,
           transcript: trimmedTranscript,
           routeLabel: activeRoute.label,
           routeStops: activeRoute.stops.map(stop => ({
@@ -1594,6 +1595,10 @@ const CalcScreen: React.FC = () => {
           effectiveTranscript,
           smartConfidence: smartResult.confidence ?? null,
           smartFareType,
+          smartPassengerCount:
+            typeof smartResult.passengerCount === 'number' && Number.isFinite(smartResult.passengerCount)
+              ? Math.max(1, Math.round(smartResult.passengerCount))
+              : null,
           smartBinaryAnswer:
             smartResult.binaryAnswer !== 'unknown' ? smartResult.binaryAnswer : null,
           smartCashAmount:
@@ -1924,6 +1929,17 @@ const CalcScreen: React.FC = () => {
       const passengerCountResult = parsePassengerCountVoiceTranscript(trimmedTranscript);
       if (passengerCountResult.status === 'match') {
         beginCashFollowUp(fareContext, passengerCountResult.passengerCount, 'queued');
+        return;
+      }
+
+      const smartAnalysis = await getSmartAnalysis();
+      const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
+      const smartPassengerCount = smartAnalysis?.smartPassengerCount ?? null;
+
+      setVoiceTranscript(effectiveTranscript);
+
+      if (typeof smartPassengerCount === 'number' && smartPassengerCount > 0) {
+        beginCashFollowUp(fareContext, smartPassengerCount, 'queued');
         return;
       }
 
