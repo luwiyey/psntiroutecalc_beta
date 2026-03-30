@@ -499,6 +499,24 @@ describe('parsePassengerCountVoiceTranscript', () => {
 
     expect(result.passengerCount).toBe(2);
   });
+
+  it('handles noisy one, two, and three variants for passenger-count replies', () => {
+    const oneResult = parsePassengerCountVoiceTranscript('wan');
+    const twoResult = parsePassengerCountVoiceTranscript('tu');
+    const threeResult = parsePassengerCountVoiceTranscript('tree passengers');
+
+    expect(oneResult.status).toBe('match');
+    expect(twoResult.status).toBe('match');
+    expect(threeResult.status).toBe('match');
+
+    if (oneResult.status !== 'match' || twoResult.status !== 'match' || threeResult.status !== 'match') {
+      throw new Error('Expected matched noisy passenger count results.');
+    }
+
+    expect(oneResult.passengerCount).toBe(1);
+    expect(twoResult.passengerCount).toBe(2);
+    expect(threeResult.passengerCount).toBe(3);
+  });
 });
 
 describe('parseStopReminderFollowUpTranscript', () => {

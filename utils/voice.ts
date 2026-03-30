@@ -723,8 +723,13 @@ const normalizeCashText = (value: string) =>
 const normalizePassengerCountText = (value: string) =>
   cleanWhitespace(
     normalizeStopText(value)
+      .replace(/\bwan\b/g, ' one ')
       .replace(/\btoo\b/g, ' two ')
       .replace(/\bto\b/g, ' two ')
+      .replace(/\btu\b/g, ' two ')
+      .replace(/\btwoo\b/g, ' two ')
+      .replace(/\btree\b/g, ' three ')
+      .replace(/\btri\b/g, ' three ')
       .replace(/\bfor\b/g, ' four ')
       .replace(/\bfore\b/g, ' four ')
       .replace(/\bwon\b/g, ' one ')

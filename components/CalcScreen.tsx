@@ -659,7 +659,7 @@ const CalcScreen: React.FC = () => {
         case 'fare-type':
           return 360;
         case 'passenger-count':
-          return 360;
+          return 160;
         case 'done-check':
           return 320;
         case 'next-passenger':
@@ -682,7 +682,7 @@ const CalcScreen: React.FC = () => {
       case 'fare-type':
         return 2200;
       case 'passenger-count':
-        return 2200;
+        return 1400;
       case 'confirm':
         return 2000;
       case 'fare':
@@ -2328,6 +2328,23 @@ const CalcScreen: React.FC = () => {
       voiceAutoRestartCountRef.current = 0;
       setVoiceTranscript(resolvedTranscript);
       setVoiceConfidence(confidence);
+
+      if (requestedStep === 'passenger-count' && hasFinal) {
+        const quickPassengerCount = parsePassengerCountVoiceTranscript(resolvedTranscript);
+        if (quickPassengerCount.status === 'match') {
+          clearVoiceSilenceTimeout();
+          voiceTranscriptHandledRef.current = true;
+          setVoiceFeedback(`Heard "${resolvedTranscript}". Processing...`);
+          void processFareVoiceTranscript(
+            requestedStep,
+            resolvedTranscript,
+            confidence
+          );
+          recognition.stop();
+          return;
+        }
+      }
+
       setVoiceFeedback(
         hasFinal ? `Heard "${resolvedTranscript}". Processing...` : `Heard "${resolvedTranscript}".`
       );
