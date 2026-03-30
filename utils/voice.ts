@@ -543,12 +543,51 @@ const collapseRepeatedSpeech = (value: string) => {
   return cleanWhitespace(nextWords.join(' '));
 };
 
+const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
+  [/\bess em\b/g, ' sm '],
+  [/\bes em\b/g, ' sm '],
+  [/\bsaytan\b/g, ' saitan '],
+  [/\bseytan\b/g, ' saitan '],
+  [/\bseitan\b/g, ' saitan '],
+  [/\bbayaksen\b/g, ' bayacsan '],
+  [/\bbayaksan\b/g, ' bayacsan '],
+  [/\bbayak san\b/g, ' bayacsan '],
+  [/\bbayagsan\b/g, ' bayacsan '],
+  [/\bbawek\b/g, ' baw ek '],
+  [/\bbawik\b/g, ' baw ek '],
+  [/\bbaw ek\b/g, ' baw ek '],
+  [/\bpoy poy\b/g, ' poyopoy '],
+  [/\bpoypoy\b/g, ' poyopoy '],
+  [/\burdeneta\b/g, ' urdaneta '],
+  [/\burdineta\b/g, ' urdaneta '],
+  [/\bordaneta\b/g, ' urdaneta '],
+  [/\bordanita\b/g, ' urdaneta '],
+  [/\brosalez\b/g, ' rosales '],
+  [/\brozales\b/g, ' rosales '],
+  [/\brusalis\b/g, ' rosales '],
+  [/\brusales\b/g, ' rosales '],
+  [/\bpozorubio\b/g, ' pozzorubio '],
+  [/\bpozorubyo\b/g, ' pozzorubio '],
+  [/\bpozurubio\b/g, ' pozzorubio '],
+  [/\bposorubio\b/g, ' pozzorubio '],
+  [/\btabuyoc\b/g, ' tabuyok '],
+  [/\banona s\b/g, ' anonas ']
+];
+
+const applyStopSpeechCorrections = (value: string) =>
+  STOP_SPEECH_CORRECTIONS.reduce(
+    (nextValue, [pattern, replacement]) => nextValue.replace(pattern, replacement),
+    value
+  );
+
 const normalizeStopText = (value: string) =>
   cleanWhitespace(
-    value
-      .toLowerCase()
-      .replace(/&/g, ' and ')
-      .replace(/\bti\b/g, ' to ')
+    applyStopSpeechCorrections(
+      value
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/\bti\b/g, ' to ')
+    )
       .replace(/[()]/g, ' ')
       .replace(/[\/,.-]/g, ' ')
       .replace(/[^a-z0-9\s]/g, ' ')
@@ -662,22 +701,23 @@ const normalizeBatchCountVoiceText = (value: string) =>
 
 const normalizeStopVoiceText = (value: string) =>
   cleanWhitespace(
-    value
-      .toLowerCase()
-      .replace(/\bpick[\s-]?up\b/g, ' ')
-      .replace(/\bdestination\b/g, ' ')
-      .replace(/\bselect\b/g, ' ')
-      .replace(/\bchoose\b/g, ' ')
-      .replace(/\bset\b/g, ' ')
-      .replace(/\bplease\b/g, ' ')
-      .replace(/\bstop\b/g, ' ')
-      .replace(/\bpoint\b/g, ' ')
-      .replace(/\broute\b/g, ' ')
-      .replace(/\buse\b/g, ' ')
-      .replace(/\bgo to\b/g, ' ')
-      .replace(/\bto\b/g, ' ')
-      .replace(/\bfrom\b/g, ' ')
-      .replace(/[^a-z0-9\s]/g, ' ')
+    applyStopSpeechCorrections(
+      value
+        .toLowerCase()
+        .replace(/\bpick[\s-]?up\b/g, ' ')
+        .replace(/\bdestination\b/g, ' ')
+        .replace(/\bselect\b/g, ' ')
+        .replace(/\bchoose\b/g, ' ')
+        .replace(/\bset\b/g, ' ')
+        .replace(/\bplease\b/g, ' ')
+        .replace(/\bstop\b/g, ' ')
+        .replace(/\bpoint\b/g, ' ')
+        .replace(/\broute\b/g, ' ')
+        .replace(/\buse\b/g, ' ')
+        .replace(/\bgo to\b/g, ' ')
+        .replace(/\bto\b/g, ' ')
+        .replace(/\bfrom\b/g, ' ')
+    ).replace(/[^a-z0-9\s]/g, ' ')
   );
 
 const STOP_REMINDER_IGNORED_TOKENS = new Set([
@@ -1451,8 +1491,17 @@ export const parseFareVoiceTranscript = (
   if (toMatch?.index !== undefined) {
     const before = normalized.slice(0, toMatch.index).replace(/\bfrom\b/g, ' ').trim();
     const after = normalized.slice(toMatch.index + toMatch[0].length).trim();
-    originStop = pickStopFromSegment(before, stopAliases, 'last');
-    destinationStop = pickStopFromSegment(after, stopAliases, 'first');
+    const originExactStop = pickStopFromSegment(before, stopAliases, 'last');
+    const destinationExactStop = pickStopFromSegment(after, stopAliases, 'first');
+    const originVoiceStop = originExactStop ? null : parseStopVoiceTranscript(before, route);
+    const destinationVoiceStop = destinationExactStop ? null : parseStopVoiceTranscript(after, route);
+
+    originStop =
+      originExactStop ??
+      (originVoiceStop?.status === 'match' ? originVoiceStop.stop : null);
+    destinationStop =
+      destinationExactStop ??
+      (destinationVoiceStop?.status === 'match' ? destinationVoiceStop.stop : null);
   } else {
     const orderedStops = findOrderedStopsInTranscript(normalized, route);
     [originStop, destinationStop] = orderedStops;

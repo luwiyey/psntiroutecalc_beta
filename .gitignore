@@ -6,6 +6,9 @@ node_modules/
 dist/
 android/.gradle/
 android/app/build/
+android/keystore.properties
+android/*.jks
+android/*.keystore
 *.log
 hs_err_pid*
 replay_pid*

@@ -82,13 +82,19 @@ type VoiceConfirmationAction =
   | {
       kind: 'fare-match';
       matchedFare: MatchedFareVoiceResult;
-      retryStep: 'fare' | 'fare-type';
+      retryStep: 'fare' | 'fare-type' | 'next-passenger';
     }
   | {
       kind: 'cash-amount';
       matchedFare: MatchedFareVoiceResult;
       cashAmount: number;
       retryStep: 'cash';
+    }
+  | {
+      kind: 'clarified-stop';
+      matchedFare: MatchedFareVoiceResult;
+      clarificationContext: VoiceRouteClarificationContext;
+      retryStep: 'fare' | 'next-passenger';
     };
 const MapPickerOverlay = React.lazy(() => import('./MapPickerOverlay'));
 const StopPickerOverlay = React.lazy(() => import('./StopPickerOverlay'));
@@ -138,10 +144,14 @@ const CalcScreen: React.FC = () => {
   const [voicePassengerCount, setVoicePassengerCount] = useState<number | null>(null);
   const [voiceCashAmount, setVoiceCashAmount] = useState<number | null>(null);
   const [voiceChangePreset, setVoiceChangePreset] = useState<VoiceChangePreset | null>(null);
+  const [voiceClarificationContext, setVoiceClarificationContext] =
+    useState<VoiceRouteClarificationContext | null>(null);
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const queuedVoicePromptRef = useRef<{ message: string; nextStep: VoiceAssistantStep | null } | null>(null);
   const queuedVoiceTimeoutRef = useRef<number | null>(null);
   const voiceSilenceTimeoutRef = useRef<number | null>(null);
+  const voiceAutoRestartTimeoutRef = useRef<number | null>(null);
+  const voiceAutoRestartCountRef = useRef(0);
   const latestVoiceTranscriptRef = useRef('');
   const latestVoiceConfidenceRef = useRef<number | null>(null);
   const voiceTranscriptHandledRef = useRef(false);
@@ -229,8 +239,14 @@ const CalcScreen: React.FC = () => {
     lastVoiceCashAmountRef.current = null;
     pendingVoiceConfirmationRef.current = null;
     pendingVoiceClarificationRef.current = null;
+    setVoiceClarificationContext(null);
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
+    if (voiceAutoRestartTimeoutRef.current) {
+      window.clearTimeout(voiceAutoRestartTimeoutRef.current);
+      voiceAutoRestartTimeoutRef.current = null;
+    }
+    voiceAutoRestartCountRef.current = 0;
   }, [activeRoute.id]);
 
   useEffect(() => {
@@ -251,8 +267,14 @@ const CalcScreen: React.FC = () => {
       activeVoiceFareRef.current = null;
       pendingVoiceConfirmationRef.current = null;
       pendingVoiceClarificationRef.current = null;
+      setVoiceClarificationContext(null);
       voiceRecognitionRef.current?.abort();
       voiceRecognitionRef.current = null;
+      if (voiceAutoRestartTimeoutRef.current) {
+        window.clearTimeout(voiceAutoRestartTimeoutRef.current);
+        voiceAutoRestartTimeoutRef.current = null;
+      }
+      voiceAutoRestartCountRef.current = 0;
     };
   }, []);
 
@@ -480,11 +502,24 @@ const CalcScreen: React.FC = () => {
     }
   };
 
+  const clearVoiceAutoRestartTimeout = () => {
+    if (voiceAutoRestartTimeoutRef.current) {
+      window.clearTimeout(voiceAutoRestartTimeoutRef.current);
+      voiceAutoRestartTimeoutRef.current = null;
+    }
+  };
+
+  const setPendingVoiceClarification = (context: VoiceRouteClarificationContext | null) => {
+    pendingVoiceClarificationRef.current = context;
+    setVoiceClarificationContext(context);
+  };
+
   const clearVisibleVoiceState = (options?: { keepMemory?: boolean }) => {
     const keepMemory = options?.keepMemory ?? true;
 
     clearQueuedVoicePrompt();
     clearVoiceSilenceTimeout();
+    clearVoiceAutoRestartTimeout();
     cancelVoiceReply();
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
@@ -492,7 +527,8 @@ const CalcScreen: React.FC = () => {
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
     pendingVoiceConfirmationRef.current = null;
-    pendingVoiceClarificationRef.current = null;
+    setPendingVoiceClarification(null);
+    voiceAutoRestartCountRef.current = 0;
     setIsVoiceListening(false);
     setVoiceTranscript('');
     setVoiceConfidence(null);
@@ -517,6 +553,7 @@ const CalcScreen: React.FC = () => {
   const closeVoicePanelAfterReply = (message: string) => {
     clearQueuedVoicePrompt();
     clearVoiceSilenceTimeout();
+    clearVoiceAutoRestartTimeout();
     cancelVoiceReply();
     setIsVoiceListening(false);
     setVoiceFeedback(message);
@@ -533,7 +570,8 @@ const CalcScreen: React.FC = () => {
     setVoiceChangePreset(null);
     setVoiceStep('fare');
     pendingVoiceConfirmationRef.current = null;
-    pendingVoiceClarificationRef.current = null;
+    setPendingVoiceClarification(null);
+    voiceAutoRestartCountRef.current = 0;
 
     const hidePanel = () => {
       setVoiceFeedback(null);
@@ -547,6 +585,7 @@ const CalcScreen: React.FC = () => {
       setVoiceStep('fare');
       activeVoiceFareRef.current = null;
       activeVoicePassengerCountRef.current = null;
+      setVoiceClarificationContext(null);
     };
 
     const started = speakVoiceReply(message, {
@@ -697,6 +736,23 @@ const CalcScreen: React.FC = () => {
 
   const describeStopChoices = (choices: Stop[]) => choices.map(choice => choice.name).join(', ');
 
+  const findStopsFromClarificationChoices = (choices: string[]) => {
+    if (!choices.length) {
+      return [] as Stop[];
+    }
+
+    const normalizedChoices = choices
+      .map(choice => choice.trim().toLowerCase())
+      .filter(Boolean);
+
+    return activeRoute.stops.filter(stop => {
+      const candidates = [stop.name, ...(stop.aliases ?? [])].map(candidate =>
+        candidate.trim().toLowerCase()
+      );
+      return normalizedChoices.some(choice => candidates.includes(choice));
+    });
+  };
+
   const buildLandmarkClarificationMessage = (
     context: VoiceRouteClarificationContext,
     options?: { followUp?: boolean }
@@ -715,7 +771,8 @@ const CalcScreen: React.FC = () => {
 
   const buildRouteClarificationFromTranscript = (
     transcript: string,
-    fallbackFareType: FareTypeVoiceAnswer | 'either' = 'either'
+    fallbackFareType: FareTypeVoiceAnswer | 'either' = 'either',
+    preferredChoices: string[] = []
   ) => {
     const splitQueries = splitFareQueries(transcript);
     if (!splitQueries) {
@@ -746,9 +803,13 @@ const CalcScreen: React.FC = () => {
       };
     };
 
+    const preferredCandidateStops = findStopsFromClarificationChoices(preferredChoices);
+
     if (originResult.status === 'match' && destinationResult.status !== 'match') {
       const destinationCandidates =
-        destinationResult.suggestions && destinationResult.suggestions.length > 0
+        preferredCandidateStops.length > 0
+          ? preferredCandidateStops
+          : destinationResult.suggestions && destinationResult.suggestions.length > 0
           ? destinationResult.suggestions
           : findTopStopVoiceSuggestions(splitQueries.destinationQuery, activeRoute, 4);
       return createContext(
@@ -761,7 +822,9 @@ const CalcScreen: React.FC = () => {
 
     if (destinationResult.status === 'match' && originResult.status !== 'match') {
       const originCandidates =
-        originResult.suggestions && originResult.suggestions.length > 0
+        preferredCandidateStops.length > 0
+          ? preferredCandidateStops
+          : originResult.suggestions && originResult.suggestions.length > 0
           ? originResult.suggestions
           : findTopStopVoiceSuggestions(splitQueries.originQuery, activeRoute, 4);
       return createContext(
@@ -834,6 +897,50 @@ const CalcScreen: React.FC = () => {
       status: 'resolved' as const,
       matchedFare
     };
+  };
+
+  const buildMatchedFareFromClarificationStop = (
+    context: VoiceRouteClarificationContext,
+    resolvedStop: Stop
+  ) =>
+    context.routePart === 'origin'
+      ? buildMatchedFareFromStops(resolvedStop, context.otherStop, context.fareType)
+      : buildMatchedFareFromStops(context.otherStop, resolvedStop, context.fareType);
+
+  const beginRouteClarification = (
+    context: VoiceRouteClarificationContext,
+    step: 'fare' | 'next-passenger'
+  ) => {
+    if (context.candidateStops.length === 1) {
+      const candidate = context.candidateStops[0];
+      const matchedFare = buildMatchedFareFromClarificationStop(context, candidate);
+      setPendingVoiceClarification(context);
+      queueVoiceConfirmation(
+        `Are you trying to say ${candidate.name} as the ${context.routePart}? Say yes or no.`,
+        {
+          kind: 'clarified-stop',
+          matchedFare,
+          clarificationContext: context,
+          retryStep: step
+        }
+      );
+      return;
+    }
+
+    setPendingVoiceClarification(context);
+    const nextMessage = buildLandmarkClarificationMessage(context);
+    setVoiceFeedback(nextMessage);
+    queueVoicePrompt(nextMessage, step);
+  };
+
+  const handleClarificationStopChoice = (stop: Stop) => {
+    const clarification = pendingVoiceClarificationRef.current;
+    if (!clarification) {
+      return;
+    }
+
+    setPendingVoiceClarification(null);
+    handleMatchedFare(buildMatchedFareFromClarificationStop(clarification, stop), 'immediate');
   };
 
   const parseFareStepBinaryAnswer = (
@@ -1106,6 +1213,13 @@ const CalcScreen: React.FC = () => {
     pendingVoiceConfirmationRef.current = null;
 
     if (action.kind === 'fare-match') {
+      setPendingVoiceClarification(null);
+      handleMatchedFare(action.matchedFare, 'queued');
+      return;
+    }
+
+    if (action.kind === 'clarified-stop') {
+      setPendingVoiceClarification(null);
       handleMatchedFare(action.matchedFare, 'queued');
       return;
     }
@@ -1117,6 +1231,8 @@ const CalcScreen: React.FC = () => {
     setVoiceFeedback(message);
     setVoiceStep(nextStep);
     clearQueuedVoicePrompt();
+    clearVoiceAutoRestartTimeout();
+    voiceAutoRestartCountRef.current = 0;
 
     const beginListening = () => {
       queuedVoiceTimeoutRef.current = null;
@@ -1238,7 +1354,7 @@ const CalcScreen: React.FC = () => {
     passengerCount = Math.max(activeVoicePassengerCountRef.current ?? 1, 1)
   ) => {
     pendingVoiceConfirmationRef.current = null;
-    pendingVoiceClarificationRef.current = null;
+    setPendingVoiceClarification(null);
     applyVoiceRouteSelection(matchedFare);
     lastResolvedVoiceFareRef.current = matchedFare;
     lastVoiceCashAmountRef.current = cashAmount;
@@ -1270,7 +1386,7 @@ const CalcScreen: React.FC = () => {
   };
 
   const handleMatchedFare = (matchedFare: MatchedFareVoiceResult, mode: 'queued' | 'immediate' = 'queued') => {
-    pendingVoiceClarificationRef.current = null;
+    setPendingVoiceClarification(null);
     if (matchedFare.fareType === 'either') {
       applyVoiceRouteSelection(matchedFare);
       activeVoiceFareRef.current = matchedFare;
@@ -1338,12 +1454,25 @@ const CalcScreen: React.FC = () => {
     }
 
     pendingVoiceConfirmationRef.current = null;
+    if (pendingConfirmation.kind === 'clarified-stop') {
+      const retryMessage = buildLandmarkClarificationMessage(pendingConfirmation.clarificationContext, {
+        followUp: true
+      });
+      setPendingVoiceClarification(pendingConfirmation.clarificationContext);
+      setVoiceStep(pendingConfirmation.retryStep);
+      setVoiceFeedback(retryMessage);
+      queueVoicePrompt(retryMessage, pendingConfirmation.retryStep);
+      return;
+    }
+
     setVoiceStep(pendingConfirmation.retryStep);
     const retryMessage =
       pendingConfirmation.retryStep === 'cash'
         ? 'Okay. Please say how much is their money again.'
         : pendingConfirmation.retryStep === 'fare-type'
           ? 'Okay. Please say regular or discounted again.'
+          : pendingConfirmation.retryStep === 'next-passenger'
+            ? 'Okay. Please say same route, say the new pickup and destination, or say exit.'
           : 'Okay. Please say the route again.';
     setVoiceFeedback(retryMessage);
     queueVoicePrompt(retryMessage, pendingConfirmation.retryStep);
@@ -1551,13 +1680,13 @@ const CalcScreen: React.FC = () => {
     ) {
       const clarificationResult = resolvePendingRouteClarification(trimmedTranscript);
       if (clarificationResult?.status === 'resolved') {
-        pendingVoiceClarificationRef.current = null;
+        setPendingVoiceClarification(null);
         handleMatchedFare(clarificationResult.matchedFare, 'queued');
         return;
       }
 
       if (clarificationResult?.status === 'retry') {
-        pendingVoiceClarificationRef.current = clarificationResult.context;
+        setPendingVoiceClarification(clarificationResult.context);
         setVoiceFeedback(clarificationResult.message);
         queueVoicePrompt(clarificationResult.message, requestedStep);
         return;
@@ -1598,12 +1727,26 @@ const CalcScreen: React.FC = () => {
       }
 
       pendingVoiceConfirmationRef.current = null;
+      if (pendingConfirmation.kind === 'clarified-stop') {
+        const retryMessage = buildLandmarkClarificationMessage(
+          pendingConfirmation.clarificationContext,
+          { followUp: true }
+        );
+        setPendingVoiceClarification(pendingConfirmation.clarificationContext);
+        setVoiceStep(pendingConfirmation.retryStep);
+        setVoiceFeedback(retryMessage);
+        queueVoicePrompt(retryMessage, pendingConfirmation.retryStep);
+        return;
+      }
+
       setVoiceStep(pendingConfirmation.retryStep);
       const retryMessage =
         pendingConfirmation.retryStep === 'cash'
           ? 'Okay. Please say how much is their money again.'
           : pendingConfirmation.retryStep === 'fare-type'
             ? 'Okay. Please say regular or discounted again.'
+            : pendingConfirmation.retryStep === 'next-passenger'
+              ? 'Okay. Please say same route, say the new pickup and destination, or say exit.'
             : 'Okay. Please say the route again.';
       setVoiceFeedback(retryMessage);
       queueVoicePrompt(retryMessage, pendingConfirmation.retryStep);
@@ -1639,19 +1782,19 @@ const CalcScreen: React.FC = () => {
 
       const localClarification = buildRouteClarificationFromTranscript(trimmedTranscript);
       if (localClarification) {
-        pendingVoiceClarificationRef.current = localClarification.context;
         setPendingVoiceFare(null);
         setVoiceCashAmount(null);
-        setVoiceFeedback(localClarification.message);
-        queueVoicePrompt(localClarification.message, 'fare');
+        beginRouteClarification(localClarification.context, 'fare');
         return;
       }
 
       const smartAnalysis = await getSmartAnalysis();
       const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
       const smartShortcut = smartAnalysis?.smartShortcut ?? null;
+      const smartFareType = smartAnalysis?.smartFareType ?? null;
       const smartMatchedFare = smartAnalysis?.smartMatchedFare ?? null;
       const smartClarificationMessage = smartAnalysis?.smartClarificationMessage ?? null;
+      const smartClarificationChoices = smartAnalysis?.smartResult?.clarificationChoices ?? [];
       const smartConfidence = smartAnalysis?.smartConfidence ?? null;
 
       setVoiceTranscript(effectiveTranscript);
@@ -1679,7 +1822,20 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
+      const smartClarification = buildRouteClarificationFromTranscript(
+        effectiveTranscript,
+        smartFareType ?? 'either',
+        smartClarificationChoices
+      );
+      if (smartClarification) {
+        setPendingVoiceFare(null);
+        setVoiceCashAmount(null);
+        beginRouteClarification(smartClarification.context, 'fare');
+        return;
+      }
+
       if (smartClarificationMessage) {
+        setPendingVoiceClarification(null);
         setPendingVoiceFare(null);
         setVoiceCashAmount(null);
         setVoiceFeedback(smartClarificationMessage);
@@ -1687,6 +1843,7 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
+      setPendingVoiceClarification(null);
       setPendingVoiceFare(null);
       setVoiceCashAmount(null);
       setVoiceFeedback(parsed.message);
@@ -1835,9 +1992,7 @@ const CalcScreen: React.FC = () => {
 
       const localClarification = buildRouteClarificationFromTranscript(trimmedTranscript);
       if (localClarification) {
-        pendingVoiceClarificationRef.current = localClarification.context;
-        setVoiceFeedback(localClarification.message);
-        queueVoicePrompt(localClarification.message, 'next-passenger');
+        beginRouteClarification(localClarification.context, 'next-passenger');
         return;
       }
 
@@ -1848,8 +2003,10 @@ const CalcScreen: React.FC = () => {
           : await getSmartAnalysis();
       const effectiveTranscript = smartAnalysis?.effectiveTranscript ?? trimmedTranscript;
       const smartShortcut = smartAnalysis?.smartShortcut ?? null;
+      const smartFareType = smartAnalysis?.smartFareType ?? null;
       const smartMatchedFare = smartAnalysis?.smartMatchedFare ?? null;
       const smartClarificationMessage = smartAnalysis?.smartClarificationMessage ?? null;
+      const smartClarificationChoices = smartAnalysis?.smartResult?.clarificationChoices ?? [];
       const smartConfidence = smartAnalysis?.smartConfidence ?? null;
       const nextAnswer =
         localAnswer ??
@@ -1881,7 +2038,18 @@ const CalcScreen: React.FC = () => {
         return;
       }
 
+      const smartClarification = buildRouteClarificationFromTranscript(
+        effectiveTranscript,
+        smartFareType ?? 'either',
+        smartClarificationChoices
+      );
+      if (smartClarification) {
+        beginRouteClarification(smartClarification.context, 'next-passenger');
+        return;
+      }
+
       if (smartClarificationMessage) {
+        setPendingVoiceClarification(null);
         setVoiceFeedback(smartClarificationMessage);
         queueVoicePrompt(smartClarificationMessage, 'next-passenger');
         return;
@@ -2008,10 +2176,15 @@ const CalcScreen: React.FC = () => {
     queueVoicePrompt(cashResult.message, 'cash');
   };
 
-  const startFareVoiceRecognition = (requestedStep: VoiceAssistantStep = 'fare') => {
+  const startFareVoiceRecognition = (
+    requestedStep: VoiceAssistantStep = 'fare',
+    options?: { autoRestart?: boolean }
+  ) => {
+    const autoRestart = options?.autoRestart ?? false;
     if (isVoiceListening) {
       clearQueuedVoicePrompt();
       clearVoiceSilenceTimeout();
+      clearVoiceAutoRestartTimeout();
       cancelVoiceReply();
       voiceRecognitionRef.current?.stop();
       return;
@@ -2028,9 +2201,13 @@ const CalcScreen: React.FC = () => {
 
     clearQueuedVoicePrompt();
     clearVoiceSilenceTimeout();
+    clearVoiceAutoRestartTimeout();
     cancelVoiceReply();
     if (requestedStep !== 'confirm') {
       pendingVoiceConfirmationRef.current = null;
+    }
+    if (!autoRestart) {
+      voiceAutoRestartCountRef.current = 0;
     }
     setVoiceStep(requestedStep);
     setVoiceTranscript('');
@@ -2110,6 +2287,7 @@ const CalcScreen: React.FC = () => {
 
       latestVoiceTranscriptRef.current = transcript;
       latestVoiceConfidenceRef.current = confidence;
+      voiceAutoRestartCountRef.current = 0;
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
       setVoiceFeedback(hasFinal ? `Heard "${transcript}". Processing...` : `Heard "${transcript}".`);
@@ -2125,6 +2303,26 @@ const CalcScreen: React.FC = () => {
           latestVoiceTranscriptRef.current,
           latestVoiceConfidenceRef.current
         );
+        voiceAutoRestartCountRef.current = 0;
+        latestVoiceTranscriptRef.current = '';
+        latestVoiceConfidenceRef.current = null;
+        voiceTranscriptHandledRef.current = false;
+        flushQueuedVoicePrompt();
+        return;
+      }
+
+      if (!voiceTranscriptHandledRef.current && !latestVoiceTranscriptRef.current.trim()) {
+        if (voiceAutoRestartCountRef.current < 1) {
+          voiceAutoRestartCountRef.current += 1;
+          setVoiceFeedback(`Still listening for ${getListeningPrompt(requestedStep).replace(/^Listening\.\.\.\s*/i, '').toLowerCase()}`);
+          voiceAutoRestartTimeoutRef.current = window.setTimeout(() => {
+            voiceAutoRestartTimeoutRef.current = null;
+            startFareVoiceRecognition(requestedStep, { autoRestart: true });
+          }, 140);
+          return;
+        }
+
+        queueVoicePrompt(getNoSpeechPrompt(requestedStep), requestedStep);
       }
       latestVoiceTranscriptRef.current = '';
       latestVoiceConfidenceRef.current = null;
@@ -2496,6 +2694,28 @@ const CalcScreen: React.FC = () => {
             {voiceTranscript && (
               <div className="mt-4 rounded-[1.5rem] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 dark:bg-black/30 dark:text-slate-300">
                 Heard: "{voiceTranscript}"
+              </div>
+            )}
+
+            {voiceClarificationContext && voiceClarificationContext.candidateStops.length > 0 && (
+              <div className="mt-4">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Are you trying to say
+                </p>
+                <div className="mt-2 grid gap-2">
+                  {voiceClarificationContext.candidateStops.slice(0, 4).map(stop => (
+                    <button
+                      key={`${voiceClarificationContext.routePart}-${stop.name}`}
+                      onClick={() => handleClarificationStopChoice(stop)}
+                      className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-black uppercase tracking-wide text-slate-700 active:scale-[0.99] dark:border-white/10 dark:bg-black/30 dark:text-slate-200"
+                    >
+                      Use {stop.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                  You can tap one above, or keep talking and say the city, municipality, province, or nearby KM-post landmark.
+                </p>
               </div>
             )}
 

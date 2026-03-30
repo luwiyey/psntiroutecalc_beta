@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CUBAO_BAGUIO_ROUTE_ID, ROUTES } from '../constants';
+import { CUBAO_BAGUIO_ROUTE_ID, ORDINARY_BAYAMBANG_ROUTE_ID, ROUTES } from '../constants';
 import {
   getSpeechRecognitionErrorMessage,
   parseBatchCountVoiceTranscript,
@@ -21,9 +21,14 @@ import {
 } from '../utils/voice';
 
 const cubaoBaguioRoute = ROUTES.find(route => route.id === CUBAO_BAGUIO_ROUTE_ID);
+const ordinaryBayambangRoute = ROUTES.find(route => route.id === ORDINARY_BAYAMBANG_ROUTE_ID);
 
 if (!cubaoBaguioRoute) {
   throw new Error('Cubao-Baguio route not found for voice tests.');
+}
+
+if (!ordinaryBayambangRoute) {
+  throw new Error('Ordinary Bayambang route not found for voice tests.');
 }
 
 describe('parseFareVoiceTranscript', () => {
@@ -103,6 +108,19 @@ describe('parseFareVoiceTranscript', () => {
 
     expect(result.originStop.name).toBe('Cubao');
     expect(result.destinationStop.name).toBe('Dau');
+  });
+
+  it('uses fuzzy stop matching inside a route phrase for noisy pronunciations', () => {
+    const result = parseFareVoiceTranscript('Saytan to Urdeneta regular', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result from fuzzy stop phrases.');
+    }
+
+    expect(result.originStop.name).toContain('Saitan');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+    expect(result.fareType).toBe('regular');
   });
 });
 
@@ -329,6 +347,18 @@ describe('parseStopVoiceTranscript', () => {
 
     expect(result.stop.name).toBe('Rosario');
     expect(result.matchMode).toBe('fuzzy');
+  });
+
+  it('recognizes common pronunciation variants for route stops', () => {
+    const result = parseStopVoiceTranscript('Saytan', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a fuzzy matched stop result for Saytan.');
+    }
+
+    expect(result.stop.name).toContain('Saitan');
+    expect(['exact', 'fuzzy']).toContain(result.matchMode);
   });
 });
 

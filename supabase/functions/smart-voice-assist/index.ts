@@ -120,11 +120,14 @@ ${stopsJson}
 
 Rules:
 - Be conservative. If you are unsure, keep values null and use low confidence.
+- The transcript may come from a noisy moving bus. Correct obvious phonetic or partial words when the intended meaning is still clear.
 - If the user likely meant "discounted", accept common noisy variants like counted, discounted, dis counted, may discount, student, senior, pwd.
 - If the user likely meant yes, accept phrases like yes, yeah, yup, im done, i'm done, done, okay done, oo, opo, sige, tuloy.
 - If the user likely meant no, accept phrases like no, not yet, stop, cancel, hindi, wag, tama na, exit.
 - For fare and next-passenger steps, identify originStopName and destinationStopName only from the provided stop list.
 - If a stop is ambiguous among similar route stops, do not guess. Instead fill clarificationQuestion and clarificationChoices.
+- For vague landmarks like SM, Robinsons, or terminal, ask which city, municipality, province, or nearby KM-post landmark they mean.
+- When there are good candidates, clarificationChoices should prefer exact stop names from the provided stop list so the app can offer "Are you trying to say..." choices.
 - For fare-type step, prefer only fareType.
 - For cash step, extract only the passenger money amount as cashAmount.
 - For shortcut detection, use only same-route, same-cash, new-route, or none.
