@@ -14,6 +14,7 @@ type SpeechRecognitionResultLike = {
 
 export type SpeechRecognitionEventLike = {
   readonly results: ArrayLike<SpeechRecognitionResultLike>;
+  readonly resultIndex?: number;
 };
 
 export type SpeechRecognitionErrorLike = {
@@ -543,6 +544,27 @@ const collapseRepeatedSpeech = (value: string) => {
   return cleanWhitespace(nextWords.join(' '));
 };
 
+export const mergeSpeechTranscript = (existing: string, nextChunk: string) => {
+  const base = collapseRepeatedSpeech(existing);
+  const next = collapseRepeatedSpeech(nextChunk);
+
+  if (!base) return next;
+  if (!next) return base;
+
+  const normalizedBase = cleanWhitespace(base.toLowerCase());
+  const normalizedNext = cleanWhitespace(next.toLowerCase());
+
+  if (normalizedBase === normalizedNext || normalizedBase.endsWith(` ${normalizedNext}`)) {
+    return base;
+  }
+
+  if (normalizedNext === normalizedBase || normalizedNext.startsWith(`${normalizedBase} `)) {
+    return next;
+  }
+
+  return collapseRepeatedSpeech(`${base} ${next}`);
+};
+
 const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bess em\b/g, ' sm '],
   [/\bes em\b/g, ' sm '],
@@ -556,8 +578,13 @@ const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bbawek\b/g, ' baw ek '],
   [/\bbawik\b/g, ' baw ek '],
   [/\bbaw ek\b/g, ' baw ek '],
+  [/\bbaw ik\b/g, ' baw ek '],
+  [/\bbaw[-\s]?ik\b/g, ' baw ek '],
   [/\bpoy poy\b/g, ' poyopoy '],
   [/\bpoypoy\b/g, ' poyopoy '],
+  [/\bpuyo?puy\b/g, ' poyopoy '],
+  [/\bpuyu puy\b/g, ' poyopoy '],
+  [/\bpuyupuy\b/g, ' poyopoy '],
   [/\burdeneta\b/g, ' urdaneta '],
   [/\burdineta\b/g, ' urdaneta '],
   [/\bordaneta\b/g, ' urdaneta '],
@@ -1247,7 +1274,12 @@ export const extractRecognitionTranscript = (event: SpeechRecognitionEventLike) 
   let latestConfidence: number | null = null;
   let hasFinal = false;
 
-  for (let index = 0; index < event.results.length; index += 1) {
+  const startIndex =
+    typeof event.resultIndex === 'number' && Number.isFinite(event.resultIndex)
+      ? Math.max(0, event.resultIndex)
+      : 0;
+
+  for (let index = startIndex; index < event.results.length; index += 1) {
     const result = event.results[index];
     const alternative = result?.[0];
     const transcript = alternative?.transcript?.trim();
@@ -1268,10 +1300,14 @@ export const extractRecognitionTranscript = (event: SpeechRecognitionEventLike) 
     }
   }
 
-  const transcript = collapseRepeatedSpeech([...finalParts, latestInterim].filter(Boolean).join(' ').trim());
+  const finalTranscript = collapseRepeatedSpeech(finalParts.join(' ').trim());
+  const interimTranscript = collapseRepeatedSpeech(latestInterim);
+  const transcript = mergeSpeechTranscript(finalTranscript, interimTranscript);
 
   return {
     transcript,
+    finalTranscript,
+    interimTranscript,
     confidence: latestConfidence,
     hasFinal
   };
@@ -1360,12 +1396,12 @@ export const parseFareTypeVoiceAnswer = (transcript: string): FareTypeVoiceAnswe
   const normalized = normalizeStopText(transcript);
   if (!normalized) return null;
 
-  if (/\b(regular|ordinary|full fare|walang discount|walang diskwento|buo)\b/.test(normalized)) {
+  if (/\b(regular|ordinary|full fare|walang discount|walang diskwento|buo|no discount|without discount)\b/.test(normalized)) {
     return 'regular';
   }
 
   if (
-    /\b(discount|discounted|counted|discounting|dis counted|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(
+    /\b(discount|discounted|counted|discounting|discount fare|discounted fare|dis counted|disconted|dis counted fare|student|senior|pwd|sc|diskwento|estudyante|studyante|may discount|may diskwento)\b/.test(
       normalized
     )
   ) {
@@ -1380,14 +1416,14 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   if (!normalized) return null;
 
   if (
-    /\b(yes|yeah|yea|yep|yup|yas|ya|uh huh|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na|correct|tama|thats right|that s right|right|affirmative|im done|i m done|yes im done|yes i m done|yes done|okay done|ok done|done na|tapos na)\b/.test(
+    /\b(yes|yeah|yea|yep|yup|yas|ya|yess|yis|uh huh|continue|next|next passenger|another|again|go on|more|oo|opo|sige|tuloy|sunod|susunod|pwede na|correct|tama|thats right|that s right|right|affirmative|confirm|confirmed|go ahead|proceed|sure|okay|ok|alright|all right|im done|i m done|yes im done|yes i m done|yes done|okay done|ok done|done na|tapos na)\b/.test(
       normalized
     )
   ) {
     return 'yes';
   }
 
-  if (/\b(no|nope|exit|stop|close|finish|cancel|end|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
+  if (/\b(no|nope|exit|stop|close|finish|cancel|end|quit|shut up|be quiet|quiet|silence|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
     return 'no';
   }
 

@@ -48,6 +48,7 @@ import {
   formatVoiceConfidence,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
+  mergeSpeechTranscript,
   parseFareConversationShortcut,
   parseShiftVoiceCommand,
   parseVoiceBinaryAnswer,
@@ -152,6 +153,7 @@ const CalcScreen: React.FC = () => {
   const voiceSilenceTimeoutRef = useRef<number | null>(null);
   const voiceAutoRestartTimeoutRef = useRef<number | null>(null);
   const voiceAutoRestartCountRef = useRef(0);
+  const committedVoiceTranscriptRef = useRef('');
   const latestVoiceTranscriptRef = useRef('');
   const latestVoiceConfidenceRef = useRef<number | null>(null);
   const voiceTranscriptHandledRef = useRef(false);
@@ -229,6 +231,7 @@ const CalcScreen: React.FC = () => {
     }
     queuedVoicePromptRef.current = null;
     latestVoiceTranscriptRef.current = '';
+    committedVoiceTranscriptRef.current = '';
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
     voiceResultRef.current = null;
@@ -262,6 +265,7 @@ const CalcScreen: React.FC = () => {
       }
       queuedVoicePromptRef.current = null;
       latestVoiceTranscriptRef.current = '';
+      committedVoiceTranscriptRef.current = '';
       latestVoiceConfidenceRef.current = null;
       voiceTranscriptHandledRef.current = false;
       activeVoiceFareRef.current = null;
@@ -524,6 +528,7 @@ const CalcScreen: React.FC = () => {
     voiceRecognitionRef.current?.abort();
     voiceRecognitionRef.current = null;
     latestVoiceTranscriptRef.current = '';
+    committedVoiceTranscriptRef.current = '';
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
     pendingVoiceConfirmationRef.current = null;
@@ -650,39 +655,39 @@ const CalcScreen: React.FC = () => {
     if (hasFinal) {
       switch (step) {
         case 'cash':
-          return 260;
+          return 420;
         case 'fare-type':
-          return 220;
+          return 360;
         case 'passenger-count':
-          return 220;
+          return 360;
         case 'done-check':
-          return 200;
+          return 320;
         case 'next-passenger':
-          return 260;
+          return 420;
         case 'confirm':
-          return 180;
+          return 320;
         case 'fare':
         default:
-          return 320;
+          return 420;
       }
     }
 
     switch (step) {
       case 'cash':
-        return 1800;
+        return 2600;
       case 'done-check':
-        return 1300;
+        return 2200;
       case 'next-passenger':
-        return 1600;
+        return 2400;
       case 'fare-type':
-        return 1500;
+        return 2200;
       case 'passenger-count':
-        return 1500;
+        return 2200;
       case 'confirm':
-        return 1100;
+        return 2000;
       case 'fare':
       default:
-        return 1800;
+        return 2600;
     }
   };
 
@@ -962,7 +967,7 @@ const CalcScreen: React.FC = () => {
     if (step === 'done-check') {
       if (
         matches(
-          /\b(yes|yeah|yea|yep|yup|yas|oo|opo|sige|okay|ok|correct|tama|yes done|im done|i m done|done|done na|tapos|tapos na|finished|all done|yes im done|yes i m done)\b/
+          /\b(yes|yeah|yea|yep|yup|yas|yess|yis|oo|opo|sige|okay|ok|sure|confirm|correct|tama|yes done|im done|i m done|done|done na|tapos|tapos na|finished|all done|yes im done|yes i m done)\b/
         )
       ) {
         return 'yes';
@@ -982,7 +987,7 @@ const CalcScreen: React.FC = () => {
     if (step === 'next-passenger') {
       if (
         matches(
-          /\b(yes|yeah|yea|yep|yup|yas|oo|opo|continue|another|again|more|next passenger|go on|sunod|susunod|sige)\b/
+          /\b(yes|yeah|yea|yep|yup|yas|yess|yis|oo|opo|continue|another|again|more|next passenger|go on|sunod|susunod|sige|sure|confirm|proceed)\b/
         )
       ) {
         return 'yes';
@@ -1001,7 +1006,7 @@ const CalcScreen: React.FC = () => {
 
     if (
       matches(
-        /\b(yes|yeah|yea|yep|yup|yas|oo|opo|correct|tama|right|affirmative|that s right|thats right)\b/
+        /\b(yes|yeah|yea|yep|yup|yas|yess|yis|oo|opo|correct|tama|right|affirmative|that s right|thats right|sure|confirm|confirmed|go ahead|proceed|okay|ok)\b/
       )
     ) {
       return 'yes';
@@ -1236,7 +1241,7 @@ const CalcScreen: React.FC = () => {
 
     const beginListening = () => {
       queuedVoiceTimeoutRef.current = null;
-      window.setTimeout(() => startFareVoiceRecognition(nextStep), 60);
+      window.setTimeout(() => startFareVoiceRecognition(nextStep), 20);
     };
 
     cancelVoiceReply();
@@ -1246,7 +1251,7 @@ const CalcScreen: React.FC = () => {
     });
 
     if (!started) {
-      queuedVoiceTimeoutRef.current = window.setTimeout(beginListening, 80);
+      queuedVoiceTimeoutRef.current = window.setTimeout(beginListening, 40);
     }
   };
 
@@ -1633,7 +1638,7 @@ const CalcScreen: React.FC = () => {
       return;
     }
 
-    if (/\b(cancel|stop|close|nevermind|never mind)\b/i.test(trimmedTranscript)) {
+    if (/\b(cancel|stop|close|exit|end|quit|nevermind|never mind|shut up|be quiet|quiet|silence|tahimik|tumahimik)\b/i.test(trimmedTranscript)) {
       pendingVoiceConfirmationRef.current = null;
       closeVoicePanelAfterReply('Voice assistant cancelled.');
       return;
@@ -2213,6 +2218,7 @@ const CalcScreen: React.FC = () => {
     setVoiceTranscript('');
     setVoiceConfidence(null);
     latestVoiceTranscriptRef.current = '';
+    committedVoiceTranscriptRef.current = '';
     latestVoiceConfidenceRef.current = null;
     voiceTranscriptHandledRef.current = false;
     if (requestedStep === 'fare') {
@@ -2233,12 +2239,14 @@ const CalcScreen: React.FC = () => {
     recognition.onstart = () => {
       setIsVoiceListening(true);
       latestVoiceTranscriptRef.current = '';
+      committedVoiceTranscriptRef.current = '';
       latestVoiceConfidenceRef.current = null;
       voiceTranscriptHandledRef.current = false;
       setVoiceFeedback(getListeningPrompt(requestedStep));
     };
     recognition.onerror = event => {
       clearVoiceSilenceTimeout();
+      committedVoiceTranscriptRef.current = '';
       const nextMessage =
         event.error === 'no-speech'
           ? getNoSpeechPrompt(requestedStep)
@@ -2280,17 +2288,33 @@ const CalcScreen: React.FC = () => {
     };
 
     recognition.onresult = event => {
-      const { transcript, confidence, hasFinal } = extractRecognitionTranscript(event);
-      if (!transcript) {
+      const { transcript, finalTranscript, interimTranscript, confidence, hasFinal } =
+        extractRecognitionTranscript(event);
+
+      if (finalTranscript) {
+        committedVoiceTranscriptRef.current = mergeSpeechTranscript(
+          committedVoiceTranscriptRef.current,
+          finalTranscript
+        );
+      }
+
+      const resolvedTranscript = mergeSpeechTranscript(
+        committedVoiceTranscriptRef.current,
+        interimTranscript || transcript
+      );
+
+      if (!resolvedTranscript) {
         return;
       }
 
-      latestVoiceTranscriptRef.current = transcript;
+      latestVoiceTranscriptRef.current = resolvedTranscript;
       latestVoiceConfidenceRef.current = confidence;
       voiceAutoRestartCountRef.current = 0;
-      setVoiceTranscript(transcript);
+      setVoiceTranscript(resolvedTranscript);
       setVoiceConfidence(confidence);
-      setVoiceFeedback(hasFinal ? `Heard "${transcript}". Processing...` : `Heard "${transcript}".`);
+      setVoiceFeedback(
+        hasFinal ? `Heard "${resolvedTranscript}". Processing...` : `Heard "${resolvedTranscript}".`
+      );
       flushTranscriptAfterSilence(hasFinal);
     };
     recognition.onend = () => {
@@ -2305,6 +2329,7 @@ const CalcScreen: React.FC = () => {
         );
         voiceAutoRestartCountRef.current = 0;
         latestVoiceTranscriptRef.current = '';
+        committedVoiceTranscriptRef.current = '';
         latestVoiceConfidenceRef.current = null;
         voiceTranscriptHandledRef.current = false;
         flushQueuedVoicePrompt();
@@ -2312,19 +2337,20 @@ const CalcScreen: React.FC = () => {
       }
 
       if (!voiceTranscriptHandledRef.current && !latestVoiceTranscriptRef.current.trim()) {
-        if (voiceAutoRestartCountRef.current < 1) {
+        if (voiceAutoRestartCountRef.current < 3) {
           voiceAutoRestartCountRef.current += 1;
           setVoiceFeedback(`Still listening for ${getListeningPrompt(requestedStep).replace(/^Listening\.\.\.\s*/i, '').toLowerCase()}`);
           voiceAutoRestartTimeoutRef.current = window.setTimeout(() => {
             voiceAutoRestartTimeoutRef.current = null;
             startFareVoiceRecognition(requestedStep, { autoRestart: true });
-          }, 140);
+          }, 120);
           return;
         }
 
         queueVoicePrompt(getNoSpeechPrompt(requestedStep), requestedStep);
       }
       latestVoiceTranscriptRef.current = '';
+      committedVoiceTranscriptRef.current = '';
       latestVoiceConfidenceRef.current = null;
       voiceTranscriptHandledRef.current = false;
       flushQueuedVoicePrompt();

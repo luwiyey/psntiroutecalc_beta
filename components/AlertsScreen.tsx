@@ -483,6 +483,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     setVoiceSuggestions([]);
     setVoiceSuggestionCount(null);
     setPendingBulkVoiceAction(null);
+    setLastVoiceQueuedAction(null);
 
     if (!message) {
       setVoiceFeedback(null);
@@ -493,11 +494,11 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     }
 
     setVoiceFeedback(message);
-    setVoicePlaceStatus(null);
     const hide = () => {
       setVoiceFeedback(null);
       setVoiceTranscript('');
       setVoiceConfidence(null);
+      setVoicePlaceStatus(null);
     };
 
     const spoke = speakVoiceReply(message, {

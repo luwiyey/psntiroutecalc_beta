@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CUBAO_BAGUIO_ROUTE_ID, ORDINARY_BAYAMBANG_ROUTE_ID, ROUTES } from '../constants';
 import {
+  extractRecognitionTranscript,
   getSpeechRecognitionErrorMessage,
   parseBatchCountVoiceTranscript,
   parseCashVoiceTranscript,
@@ -298,6 +299,41 @@ describe('parseVoiceBinaryAnswer', () => {
 
   it('treats im done as a yes response for follow-up questions', () => {
     expect(parseVoiceBinaryAnswer('im done')).toBe('yes');
+  });
+
+  it('treats confirm-style answers as yes', () => {
+    expect(parseVoiceBinaryAnswer('confirm')).toBe('yes');
+    expect(parseVoiceBinaryAnswer('sure proceed')).toBe('yes');
+  });
+
+  it('treats shut up as a stop answer', () => {
+    expect(parseVoiceBinaryAnswer('shut up')).toBe('no');
+  });
+});
+
+describe('extractRecognitionTranscript', () => {
+  it('uses resultIndex so old final chunks are not re-added on every event', () => {
+    const event = {
+      resultIndex: 1,
+      results: [
+        {
+          isFinal: true,
+          length: 1,
+          0: { transcript: 'Bayambang to', confidence: 0.91 }
+        },
+        {
+          isFinal: true,
+          length: 1,
+          0: { transcript: 'Baguio discounted', confidence: 0.88 }
+        }
+      ]
+    };
+
+    const result = extractRecognitionTranscript(event);
+
+    expect(result.finalTranscript).toBe('Baguio discounted');
+    expect(result.transcript).toBe('Baguio discounted');
+    expect(result.hasFinal).toBe(true);
   });
 });
 
