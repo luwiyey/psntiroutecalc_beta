@@ -63,7 +63,7 @@ const clampStops = (stops: SmartVoiceStopContext[]) =>
     aliases: Array.isArray(stop.aliases)
       ? stop.aliases
           .filter((alias): alias is string => typeof alias === 'string' && alias.trim().length > 0)
-          .slice(0, 6)
+          .slice(0, 10)
       : []
   }));
 
@@ -122,11 +122,15 @@ ${stopsJson}
 Rules:
 - Be conservative. If you are unsure, keep values null and use low confidence.
 - The transcript may come from a noisy moving bus. Correct obvious phonetic or partial words when the intended meaning is still clear.
+- The stop list includes small KM-post places, landmark pieces, and common local references. Treat obscure stops just as valid as big terminals.
+- If the transcript sounds close to any provided stop alias, landmark, or split stop name, map it back to the exact stop name from the list.
+- Filipino pronunciations may clip or merge syllables. McDo, Jollibee, PSU, bypass, crossing, bayan, villa, and similar local landmark words can point to a listed stop.
 - If the user likely meant "discounted", accept common noisy variants like counted, discounted, dis counted, may discount, student, senior, pwd.
 - If the user likely meant yes, accept phrases like yes, yeah, yup, im done, i'm done, done, okay done, oo, opo, sige, tuloy.
 - If the user likely meant no, accept phrases like no, not yet, stop, cancel, hindi, wag, tama na, exit.
 - For passenger-count step, extract only the passenger count as passengerCount. Accept noisy variants like to/too for two, for/fore for four, couple for two, and single for one when they clearly mean the count.
 - For fare and next-passenger steps, identify originStopName and destinationStopName only from the provided stop list.
+- Prefer recovering a likely stop from the provided aliases instead of leaving originStopName or destinationStopName null when the intended stop is reasonably clear.
 - If a stop is ambiguous among similar route stops, do not guess. Instead fill clarificationQuestion and clarificationChoices.
 - For vague landmarks like SM, Robinsons, or terminal, ask which city, municipality, province, or nearby KM-post landmark they mean.
 - When there are good candidates, clarificationChoices should prefer exact stop names from the provided stop list so the app can offer "Are you trying to say..." choices.

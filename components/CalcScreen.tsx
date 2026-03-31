@@ -739,6 +739,29 @@ const CalcScreen: React.FC = () => {
     return { originQuery, destinationQuery };
   };
 
+  const buildSmartStopAliases = (stop: Stop) => {
+    const aliases = new Set<string>();
+    const seeds = [stop.name, ...(stop.aliases ?? [])];
+
+    seeds.forEach(seed => {
+      const trimmed = seed.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      aliases.add(trimmed);
+      aliases.add(trimmed.replace(/[()/,-]+/g, ' ').replace(/\s+/g, ' ').trim());
+
+      trimmed
+        .split(/[\/(),-]/g)
+        .map(part => part.trim())
+        .filter(part => part.length >= 3)
+        .forEach(part => aliases.add(part));
+    });
+
+    return [...aliases].filter(Boolean).slice(0, 10);
+  };
+
   const describeStopChoices = (choices: Stop[]) => choices.map(choice => choice.name).join(', ');
 
   const findStopsFromClarificationChoices = (choices: string[]) => {
@@ -1547,7 +1570,7 @@ const CalcScreen: React.FC = () => {
           routeStops: activeRoute.stops.map(stop => ({
             name: stop.name,
             km: stop.km,
-            aliases: stop.aliases ?? []
+            aliases: buildSmartStopAliases(stop)
           })),
           activeFare: (() => {
             const activeFare = getActiveVoiceFareContext('fare-type');
