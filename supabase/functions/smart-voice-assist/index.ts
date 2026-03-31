@@ -124,6 +124,8 @@ Rules:
 - The transcript may come from a noisy moving bus. Correct obvious phonetic or partial words when the intended meaning is still clear.
 - The stop list includes small KM-post places, landmark pieces, and common local references. Treat obscure stops just as valid as big terminals.
 - If the transcript sounds close to any provided stop alias, landmark, or split stop name, map it back to the exact stop name from the list.
+- Some printed stop names use slashes because they group nearby places under one KM-post. If the transcript closely matches one named place from that grouped stop, prefer that grouped KM-post stop instead of jumping to a different KM.
+- Do not invent a different stop just because two grouped stop names share similar slash-separated words. When unsure, ask a clarification question.
 - Filipino pronunciations may clip or merge syllables. McDo, Jollibee, PSU, bypass, crossing, bayan, villa, and similar local landmark words can point to a listed stop.
 - If the user likely meant "discounted", accept common noisy variants like counted, discounted, dis counted, may discount, student, senior, pwd.
 - If the user likely meant yes, accept phrases like yes, yeah, yup, im done, i'm done, done, okay done, oo, opo, sige, tuloy.

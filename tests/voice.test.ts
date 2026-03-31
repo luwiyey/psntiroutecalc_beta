@@ -124,6 +124,18 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.fareType).toBe('regular');
   });
 
+  it('matches grouped KM-post place names like Baw-ek back to the printed stop', () => {
+    const result = parseFareVoiceTranscript('Baw-ek to Urdaneta', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Baw-ek.');
+    }
+
+    expect(result.originStop.name).toBe('Bayacsan / Bawek / Poyopoy');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+  });
+
   it('collapses rolling partial stop fragments from browser speech', () => {
     const result = parseFareVoiceTranscript('Rosario Rosario Rosari to Urdaneta', ordinaryBayambangRoute);
 
@@ -320,6 +332,11 @@ describe('parseVoiceBinaryAnswer', () => {
 
   it('treats shut up as a stop answer', () => {
     expect(parseVoiceBinaryAnswer('shut up')).toBe('no');
+  });
+
+  it('accepts short noisy yes or no replies during follow-up steps', () => {
+    expect(parseVoiceBinaryAnswer('ges')).toBe('yes');
+    expect(parseVoiceBinaryAnswer('noh')).toBe('no');
   });
 });
 

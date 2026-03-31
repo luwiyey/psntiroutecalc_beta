@@ -604,6 +604,8 @@ const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bsaytan\b/g, ' saitan '],
   [/\bseytan\b/g, ' saitan '],
   [/\bseitan\b/g, ' saitan '],
+  [/\bbacaysan\b/g, ' bayacsan '],
+  [/\bbakaysan\b/g, ' bayacsan '],
   [/\bbayaksen\b/g, ' bayacsan '],
   [/\bbayaksan\b/g, ' bayacsan '],
   [/\bbayak san\b/g, ' bayacsan '],
@@ -612,6 +614,8 @@ const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bbawik\b/g, ' baw ek '],
   [/\bbaw ek\b/g, ' baw ek '],
   [/\bbaw ik\b/g, ' baw ek '],
+  [/\bbaw eck\b/g, ' baw ek '],
+  [/\bbowek\b/g, ' baw ek '],
   [/\bbaw[-\s]?ik\b/g, ' baw ek '],
   [/\bpoy poy\b/g, ' poyopoy '],
   [/\bpoypoy\b/g, ' poyopoy '],
@@ -1525,6 +1529,85 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   }
 
   if (/\b(no|nope|exit|stop|close|finish|cancel|end|quit|shut up|be quiet|quiet|silence|hindi|wag|tama na|ayaw|labas|stop na|not yet|hindi pa)\b/.test(normalized)) {
+    return 'no';
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  const approximateYesTokens = [
+    'yes',
+    'yeah',
+    'yea',
+    'yep',
+    'yup',
+    'yas',
+    'yess',
+    'yis',
+    'ya',
+    'ye',
+    'oo',
+    'opo',
+    'sige',
+    'sure',
+    'confirm',
+    'correct',
+    'tama',
+    'done'
+  ];
+  const approximateNoTokens = [
+    'no',
+    'nope',
+    'nah',
+    'hindi',
+    'cancel',
+    'exit',
+    'stop',
+    'end',
+    'quit',
+    'close'
+  ];
+
+  const matchesApproximateToken = (token: string, candidates: string[]) => {
+    const normalizedToken = normalizeSpeechToken(token);
+    if (!normalizedToken) {
+      return false;
+    }
+
+    return candidates.some(candidate => {
+      if (normalizedToken === candidate) {
+        return true;
+      }
+
+      if (areSpeechTokenVariants(normalizedToken, candidate)) {
+        return true;
+      }
+
+      if (normalizedToken.length >= 2 && candidate.startsWith(normalizedToken)) {
+        return true;
+      }
+
+      const relaxedToken = normalizeConfusableStopVowels(normalizedToken);
+      const relaxedCandidate = normalizeConfusableStopVowels(candidate);
+      if (relaxedToken === relaxedCandidate) {
+        return true;
+      }
+
+      const distance = getLevenshteinDistance(normalizedToken, candidate);
+      return normalizedToken.length >= 3 && candidate.length >= 3 && distance <= 1;
+    });
+  };
+
+  const hasApproximateYes = tokens.some(token => matchesApproximateToken(token, approximateYesTokens));
+  const hasApproximateNo = tokens.some(token => matchesApproximateToken(token, approximateNoTokens));
+
+  if (hasApproximateYes && !hasApproximateNo) {
+    return 'yes';
+  }
+
+  if (hasApproximateNo && !hasApproximateYes) {
     return 'no';
   }
 

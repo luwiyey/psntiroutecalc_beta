@@ -691,6 +691,21 @@ const CalcScreen: React.FC = () => {
     }
   };
 
+  const getVoiceAutoRestartLimit = (step: VoiceAssistantStep) => {
+    switch (step) {
+      case 'confirm':
+      case 'fare-type':
+      case 'passenger-count':
+      case 'cash':
+      case 'done-check':
+      case 'next-passenger':
+        return 12;
+      case 'fare':
+      default:
+        return 6;
+    }
+  };
+
   const buildMatchedFareFromStops = (
     nextOriginStop: Stop,
     nextDestinationStop: Stop,
@@ -743,7 +758,7 @@ const CalcScreen: React.FC = () => {
     const aliases = new Set<string>();
     const seeds = [stop.name, ...(stop.aliases ?? [])];
 
-    seeds.forEach(seed => {
+    seeds.forEach((seed, seedIndex) => {
       const trimmed = seed.trim();
       if (!trimmed) {
         return;
@@ -753,7 +768,7 @@ const CalcScreen: React.FC = () => {
       aliases.add(trimmed.replace(/[()/,-]+/g, ' ').replace(/\s+/g, ' ').trim());
 
       trimmed
-        .split(/[\/(),-]/g)
+        .split(seedIndex === 0 ? /[(),-]/g : /[\/(),-]/g)
         .map(part => part.trim())
         .filter(part => part.length >= 3)
         .forEach(part => aliases.add(part));
@@ -2368,6 +2383,45 @@ const CalcScreen: React.FC = () => {
         }
       }
 
+      if (
+        (requestedStep === 'confirm' ||
+          requestedStep === 'done-check' ||
+          requestedStep === 'next-passenger') &&
+        hasFinal
+      ) {
+        const quickBinaryAnswer =
+          parseFareStepBinaryAnswer(requestedStep, resolvedTranscript) ??
+          parseVoiceBinaryAnswer(resolvedTranscript);
+        if (quickBinaryAnswer) {
+          clearVoiceSilenceTimeout();
+          voiceTranscriptHandledRef.current = true;
+          setVoiceFeedback(`Heard "${resolvedTranscript}". Processing...`);
+          void processFareVoiceTranscript(
+            requestedStep,
+            resolvedTranscript,
+            confidence
+          );
+          recognition.stop();
+          return;
+        }
+      }
+
+      if (requestedStep === 'fare-type' && hasFinal) {
+        const quickFareType = parseFareTypeVoiceAnswer(resolvedTranscript);
+        if (quickFareType) {
+          clearVoiceSilenceTimeout();
+          voiceTranscriptHandledRef.current = true;
+          setVoiceFeedback(`Heard "${resolvedTranscript}". Processing...`);
+          void processFareVoiceTranscript(
+            requestedStep,
+            resolvedTranscript,
+            confidence
+          );
+          recognition.stop();
+          return;
+        }
+      }
+
       setVoiceFeedback(
         hasFinal ? `Heard "${resolvedTranscript}". Processing...` : `Heard "${resolvedTranscript}".`
       );
@@ -2393,7 +2447,7 @@ const CalcScreen: React.FC = () => {
       }
 
       if (!voiceTranscriptHandledRef.current && !latestVoiceTranscriptRef.current.trim()) {
-        if (voiceAutoRestartCountRef.current < 3) {
+        if (voiceAutoRestartCountRef.current < getVoiceAutoRestartLimit(requestedStep)) {
           voiceAutoRestartCountRef.current += 1;
           setVoiceFeedback(`Still listening for ${getListeningPrompt(requestedStep).replace(/^Listening\.\.\.\s*/i, '').toLowerCase()}`);
           voiceAutoRestartTimeoutRef.current = window.setTimeout(() => {

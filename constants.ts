@@ -254,7 +254,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '253.6 - 258.5',
     latitude: 16.3685,
     longitude: 120.5832,
-    aliases: ['Bayacsan / Baw-ek / Poyopoy']
+    aliases: ['Bayacsan / Baw-ek / Poyopoy', 'Bayacsan', 'Bawek', 'Baw-ek', 'Poyopoy']
   },
   {
     km: 261,
