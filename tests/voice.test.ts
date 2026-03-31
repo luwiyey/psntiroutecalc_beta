@@ -408,6 +408,21 @@ describe('parseStopVoiceTranscript', () => {
     expect(result.stop.name).toContain('Saitan');
     expect(['exact', 'fuzzy']).toContain(result.matchMode);
   });
+
+  it('handles common i/e and o/u vowel swaps for route stops', () => {
+    const sisonResult = parseStopVoiceTranscript('sisun', ordinaryBayambangRoute);
+    const pozzorubioResult = parseStopVoiceTranscript('puzzo rubio', ordinaryBayambangRoute);
+
+    expect(sisonResult.status).toBe('match');
+    expect(pozzorubioResult.status).toBe('match');
+
+    if (sisonResult.status !== 'match' || pozzorubioResult.status !== 'match') {
+      throw new Error('Expected vowel-swapped stop variants to match.');
+    }
+
+    expect(sisonResult.stop.name).toContain('Sison');
+    expect(pozzorubioResult.stop.name).toBe('Rosario / Villa Pozzorubio');
+  });
 });
 
 describe('parseStopReminderVoiceTranscript', () => {

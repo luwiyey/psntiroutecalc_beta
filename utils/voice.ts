@@ -454,6 +454,7 @@ const TENS_NUMBER_WORDS: Record<string, number> = {
 const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
 
 const cleanWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
+const normalizeConfusableStopVowels = (value: string) => value.replace(/[ei]/g, 'i').replace(/[ou]/g, 'o');
 
 const SPEECH_FILLER_PATTERN = /\b(?:uh|um|ah|er|hmm+|mmm+)\b/gi;
 const DEDUPABLE_SHORT_SPEECH_TOKENS = new Set(['to', 'from', 'and', 'then', 'na', 'ng', 'the']);
@@ -496,9 +497,15 @@ const areSimilarSpeechChunks = (leftWords: string[], rightWords: string[]) => {
 const areSpeechTokenVariants = (leftWord: string, rightWord: string) => {
   const left = normalizeSpeechToken(leftWord);
   const right = normalizeSpeechToken(rightWord);
+  const relaxedLeft = normalizeConfusableStopVowels(left);
+  const relaxedRight = normalizeConfusableStopVowels(right);
 
   if (!left || !right || left === right) {
     return false;
+  }
+
+  if (relaxedLeft === relaxedRight) {
+    return true;
   }
 
   const shorter = left.length <= right.length ? left : right;
@@ -919,12 +926,22 @@ const getTokenSimilarity = (left: string, right: string) => {
   if (left === right) return 1;
   if (!left || !right) return 0;
 
+  const relaxedLeft = normalizeConfusableStopVowels(left);
+  const relaxedRight = normalizeConfusableStopVowels(right);
+  if (relaxedLeft === relaxedRight) {
+    return 0.94;
+  }
+
   if (getPhoneticKey(left) === getPhoneticKey(right)) {
     return 0.92;
   }
 
   const distance = getLevenshteinDistance(left, right);
-  return Math.max(0, 1 - distance / Math.max(left.length, right.length));
+  const relaxedDistance = getLevenshteinDistance(relaxedLeft, relaxedRight);
+  return Math.max(
+    Math.max(0, 1 - distance / Math.max(left.length, right.length)),
+    Math.max(0, 1 - relaxedDistance / Math.max(relaxedLeft.length, relaxedRight.length))
+  );
 };
 
 const findApproximateStopCandidates = (
@@ -989,6 +1006,22 @@ const findApproximateStopCandidates = (
     .map(candidate => candidate.stop);
 };
 
+const GENERIC_STOP_ALIAS_WORDS = new Set([
+  'city',
+  'bayan',
+  'crossing',
+  'proper',
+  'plant',
+  'school',
+  'college',
+  'terminal',
+  'bypass',
+  'poblacion',
+  'elem',
+  'ncc',
+  'psu'
+]);
+
 const createAliasCandidates = (stop: Stop) => {
   const rawSeeds = new Set<string>([stop.name, ...(stop.aliases ?? [])]);
   const candidates = new Set<string>();
@@ -1001,7 +1034,25 @@ const createAliasCandidates = (stop: Stop) => {
       .split(/[\/(),-]/g)
       .map(part => normalizeStopText(part))
       .filter(part => part.length >= 3)
-      .forEach(part => candidates.add(part));
+      .forEach(part => {
+        candidates.add(part);
+
+        const words = part.split(' ').filter(Boolean);
+        words
+          .filter(word => word.length >= 4 && !GENERIC_STOP_ALIAS_WORDS.has(word))
+          .forEach(word => candidates.add(word));
+
+        for (let index = 0; index < words.length - 1; index += 1) {
+          const pair = `${words[index]} ${words[index + 1]}`.trim();
+          if (
+            pair.length >= 6 &&
+            !GENERIC_STOP_ALIAS_WORDS.has(words[index]) &&
+            !GENERIC_STOP_ALIAS_WORDS.has(words[index + 1])
+          ) {
+            candidates.add(pair);
+          }
+        }
+      });
   });
 
   const baseName = normalizeStopText(stop.name);
