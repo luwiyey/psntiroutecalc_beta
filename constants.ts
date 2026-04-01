@@ -50,14 +50,15 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     latitude: 15.8894,
     longitude: 120.5901,
     isTerminal: true,
-    aliases: ['Carmen']
+    aliases: ['Carmen', 'Kar-men']
   },
   {
     km: 179,
     name: 'Villasis',
     coverageRange: '178.1 - 181.0',
     latitude: 15.9015,
-    longitude: 120.5883
+    longitude: 120.5883,
+    aliases: ['Vilasis', 'Vila-sis', 'Bilyasis', 'Bilyases', 'Bliyasis', 'Balyasis', 'Lasis']
   },
   {
     km: 183,
@@ -65,14 +66,15 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '181.1 - 184.0',
     latitude: 15.9357,
     longitude: 120.5912,
-    aliases: ['Baccag', 'Baccag / Wilcon / McDo']
+    aliases: ['Baccag', 'Baccag / Wilcon / McDo', 'Bakag', 'Bak-kag', 'Wilcon', 'McDo']
   },
   {
     km: 185,
     name: 'Nancayasan',
     coverageRange: '184.1 - 186.0',
     latitude: 15.951,
-    longitude: 120.5768
+    longitude: 120.5768,
+    aliases: ['Nan-kayasan', 'Nang-kayasan', 'Nan-chayasan', 'Nan-tsayasan', 'Nankasan', 'Kayasan']
   },
   {
     km: 187,
@@ -81,7 +83,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     latitude: 15.9882,
     longitude: 120.5736,
     isTerminal: true,
-    aliases: ['Urdaneta City', 'Urdaneta / PSU / Bypass']
+    aliases: ['Urdaneta City', 'Urdaneta / PSU / Bypass', 'Ur-da-neta', 'Urdaneta Bypass', 'Urdanet', 'Daneta', 'PSU', 'Bypass']
   },
   {
     km: 191,
@@ -89,7 +91,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '189.1 - 192.5',
     latitude: 15.9921,
     longitude: 120.5826,
-    aliases: ['Anonas', 'Anonas / Tabuyok']
+    aliases: ['Anonas', 'Anonas / Tabuyok', 'Ano-nas', 'Tabuyoc', 'Ta-bu-yok', 'Tab-yok']
   },
   {
     km: 194,
@@ -97,21 +99,23 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '192.6 - 195.5',
     latitude: 16.0244,
     longitude: 120.5768,
-    aliases: ['Sumabnit', 'Sumabnit / Tulong / Tangke']
+    aliases: ['Sumabnit', 'Sumabnit / Tulong / Tangke', 'Su-mab-nit', 'Sumabnet', 'Tu-long']
   },
   {
     km: 197,
     name: 'Binalonan / Sili',
     coverageRange: '195.6 - 198.5',
     latitude: 16.0536,
-    longitude: 120.6085
+    longitude: 120.6085,
+    aliases: ['Bina-lonan', 'Bina-lo-nan', 'Si-li', 'Balonan', 'Lonan']
   },
   {
     km: 200,
     name: 'Vacante / Bugayong',
     coverageRange: '198.6 - 201.5',
     latitude: 16.0865,
-    longitude: 120.5826
+    longitude: 120.5826,
+    aliases: ['Va-kan-te', 'Bakante', 'Bu-ga-yong', 'Gayong', 'Bugyon']
   },
   {
     km: 203,
@@ -119,28 +123,40 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '201.6 - 204.5',
     latitude: 16.1164,
     longitude: 120.5432,
-    aliases: ['Rosario / Pozzorubio', 'Rosario / Villa Pozzo']
+    aliases: [
+      'Rosario / Pozzorubio',
+      'Rosario / Villa Pozzo',
+      'Ro-sar-yo',
+      'Sar-yo',
+      'Rosar',
+      'Villa Pozzorubio',
+      'Pozzorubio',
+      'Posorubio'
+    ]
   },
   {
     km: 206,
     name: 'Pozzorubio Bayan',
     coverageRange: '204.6 - 207.0',
     latitude: 16.1098,
-    longitude: 120.5428
+    longitude: 120.5428,
+    aliases: ['Pozzorubio', 'Posorubio', 'Po-so-ru-byo', 'Pozo-rubyo', 'Poso-rubio', 'Pozzo', 'Poso', 'Pozor', 'Rubyo']
   },
   {
     km: 208,
     name: 'Batakil',
     coverageRange: '207.1 - 210.0',
     latitude: 16.1437,
-    longitude: 120.5193
+    longitude: 120.5193,
+    aliases: ['Ba-ta-kil']
   },
   {
     km: 212,
     name: 'Sison NCC',
     coverageRange: '210.1 - 213.0',
     latitude: 16.1738,
-    longitude: 120.5117
+    longitude: 120.5117,
+    aliases: ['Sison', 'Si-son']
   },
   {
     km: 214,
@@ -148,7 +164,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '213.1 - 215.0',
     latitude: 16.1822,
     longitude: 120.5125,
-    aliases: ['Sison Ice plant']
+    aliases: ['Sison Ice plant', 'Si-son Ice', 'Ice Plant']
   },
   {
     km: 216,
@@ -156,14 +172,30 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '215.1 - 217.0',
     latitude: 16.1866,
     longitude: 120.5135,
-    aliases: ['Cauringan / Agat', 'Cauringan/Agat']
+    aliases: [
+      'Cauringan / Agat',
+      'Cauringan/Agat',
+      'Kaw-ringan',
+      'Ka-u-ringan',
+      'Kaw-ringgan',
+      'Kauringgan',
+      'Karingan',
+      'Kawingan',
+      'Artacho',
+      'Ar-ta-cho',
+      'Ar-ta-tso',
+      'Tacho',
+      'Agat',
+      'A-gat'
+    ]
   },
   {
     km: 218,
     name: 'Esperanza / Udiao',
     coverageRange: '217.1 - 219.0',
     latitude: 16.2147,
-    longitude: 120.502
+    longitude: 120.502,
+    aliases: ['Es-pe-ran-sa', 'U-dyaw', 'U-jao', 'Jao', 'Dyao']
   },
   {
     km: 220,
@@ -171,7 +203,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '219.1 - 221.0',
     latitude: 16.2415,
     longitude: 120.4886,
-    aliases: ['Saitan', 'Saitan (Jollibee area)']
+    aliases: ['Saitan', 'Saitan (Jollibee area)', 'Sa-i-tan', 'Sai-tan', 'Jollibee', 'Jabi', 'Jabee', 'Sitan', 'Taytan']
   },
   {
     km: 222,
@@ -180,21 +212,23 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     latitude: 16.2295,
     longitude: 120.4878,
     isTerminal: true,
-    aliases: ['Rosario / Alipang / Inabaan', 'Rosario / Inabaan', 'Rosario']
+    aliases: ['Rosario / Alipang / Inabaan', 'Rosario / Inabaan', 'Rosario', 'Ro-sar-yo', 'Sar-yo', 'Rosar']
   },
   {
     km: 225,
     name: 'Casilagan / Cuenca',
     coverageRange: '223.6 - 226.0',
     latitude: 16.2552,
-    longitude: 120.4891
+    longitude: 120.4891,
+    aliases: ['Kasi-lagan', 'Ka-si-la-gan', 'Kwenka', 'Kuwenka', 'Kwen']
   },
   {
     km: 227,
     name: 'San Luis',
     coverageRange: '226.1 - 228.0',
     latitude: 16.3245,
-    longitude: 120.4772
+    longitude: 120.4772,
+    aliases: ['San Lu-wis']
   },
   {
     km: 229,
@@ -202,35 +236,39 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '228.1 - 229.5',
     latitude: 16.3312,
     longitude: 120.4795,
-    aliases: ['Mauasuas']
+    aliases: ['Mauasuas', 'Ma-o-a-so-as', 'Mao-so-as', 'Maw-so-as', 'Mawaswas', 'Mawas', 'Maosoas']
   },
   {
     km: 230,
     name: 'Ambangonan',
     coverageRange: '229.6 - 231.0',
     latitude: 16.3059,
-    longitude: 120.4905
+    longitude: 120.4905,
+    aliases: ['Am-bang-onan']
   },
   {
     km: 232,
     name: 'Ambelete',
     coverageRange: '231.1 - 233.5',
     latitude: 16.315,
-    longitude: 120.488
+    longitude: 120.488,
+    aliases: ['Am-be-le-te']
   },
   {
     km: 235,
     name: 'Pugo Crossing',
     coverageRange: '233.6 - 238.0',
     latitude: 16.3268,
-    longitude: 120.4718
+    longitude: 120.4718,
+    aliases: ['Pu-go', 'Crossing Pugo', 'Pugoo', 'Pugo']
   },
   {
     km: 241,
     name: 'Palina',
     coverageRange: '238.1 - 243.5',
     latitude: 16.345,
-    longitude: 120.5512
+    longitude: 120.5512,
+    aliases: ['Pa-li-na']
   },
   {
     km: 246,
@@ -238,7 +276,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '243.6 - 248.5',
     latitude: 16.3548,
     longitude: 120.4914,
-    aliases: ['Salpang Taloy']
+    aliases: ['Salpang Taloy', 'Sal-pang', 'Ta-loy', 'Taloyy']
   },
   {
     km: 251,
@@ -246,7 +284,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '248.6 - 253.5',
     latitude: 16.3781,
     longitude: 120.5081,
-    aliases: ['Realiza / Tafarmco', 'Realiza / Tafarmco Taloy']
+    aliases: ['Realiza / Tafarmco', 'Realiza / Tafarmco Taloy', 'Re-a-li-sa', 'Ryalisa', 'Ta-farm-co', 'Lisa']
   },
   {
     km: 256,
@@ -254,7 +292,26 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '253.6 - 258.5',
     latitude: 16.3685,
     longitude: 120.5832,
-    aliases: ['Bayacsan / Baw-ek / Poyopoy', 'Bayacsan', 'Bawek', 'Baw-ek', 'Poyopoy']
+    aliases: [
+      'Bayacsan / Baw-ek / Poyopoy',
+      'Bayacsan',
+      'Bawek',
+      'Baw-ek',
+      'Poyopoy',
+      'Ba-yak-san',
+      'Ba-yak-sen',
+      'Bacaysan',
+      'Bayaksan',
+      'Ba-wek',
+      'Bawe',
+      'Ba-ik',
+      'Yak-san',
+      'Poy-poy',
+      'Puyopoy',
+      'Puy-puy',
+      'Poy',
+      'Puy'
+    ]
   },
   {
     km: 261,
@@ -262,7 +319,7 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '258.6 - 266.0',
     latitude: 16.3475,
     longitude: 120.591,
-    aliases: ['Tuba Wilcon / Rockshed', 'Tuba/ Rockshed']
+    aliases: ['Tuba Wilcon / Rockshed', 'Tuba/ Rockshed', 'Tu-ba', 'Tuba-a', 'Tuwa', 'Rok-shed', 'Rock-shed', 'Rok-shet', 'Shed']
   },
   {
     km: 271,
@@ -270,7 +327,8 @@ const COMMON_BAGUIO_CORRIDOR_SEEDS: StopSeed[] = [
     coverageRange: '266.1 - End',
     latitude: 16.4123,
     longitude: 120.5945,
-    isTerminal: true
+    isTerminal: true,
+    aliases: ['Bag-yo', 'Bag-i-o']
   }
 ];
 
@@ -282,7 +340,7 @@ const ORDINARY_BAYAMBANG_STOPS: Stop[] = buildStops([
     latitude: 15.8115,
     longitude: 120.4539,
     isTerminal: true,
-    aliases: ['Bayambang (Proper)']
+    aliases: ['Bayambang (Proper)', 'Bayam-bang', 'Bayembang']
   },
   {
     km: 160,
@@ -290,14 +348,15 @@ const ORDINARY_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '156.1 - 161.5',
     latitude: 15.8361,
     longitude: 120.477,
-    aliases: ['Bautista (Proper)']
+    aliases: ['Bautista (Proper)', 'Baw-tista', 'Bow-tista']
   },
   {
     km: 163,
     name: 'Anulid',
     coverageRange: '161.6 - 163.5',
     latitude: 15.8554,
-    longitude: 120.4932
+    longitude: 120.4932,
+    aliases: ['Anu-lid']
   },
   {
     km: 164,
@@ -305,7 +364,7 @@ const ORDINARY_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '163.6 - 165.5',
     latitude: 15.8455,
     longitude: 120.5095,
-    aliases: ['Laoac']
+    aliases: ['Laoac', 'La-wak', 'Laoak', 'La-wac']
   },
   {
     km: 167,
@@ -313,21 +372,23 @@ const ORDINARY_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '165.6 - 169.0',
     latitude: 15.8481,
     longitude: 120.5235,
-    aliases: ['Alcala Bayan', 'Alacala Bayan']
+    aliases: ['Alcala Bayan', 'Alacala Bayan', 'Al-ka-la', 'Alkala']
   },
   {
     km: 171,
     name: 'Kisikis / Pindangan',
     coverageRange: '169.1 - 173.0',
     latitude: 15.8582,
-    longitude: 120.5582
+    longitude: 120.5582,
+    aliases: ['Ki-si-kis', 'Pindangan', 'Pin-da-ngan']
   },
   {
     km: 175,
     name: 'Sto. Tomas',
     coverageRange: '173.1 - 176.0',
     latitude: 15.8821,
-    longitude: 120.5841
+    longitude: 120.5841,
+    aliases: ['Sto Tomas', 'Santo Tomas', 'San Tomas']
   },
   ...COMMON_BAGUIO_CORRIDOR_SEEDS
 ]);
@@ -340,7 +401,7 @@ const AIRCON_BAYAMBANG_STOPS: Stop[] = buildStops([
     latitude: 15.8115,
     longitude: 120.4539,
     isTerminal: true,
-    aliases: ['Bayambang (Proper)']
+    aliases: ['Bayambang (Proper)', 'Bayam-bang', 'Bayembang']
   },
   {
     km: 160,
@@ -348,14 +409,15 @@ const AIRCON_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '156.1 - 161.5',
     latitude: 15.8361,
     longitude: 120.477,
-    aliases: ['Bautista (Proper)']
+    aliases: ['Bautista (Proper)', 'Baw-tista', 'Bow-tista']
   },
   {
     km: 163,
     name: 'Anulid',
     coverageRange: '161.6 - 163.5',
     latitude: 15.8554,
-    longitude: 120.4932
+    longitude: 120.4932,
+    aliases: ['Anu-lid']
   },
   {
     km: 164,
@@ -363,7 +425,7 @@ const AIRCON_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '163.6 - 165.5',
     latitude: 15.8455,
     longitude: 120.5095,
-    aliases: ['Laoac']
+    aliases: ['Laoac', 'La-wak', 'Laoak', 'La-wac']
   },
   {
     km: 167,
@@ -371,21 +433,23 @@ const AIRCON_BAYAMBANG_STOPS: Stop[] = buildStops([
     coverageRange: '165.6 - 169.0',
     latitude: 15.8481,
     longitude: 120.5235,
-    aliases: ['Alcala Bayan', 'Alacala Bayan']
+    aliases: ['Alcala Bayan', 'Alacala Bayan', 'Al-ka-la', 'Alkala']
   },
   {
     km: 171,
     name: 'Kisikis / Pindangan',
     coverageRange: '169.1 - 173.0',
     latitude: 15.8582,
-    longitude: 120.5582
+    longitude: 120.5582,
+    aliases: ['Ki-si-kis', 'Pindangan', 'Pin-da-ngan']
   },
   {
     km: 175,
     name: 'Sto. Tomas',
     coverageRange: '173.1 - 176.0',
     latitude: 15.8821,
-    longitude: 120.5841
+    longitude: 120.5841,
+    aliases: ['Sto Tomas', 'Santo Tomas', 'San Tomas']
   },
   ...COMMON_BAGUIO_CORRIDOR_SEEDS
 ]);

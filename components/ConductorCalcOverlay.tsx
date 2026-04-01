@@ -4,8 +4,10 @@ import {
   cancelVoiceReply,
   extractRecognitionTranscript,
   formatVoiceConfidence,
+  getVoiceRepromptLimit,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
+  parseCalculatorVoiceControlCommand,
   parseCalculatorVoiceTranscript,
   parseCashVoiceTranscript,
   parseVoiceBinaryAnswer,
@@ -248,6 +250,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
   const [useFareDueReference, setUseFareDueReference] = useState(true);
   const [isFareDueDialogOpen, setIsFareDueDialogOpen] = useState(false);
   const voiceHideTimeoutRef = useRef<number | null>(null);
+  const voiceRetryCountRef = useRef(0);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   const baseFareDue = assistantPreset?.fareAmount ?? initialValue;
@@ -329,6 +332,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       window.clearTimeout(voiceHideTimeoutRef.current);
       voiceHideTimeoutRef.current = null;
     }
+    voiceRetryCountRef.current = 0;
     setVoiceTranscript('');
     setVoiceFeedback(null);
     setVoiceConfidence(null);
@@ -343,6 +347,11 @@ const ConductorCalcOverlay: React.FC<Props> = ({
       voiceHideTimeoutRef.current = null;
     }, delay);
   };
+
+  const getVoiceHelpMessage = (step: VoiceCalculatorStep) =>
+    step === 'confirm-expression'
+      ? 'Say yes to calculate now, or say no to keep speaking. You can also say back, repeat, clear, manual, or exit.'
+      : 'Say a math expression like 89 plus 87 plus 78 or a cash amount like one hundred pesos. You can also say clear, delete last, back, repeat, manual, or exit.';
 
   const getSelection = () => ({
     start: inputRef.current?.selectionStart ?? caretPos,
@@ -533,17 +542,99 @@ const ConductorCalcOverlay: React.FC<Props> = ({
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    const restartListening = (step: VoiceCalculatorStep, delay = 320) => {
+      window.setTimeout(() => beginVoiceRecognition(step), delay);
+    };
+    const repromptAfterNoSpeech = () => {
+      voiceRetryCountRef.current += 1;
+      const needsFallbackHint = voiceRetryCountRef.current > getVoiceRepromptLimit('calculator');
+      const nextMessage = requestedStep === 'confirm-expression'
+        ? 'I am still here. Say yes to calculate now, or say no to keep speaking.'
+        : 'I am still here. Say the full expression or the cash amount now, or say manual to stop voice.';
+      setVoiceFeedback(needsFallbackHint ? `${nextMessage} You can also say manual.` : nextMessage);
+      restartListening(requestedStep, 220);
+    };
     recognition.onstart = () => setIsVoiceListening(true);
     recognition.onerror = event => {
       const message = getSpeechRecognitionErrorMessage(event.error);
       setVoiceFeedback(message);
       setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+      if (event.error === 'no-speech') {
+        repromptAfterNoSpeech();
+        return;
+      }
       void speakVoiceReply(message, { rate: 1.45 });
     };
     recognition.onresult = event => {
       const { transcript, confidence } = extractRecognitionTranscript(event);
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
+      voiceRetryCountRef.current = 0;
+
+      const controlCommand = parseCalculatorVoiceControlCommand(transcript);
+      if (controlCommand.status === 'match') {
+        if (controlCommand.command === 'cancel' || controlCommand.command === 'manual') {
+          setPendingVoiceExpression(null);
+          setVoiceFeedback('Voice calculator closed. You can keep using the keypad manually.');
+          scheduleVoicePanelHide();
+          return;
+        }
+
+        if (controlCommand.command === 'repeat' || controlCommand.command === 'help') {
+          const nextMessage =
+            controlCommand.command === 'help' ? getVoiceHelpMessage(requestedStep) : voiceFeedback ?? getVoiceHelpMessage(requestedStep);
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening(requestedStep);
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'back') {
+          setPendingVoiceExpression(null);
+          const nextMessage = 'Okay. Say the full expression again.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'start-over') {
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          const nextMessage = 'Okay. Start over and say the full expression again.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'clear') {
+          handleClear();
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          const nextMessage = 'Calculator cleared. Say the next expression when ready.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'delete-last') {
+          handleBackspace();
+          setPendingVoiceExpression(null);
+          const nextMessage = 'Deleted the last part. Say the expression again when ready.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+      }
 
       if (requestedStep === 'confirm-expression') {
         const answer = parseVoiceBinaryAnswer(transcript);
@@ -563,7 +654,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
           setPendingVoiceExpression(null);
           const retryMessage = 'Okay. Keep speaking the full expression now. Say equals if you want me to calculate right away.';
           setVoiceFeedback(retryMessage);
-          const beginRetry = () => window.setTimeout(() => beginVoiceRecognition('expression'), 320);
+          const beginRetry = () => restartListening('expression');
           const started = speakVoiceReply(retryMessage, { rate: 1.45, onEnd: beginRetry, onError: beginRetry });
           if (!started) beginRetry();
           return;
@@ -571,7 +662,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
 
         const nextMessage = 'Please say yes if you are finished speaking, or say no if you want to keep speaking.';
         setVoiceFeedback(nextMessage);
-        const restartConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
+        const restartConfirm = () => restartListening('confirm-expression');
         const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restartConfirm, onError: restartConfirm });
         if (!started) restartConfirm();
         return;
@@ -609,7 +700,7 @@ const ConductorCalcOverlay: React.FC<Props> = ({
             : '';
           const nextMessage = `I heard ${parsedExpression.prettyExpression}.${pemdasMessage} Are you finished speaking? Say yes to calculate now or no to keep speaking.`;
           setVoiceFeedback(nextMessage);
-          const beginConfirm = () => window.setTimeout(() => beginVoiceRecognition('confirm-expression'), 320);
+          const beginConfirm = () => restartListening('confirm-expression');
           const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: beginConfirm, onError: beginConfirm });
           if (!started) beginConfirm();
           return;

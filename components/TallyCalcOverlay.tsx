@@ -4,8 +4,10 @@ import {
   cancelVoiceReply,
   extractRecognitionTranscript,
   formatVoiceConfidence,
+  getVoiceRepromptLimit,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
+  parseCalculatorVoiceControlCommand,
   parseTallyVoiceTranscript,
   parseVoiceBinaryAnswer,
   speakVoiceReply
@@ -94,6 +96,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
   const [thresholdNotice, setThresholdNotice] = useState<ThresholdNotice | null>(null);
   const [isUndoMenuOpen, setIsUndoMenuOpen] = useState(false);
   const voiceHideTimeoutRef = useRef<number | null>(null);
+  const voiceRetryCountRef = useRef(0);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   useEffect(() => {
@@ -190,6 +193,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
       window.clearTimeout(voiceHideTimeoutRef.current);
       voiceHideTimeoutRef.current = null;
     }
+    voiceRetryCountRef.current = 0;
     setVoiceTranscript('');
     setVoiceFeedback(null);
     setVoiceConfidence(null);
@@ -204,6 +208,11 @@ const TallyCalcOverlay: React.FC<Props> = ({
       voiceHideTimeoutRef.current = null;
     }, delay);
   };
+
+  const getVoiceHelpMessage = (step: VoiceTallyStep) =>
+    step === 'confirm-expression'
+      ? 'Say yes to load the tally now, or say no to keep speaking. You can also say back, repeat, clear, manual, or exit.'
+      : 'Say a tally like 657 plus 20 plus 20. You can also say clear, delete last, back, repeat, manual, or exit.';
 
   const getSelection = () => {
     const start = expressionRef.current?.selectionStart ?? caretPos;
@@ -374,16 +383,97 @@ const TallyCalcOverlay: React.FC<Props> = ({
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    const restartListening = (step: VoiceTallyStep, delay = 320) => {
+      window.setTimeout(() => beginVoiceTally(step), delay);
+    };
+    const repromptAfterNoSpeech = () => {
+      voiceRetryCountRef.current += 1;
+      const needsFallbackHint = voiceRetryCountRef.current > getVoiceRepromptLimit('calculator');
+      const nextMessage = requestedStep === 'confirm-expression'
+        ? 'I am still here. Say yes to load the tally now, or say no to keep speaking.'
+        : 'I am still here. Say the tally again now, or say manual to stop voice.';
+      setVoiceFeedback(needsFallbackHint ? `${nextMessage} You can also say manual.` : nextMessage);
+      restartListening(requestedStep, 220);
+    };
     recognition.onstart = () => setIsVoiceListening(true);
     recognition.onerror = event => {
       setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
       setIsVoiceListening(false);
+      voiceRecognitionRef.current = null;
+      if (event.error === 'no-speech') {
+        repromptAfterNoSpeech();
+      }
     };
     recognition.onresult = event => {
       const { transcript, confidence } = extractRecognitionTranscript(event);
 
       setVoiceTranscript(transcript);
       setVoiceConfidence(confidence);
+      voiceRetryCountRef.current = 0;
+
+      const controlCommand = parseCalculatorVoiceControlCommand(transcript);
+      if (controlCommand.status === 'match') {
+        if (controlCommand.command === 'cancel' || controlCommand.command === 'manual') {
+          setPendingVoiceExpression(null);
+          setVoiceFeedback('Voice tally closed. You can keep editing the tally manually.');
+          scheduleVoicePanelHide();
+          return;
+        }
+
+        if (controlCommand.command === 'repeat' || controlCommand.command === 'help') {
+          const nextMessage =
+            controlCommand.command === 'help' ? getVoiceHelpMessage(requestedStep) : voiceFeedback ?? getVoiceHelpMessage(requestedStep);
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening(requestedStep);
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'back') {
+          setPendingVoiceExpression(null);
+          const nextMessage = 'Okay. Say the tally again.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'start-over') {
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          const nextMessage = 'Okay. Start over and say the tally again.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'clear') {
+          handleClearExpression();
+          setPendingVoiceExpression(null);
+          setVoiceStep('expression');
+          const nextMessage = 'Tally cleared. Say the next tally when ready.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+
+        if (controlCommand.command === 'delete-last') {
+          handleBackspace();
+          setPendingVoiceExpression(null);
+          const nextMessage = 'Deleted the last part. Say the tally again when ready.';
+          setVoiceFeedback(nextMessage);
+          const restart = () => restartListening('expression');
+          const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restart, onError: restart });
+          if (!started) restart();
+          return;
+        }
+      }
 
       if (requestedStep === 'confirm-expression') {
         const answer = parseVoiceBinaryAnswer(transcript);
@@ -404,7 +494,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
           setPendingVoiceExpression(null);
           const retryMessage = 'Okay. Keep speaking the tally now. Say equals if you want me to load it right away.';
           setVoiceFeedback(retryMessage);
-          const beginRetry = () => window.setTimeout(() => beginVoiceTally('expression'), 320);
+          const beginRetry = () => restartListening('expression');
           const started = speakVoiceReply(retryMessage, { rate: 1.45, onEnd: beginRetry, onError: beginRetry });
           if (!started) beginRetry();
           return;
@@ -412,7 +502,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
 
         const nextMessage = 'Please say yes to load the tally now, or say no if you want to keep speaking.';
         setVoiceFeedback(nextMessage);
-        const restartConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
+        const restartConfirm = () => restartListening('confirm-expression');
         const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: restartConfirm, onError: restartConfirm });
         if (!started) restartConfirm();
         return;
@@ -428,7 +518,7 @@ const TallyCalcOverlay: React.FC<Props> = ({
           });
           const nextMessage = `I heard ${parsed.prettyExpression}. Say yes to load it now or no if you want to keep speaking.`;
           setVoiceFeedback(nextMessage);
-          const beginConfirm = () => window.setTimeout(() => beginVoiceTally('confirm-expression'), 320);
+          const beginConfirm = () => restartListening('confirm-expression');
           const started = speakVoiceReply(nextMessage, { rate: 1.45, onEnd: beginConfirm, onError: beginConfirm });
           if (!started) beginConfirm();
           return;

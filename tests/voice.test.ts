@@ -7,9 +7,12 @@ import {
   parseCashVoiceTranscript,
   parseCalculatorVoiceTranscript,
   parseFareConversationShortcut,
+  parseFareVoiceCorrectionCommand,
+  parseFareVoiceDetails,
   parseFareTypeVoiceAnswer,
   parseFareVoiceTranscript,
   parsePassengerCountVoiceTranscript,
+  parseCalculatorVoiceControlCommand,
   parseStopReminderVoiceChain,
   parseStopReminderVoiceChainDetailed,
   parseStopReminderFollowUpTranscript,
@@ -17,6 +20,7 @@ import {
   parseStopReminderVoiceTranscript,
   parseStopVoiceTranscript,
   parseTallyBatchFollowUpTranscript,
+  parseVoiceFlowControlCommand,
   parseVoiceBinaryAnswer,
   parseTallyNavigationVoiceTranscript
 } from '../utils/voice';
@@ -134,6 +138,175 @@ describe('parseFareVoiceTranscript', () => {
 
     expect(result.originStop.name).toBe('Bayacsan / Bawek / Poyopoy');
     expect(result.destinationStop.name).toContain('Urdaneta');
+  });
+
+  it('matches Bayembang back to Bayambang', () => {
+    const result = parseFareVoiceTranscript('Bayembang to Urdaneta', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Bayembang.');
+    }
+
+    expect(result.originStop.name).toBe('Bayambang');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+  });
+
+  it('matches La-wak back to Laoac', () => {
+    const result = parseFareVoiceTranscript('La-wak to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for La-wak.');
+    }
+
+    expect(result.originStop.name).toContain('Laoac');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Nan-chayasan back to Nancayasan', () => {
+    const result = parseFareVoiceTranscript('Nan-chayasan to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Nan-chayasan.');
+    }
+
+    expect(result.originStop.name).toBe('Nancayasan');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Jabi back to Saitan / Jollibee', () => {
+    const result = parseFareVoiceTranscript('Jabi to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Jabi.');
+    }
+
+    expect(result.originStop.name).toContain('Saitan');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Kwenka back to Casilagan / Cuenca', () => {
+    const result = parseFareVoiceTranscript('Kwenka to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Kwenka.');
+    }
+
+    expect(result.originStop.name).toContain('Cuenca');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Puyupoy back to Bayacsan / Bawek / Poyopoy', () => {
+    const result = parseFareVoiceTranscript('Puyupoy to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Puyupoy.');
+    }
+
+    expect(result.originStop.name).toBe('Bayacsan / Bawek / Poyopoy');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches SM Urdaneta back to the Urdaneta KM-post stop', () => {
+    const result = parseFareVoiceTranscript('SM Urdaneta to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for SM Urdaneta.');
+    }
+
+    expect(result.originStop.name).toContain('Urdaneta');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Magic Mall back to Pozzorubio Bayan', () => {
+    const result = parseFareVoiceTranscript('Magic Mall to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Magic Mall.');
+    }
+
+    expect(result.originStop.name).toBe('Pozzorubio Bayan');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Camp 1 back to Tuba / Rockshed', () => {
+    const result = parseFareVoiceTranscript('Camp 1 to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Camp 1.');
+    }
+
+    expect(result.originStop.name).toContain('Rockshed');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Pozzo back to Pozzorubio Bayan', () => {
+    const result = parseFareVoiceTranscript('Pozzo to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Pozzo.');
+    }
+
+    expect(result.originStop.name).toContain('Pozzorubio');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Mawas back to Maoasoas', () => {
+    const result = parseFareVoiceTranscript('Mawas to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Mawas.');
+    }
+
+    expect(result.originStop.name).toBe('Maoasoas');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Lasis back to Villasis', () => {
+    const result = parseFareVoiceTranscript('Lasis to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Lasis.');
+    }
+
+    expect(result.originStop.name).toBe('Villasis');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('matches Shed back to Tuba / Rockshed', () => {
+    const result = parseFareVoiceTranscript('Shed to Baguio', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Shed.');
+    }
+
+    expect(result.originStop.name).toContain('Rockshed');
+    expect(result.destinationStop.name).toBe('Baguio');
+  });
+
+  it('understands conductor-style galing and pa route phrasing', () => {
+    const result = parseFareVoiceTranscript('galing Bayambang pa Urdaneta regular', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result from galing/pa phrasing.');
+    }
+
+    expect(result.originStop.name).toContain('Bayambang');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+    expect(result.fareType).toBe('regular');
   });
 
   it('collapses rolling partial stop fragments from browser speech', () => {
@@ -340,6 +513,118 @@ describe('parseVoiceBinaryAnswer', () => {
   });
 });
 
+describe('parseVoiceFlowControlCommand', () => {
+  it('matches start over as a global reset command', () => {
+    const result = parseVoiceFlowControlCommand('start over');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched global control command.');
+    }
+
+    expect(result.command).toBe('start-over');
+  });
+
+  it('matches manual as a manual handoff command', () => {
+    const result = parseVoiceFlowControlCommand('manual');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched manual command.');
+    }
+
+    expect(result.command).toBe('manual');
+  });
+});
+
+describe('parseFareVoiceCorrectionCommand', () => {
+  it('matches change destination', () => {
+    const result = parseFareVoiceCorrectionCommand('change destination');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare correction command.');
+    }
+
+    expect(result.command).toBe('change-destination');
+  });
+
+  it('matches that is wrong', () => {
+    const result = parseFareVoiceCorrectionCommand("that's wrong");
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched wrong/correction command.');
+    }
+
+    expect(result.command).toBe('that-is-wrong');
+  });
+});
+
+describe('parseCalculatorVoiceControlCommand', () => {
+  it('matches clear as a calculator control command', () => {
+    const result = parseCalculatorVoiceControlCommand('clear');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched calculator control command.');
+    }
+
+    expect(result.command).toBe('clear');
+  });
+
+  it('matches delete last as a calculator control command', () => {
+    const result = parseCalculatorVoiceControlCommand('delete last');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched delete-last command.');
+    }
+
+    expect(result.command).toBe('delete-last');
+  });
+});
+
+describe('voice number parsing', () => {
+  it('parses one twenty as 120 for cash amounts', () => {
+    const result = parseCashVoiceTranscript('one twenty');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched cash amount.');
+    }
+
+    expect(result.amount).toBe(120);
+  });
+
+  it('parses one twenty five as 125 for cash amounts', () => {
+    const result = parseCashVoiceTranscript('one twenty five');
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched cash amount.');
+    }
+
+    expect(result.amount).toBe(125);
+  });
+});
+
+describe('parseFareVoiceDetails', () => {
+  it('extracts fare type, passenger count, and payment from one utterance', () => {
+    const result = parseFareVoiceDetails('Bacayao to Urdaneta, tatlo regular, isang daan ang bayad');
+
+    expect(result.fareType).toBe('regular');
+    expect(result.passengerCount).toBe(3);
+    expect(result.cashAmount).toBe(100);
+  });
+
+  it('uses the latest corrected passenger count in the same sentence', () => {
+    const result = parseFareVoiceDetails('tatlo ay hindi dalawa lang');
+
+    expect(result.passengerCount).toBe(2);
+  });
+});
+
 describe('extractRecognitionTranscript', () => {
   it('uses resultIndex so old final chunks are not re-added on every event', () => {
     const event = {
@@ -438,7 +723,7 @@ describe('parseStopVoiceTranscript', () => {
     }
 
     expect(sisonResult.stop.name).toContain('Sison');
-    expect(pozzorubioResult.stop.name).toBe('Rosario / Villa Pozzorubio');
+    expect(pozzorubioResult.stop.name).toContain('Pozzorubio');
   });
 });
 

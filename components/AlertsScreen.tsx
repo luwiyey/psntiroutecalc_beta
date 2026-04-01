@@ -10,6 +10,7 @@ import {
   extractRecognitionTranscript,
   findTopStopVoiceSuggestions,
   formatVoiceConfidence,
+  getVoiceRepromptLimit,
   getSpeechRecognitionCtor,
   getSpeechRecognitionErrorMessage,
   parsePassengerCountVoiceTranscript,
@@ -18,6 +19,7 @@ import {
   parseStopReminderFollowUpTranscript,
   parseStopReminderVoiceTranscript,
   parseStopVoiceTranscript,
+  parseVoiceFlowControlCommand,
   parseVoiceBinaryAnswer,
   speakVoiceReply
 } from '../utils/voice';
@@ -537,6 +539,65 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     }
   };
 
+  const handleAlertsVoiceFlowControl = (
+    command: 'cancel' | 'manual' | 'repeat' | 'help' | 'back' | 'start-over',
+    currentStep: ReminderVoiceStep
+  ) => {
+    if (command === 'cancel') {
+      closeVoiceAssistant('Drop-off voice assistant closed.');
+      return true;
+    }
+
+    if (command === 'manual') {
+      closeVoiceAssistant('Okay. Drop-off voice assistant closed. You can queue the stop manually now.');
+      return true;
+    }
+
+    if (command === 'repeat') {
+      queueVoicePrompt(voiceFeedback ?? getListeningPrompt(currentStep), currentStep);
+      return true;
+    }
+
+    if (command === 'help') {
+      queueVoicePrompt(getAlertsHelpMessage(currentStep), currentStep);
+      return true;
+    }
+
+    if (command === 'back') {
+      if (currentStep === 'count-only') {
+        queueVoicePrompt('Okay. Please say the stop and passenger count again.', 'stop-and-count');
+        return true;
+      }
+
+      if (currentStep === 'confirm') {
+        if (pendingVoiceReminderRef.current?.stopName) {
+          setPendingVoiceStopName(pendingVoiceReminderRef.current.stopName);
+          pendingVoiceStopNameRef.current = pendingVoiceReminderRef.current.stopName;
+          queueVoicePrompt(
+            `Okay. How many passengers are getting down at ${pendingVoiceReminderRef.current.stopName}?`,
+            'count-only'
+          );
+          return true;
+        }
+
+        queueVoicePrompt('Okay. Please say the stop and passenger count again.', 'stop-and-count');
+        return true;
+      }
+
+      if (currentStep === 'next-or-exit') {
+        queueVoicePrompt('Okay. Please say the stop and passenger count again.', 'stop-and-count');
+        return true;
+      }
+
+      queueVoicePrompt('Please say the stop and passenger count again.', 'stop-and-count');
+      return true;
+    }
+
+    clearVoiceState({ keepFeedback: false });
+    queueVoicePrompt('Okay. Start over. Please say the stop and passenger count again.', 'stop-and-count');
+    return true;
+  };
+
   const getListeningPrompt = (step: ReminderVoiceStep) => {
     switch (step) {
       case 'count-only':
@@ -544,9 +605,9 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
           ? `Listening... say how many passengers for ${pendingVoiceStopName}.`
           : 'Listening... say the passenger count.';
       case 'confirm':
-        return 'Listening... say yes, wrong, replace it, or stay quiet to confirm.';
+        return 'Listening... say yes, wrong, replace it, back, manual, or stay quiet to confirm.';
       case 'next-or-exit':
-        return 'Listening... say the next stop and passenger count, say wrong, say undo, or say exit.';
+        return 'Listening... say the next stop and passenger count, say wrong, say undo, say help, or say exit.';
       case 'stop-and-count':
       default:
         return voiceShortCommandMode
@@ -562,14 +623,30 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
           ? `I am still here. Please say how many passengers for ${pendingVoiceStopName}, or say exit.`
           : 'I am still here. Please say the passenger count, or say exit.';
       case 'confirm':
-        return 'I am still here. Say yes, wrong, or the corrected stop. If you stay quiet, I will add it.';
+        return 'I am still here. Say yes, wrong, back, manual, or the corrected stop. If you stay quiet, I will add it.';
       case 'next-or-exit':
-        return 'I am still here. Say the next stop and passenger count, say wrong, say undo, or say exit.';
+        return 'I am still here. Say the next stop and passenger count, say wrong, say undo, say help, or say exit.';
       case 'stop-and-count':
       default:
         return voiceShortCommandMode
           ? 'I am still here. Short command mode is on. Say only stop and passenger count, like "Anonas 2".'
           : 'I am still here. Please say a stop and passenger count like "Anonas 2".';
+    }
+  };
+
+  const getAlertsHelpMessage = (step: ReminderVoiceStep) => {
+    switch (step) {
+      case 'count-only':
+        return pendingVoiceStopName
+          ? `Say how many passengers for ${pendingVoiceStopName}. You can also say back, repeat, manual, or exit.`
+          : 'Say the passenger count. You can also say back, repeat, manual, or exit.';
+      case 'confirm':
+        return 'Say yes to queue the reminder, say wrong to replace it, say back to edit, say manual, or stay quiet if the match is strong.';
+      case 'next-or-exit':
+        return 'Say the next stop and passenger count, or say undo, pause alerts, list passengers, clear all, help, manual, or exit.';
+      case 'stop-and-count':
+      default:
+        return 'Say a stop and passenger count like Anonas 2. You can also say undo, pause alerts, help, manual, start over, or exit.';
     }
   };
 
@@ -808,6 +885,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
 
     const normalizedTranscript = trimmedTranscript.toLowerCase();
     const shiftCommand = parseShiftVoiceCommand(trimmedTranscript);
+    const globalCommand = parseVoiceFlowControlCommand(trimmedTranscript);
     const followUp = parseStopReminderFollowUpTranscript(trimmedTranscript);
 
     if (shiftCommand.status === 'match') {
@@ -825,6 +903,10 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
           : 'No open shift to end right now. Say the stop and passenger count when ready.';
         queueVoicePrompt(message, 'stop-and-count');
       }
+      return;
+    }
+
+    if (globalCommand.status === 'match' && handleAlertsVoiceFlowControl(globalCommand.command, currentStep)) {
       return;
     }
 
@@ -1186,6 +1268,15 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
+    const repromptAfterSilence = () => {
+      silentRetryCountRef.current += 1;
+      const needsFallbackHint = silentRetryCountRef.current > getVoiceRepromptLimit('alerts');
+      const nextMessage = needsFallbackHint
+        ? `${getNoSpeechPrompt(nextStep)} You can also say manual and tap the stop yourself.`
+        : getNoSpeechPrompt(nextStep);
+      queueVoicePrompt(nextMessage, nextStep);
+    };
+
     recognition.onstart = () => setIsVoiceListening(true);
     recognition.onresult = event => {
       const { transcript, confidence, hasFinal } = extractRecognitionTranscript(event);
@@ -1212,6 +1303,10 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
       setVoiceFeedback(getSpeechRecognitionErrorMessage(event.error));
       setIsVoiceListening(false);
       voiceRecognitionRef.current = null;
+      if (event.error === 'no-speech') {
+        voiceTranscriptHandledRef.current = true;
+        repromptAfterSilence();
+      }
     };
     recognition.onend = () => {
       setIsVoiceListening(false);
@@ -1234,13 +1329,7 @@ const AlertsScreen: React.FC<Props> = ({ onExit }) => {
         return;
       }
 
-      if (silentRetryCountRef.current >= 1) {
-        closeVoiceAssistant('No response heard. Drop-off voice assistant closed.');
-        return;
-      }
-
-      silentRetryCountRef.current += 1;
-      queueVoicePrompt(getNoSpeechPrompt(nextStep), nextStep);
+      repromptAfterSilence();
     };
 
     try {

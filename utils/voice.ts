@@ -1,5 +1,6 @@
 import type { RouteProfile, Stop } from '../types';
 import { calculateFare } from './fare';
+import { getRouteStopVoiceContext } from './route-voice-context';
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -307,6 +308,24 @@ export type TallyBatchFollowUpVoiceParseResult =
 export type FareTypeVoiceAnswer = Exclude<FareVoiceType, 'either'>;
 export type VoiceBinaryAnswer = 'yes' | 'no';
 export type ShiftVoiceCommand = 'start-shift' | 'end-shift';
+export type VoiceFlowControlCommand =
+  | 'cancel'
+  | 'manual'
+  | 'repeat'
+  | 'help'
+  | 'back'
+  | 'start-over';
+export type FareVoiceCorrectionCommand =
+  | 'change-origin'
+  | 'change-destination'
+  | 'change-fare-type'
+  | 'change-passenger-count'
+  | 'change-amount'
+  | 'that-is-wrong';
+export type CalculatorVoiceControlCommand =
+  | VoiceFlowControlCommand
+  | 'clear'
+  | 'delete-last';
 export type FareConversationShortcut =
   | {
       command: 'same-route';
@@ -339,6 +358,14 @@ export type CashVoiceParseResult =
       spokenAmount: string;
     };
 
+export interface FareVoiceDetailParseResult {
+  transcript: string;
+  normalized: string;
+  fareType: FareTypeVoiceAnswer | null;
+  passengerCount: number | null;
+  cashAmount: number | null;
+}
+
 export type ShiftVoiceCommandParseResult =
   | {
       status: 'empty';
@@ -358,6 +385,77 @@ export type ShiftVoiceCommandParseResult =
       command: ShiftVoiceCommand;
       label: string;
     };
+
+export type VoiceFlowControlParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: VoiceFlowControlCommand;
+      label: string;
+    };
+
+export type FareVoiceCorrectionParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: FareVoiceCorrectionCommand;
+      label: string;
+    };
+
+export type CalculatorVoiceControlParseResult =
+  | {
+      status: 'empty';
+      transcript: string;
+      message: string;
+    }
+  | {
+      status: 'invalid';
+      transcript: string;
+      normalized: string;
+      message: string;
+    }
+  | {
+      status: 'match';
+      transcript: string;
+      normalized: string;
+      command: CalculatorVoiceControlCommand;
+      label: string;
+    };
+
+export const getVoiceRepromptLimit = (flow: 'fare' | 'alerts' | 'calculator') => {
+  switch (flow) {
+    case 'calculator':
+      return 1;
+    case 'fare':
+    case 'alerts':
+    default:
+      return 2;
+  }
+};
 
 const DIGIT_WORDS: Record<string, string> = {
   zero: '0',
@@ -454,6 +552,7 @@ const TENS_NUMBER_WORDS: Record<string, number> = {
 const OPERATOR_TOKENS = new Set(['+', '-', '*', '/']);
 
 const cleanWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
+const stripDiacritics = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const normalizeConfusableStopVowels = (value: string) => value.replace(/[ei]/g, 'i').replace(/[ou]/g, 'o');
 
 const SPEECH_FILLER_PATTERN = /\b(?:uh|um|ah|er|hmm+|mmm+)\b/gi;
@@ -601,15 +700,34 @@ export const mergeSpeechTranscript = (existing: string, nextChunk: string) => {
 const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bess em\b/g, ' sm '],
   [/\bes em\b/g, ' sm '],
+  [/\bbayembang\b/g, ' bayambang '],
+  [/\bbow tista\b/g, ' bautista '],
+  [/\bbaw tista\b/g, ' bautista '],
+  [/\bla wak\b/g, ' laoac '],
+  [/\bla wac\b/g, ' laoac '],
+  [/\blaoak\b/g, ' laoac '],
+  [/\blawak\b/g, ' laoac '],
+  [/\bloak\b/g, ' laoac '],
+  [/\balkala\b/g, ' alcala '],
+  [/\bki si kis\b/g, ' kisikis '],
+  [/\bnan kayasan\b/g, ' nancayasan '],
+  [/\bnang kayasan\b/g, ' nancayasan '],
+  [/\bnan chayasan\b/g, ' nancayasan '],
+  [/\bnan tsayasan\b/g, ' nancayasan '],
+  [/\bnankasan\b/g, ' nancayasan '],
   [/\bsaytan\b/g, ' saitan '],
   [/\bseytan\b/g, ' saitan '],
   [/\bseitan\b/g, ' saitan '],
+  [/\bsai tan\b/g, ' saitan '],
+  [/\bsitan\b/g, ' saitan '],
+  [/\btaytan\b/g, ' saitan '],
   [/\bbacaysan\b/g, ' bayacsan '],
   [/\bbakaysan\b/g, ' bayacsan '],
   [/\bbayaksen\b/g, ' bayacsan '],
   [/\bbayaksan\b/g, ' bayacsan '],
   [/\bbayak san\b/g, ' bayacsan '],
   [/\bbayagsan\b/g, ' bayacsan '],
+  [/\byak san\b/g, ' bayacsan '],
   [/\bbawek\b/g, ' baw ek '],
   [/\bbawik\b/g, ' baw ek '],
   [/\bbaw ek\b/g, ' baw ek '],
@@ -617,25 +735,81 @@ const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\bbaw eck\b/g, ' baw ek '],
   [/\bbowek\b/g, ' baw ek '],
   [/\bbaw[-\s]?ik\b/g, ' baw ek '],
+  [/\bbawe\b/g, ' baw ek '],
   [/\bpoy poy\b/g, ' poyopoy '],
   [/\bpoypoy\b/g, ' poyopoy '],
   [/\bpuyo?puy\b/g, ' poyopoy '],
   [/\bpuyu puy\b/g, ' poyopoy '],
   [/\bpuyupuy\b/g, ' poyopoy '],
+  [/\bpoy\b/g, ' poyopoy '],
+  [/\bpuy\b/g, ' poyopoy '],
   [/\burdeneta\b/g, ' urdaneta '],
   [/\burdineta\b/g, ' urdaneta '],
   [/\bordaneta\b/g, ' urdaneta '],
   [/\bordanita\b/g, ' urdaneta '],
+  [/\burdanet\b/g, ' urdaneta '],
+  [/\bdaneta\b/g, ' urdaneta '],
   [/\brosalez\b/g, ' rosales '],
   [/\brozales\b/g, ' rosales '],
   [/\brusalis\b/g, ' rosales '],
   [/\brusales\b/g, ' rosales '],
+  [/\bbilyasis\b/g, ' villasis '],
+  [/\bbilyases\b/g, ' villasis '],
+  [/\bbliyasis\b/g, ' villasis '],
+  [/\bbalyasis\b/g, ' villasis '],
+  [/\blasis\b/g, ' villasis '],
+  [/\bbalonan\b/g, ' binalonan '],
+  [/\blonan\b/g, ' binalonan '],
   [/\bpozorubio\b/g, ' pozzorubio '],
   [/\bpozorubyo\b/g, ' pozzorubio '],
   [/\bpozurubio\b/g, ' pozzorubio '],
   [/\bposorubio\b/g, ' pozzorubio '],
+  [/\bposo rubio\b/g, ' pozzorubio '],
+  [/\bpo so ru byo\b/g, ' pozzorubio '],
+  [/\bpozo rubyo\b/g, ' pozzorubio '],
+  [/\bpozzo\b/g, ' pozzorubio '],
+  [/\bposo\b/g, ' pozzorubio '],
+  [/\bpozor\b/g, ' pozzorubio '],
+  [/\brubyo\b/g, ' pozzorubio '],
   [/\btabuyoc\b/g, ' tabuyok '],
-  [/\banona s\b/g, ' anonas ']
+  [/\banona s\b/g, ' anonas '],
+  [/\bsumabnet\b/g, ' sumabnit '],
+  [/\bbakante\b/g, ' vacante '],
+  [/\bgayong\b/g, ' bugayong '],
+  [/\bbugyon\b/g, ' bugayong '],
+  [/\bkaw ringan\b/g, ' cauringan '],
+  [/\bka u ringan\b/g, ' cauringan '],
+  [/\bkaw ringgan\b/g, ' cauringan '],
+  [/\bkauringgan\b/g, ' cauringan '],
+  [/\bkaringan\b/g, ' cauringan '],
+  [/\bkawingan\b/g, ' cauringan '],
+  [/\bar ta cho\b/g, ' artacho '],
+  [/\bar ta tso\b/g, ' artacho '],
+  [/\btacho\b/g, ' artacho '],
+  [/\bu dyaw\b/g, ' udiao '],
+  [/\bu jao\b/g, ' udiao '],
+  [/\bdyao\b/g, ' udiao '],
+  [/\bjao\b/g, ' udiao '],
+  [/\bjabi\b/g, ' jollibee '],
+  [/\bjabee\b/g, ' jollibee '],
+  [/\bkwenka\b/g, ' cuenca '],
+  [/\bkuwenka\b/g, ' cuenca '],
+  [/\bkwen\b/g, ' cuenca '],
+  [/\bmao so as\b/g, ' maoasoas '],
+  [/\bmaw so as\b/g, ' maoasoas '],
+  [/\bmawaswas\b/g, ' maoasoas '],
+  [/\bmawas\b/g, ' maoasoas '],
+  [/\bmaosoas\b/g, ' maoasoas '],
+  [/\bryalisa\b/g, ' realiza '],
+  [/\blisa\b/g, ' realiza '],
+  [/\bpugoo\b/g, ' pugo '],
+  [/\btaloyy\b/g, ' taloy '],
+  [/\btuba a\b/g, ' tuba '],
+  [/\btuwa\b/g, ' tuba '],
+  [/\brok shed\b/g, ' rockshed '],
+  [/\brock shed\b/g, ' rockshed '],
+  [/\brok shet\b/g, ' rockshed '],
+  [/\bshed\b/g, ' rockshed ']
 ];
 
 const applyStopSpeechCorrections = (value: string) =>
@@ -647,7 +821,7 @@ const applyStopSpeechCorrections = (value: string) =>
 const normalizeStopText = (value: string) =>
   cleanWhitespace(
     applyStopSpeechCorrections(
-      value
+      stripDiacritics(value)
         .toLowerCase()
         .replace(/&/g, ' and ')
         .replace(/\bti\b/g, ' to ')
@@ -730,6 +904,15 @@ const normalizeCashText = (value: string) =>
       .replace(/dot/g, ' point ')
       .replace(/[^a-z0-9.\s]/g, ' ')
   );
+
+const normalizeFareRouteText = (value: string) =>
+  normalizeStopText(value)
+    .replace(/\bgaling\s+(.+?)\s+pa\b/g, '$1 to ')
+    .replace(/\bgaling\b/g, ' from ')
+    .replace(/\bhanggang\b/g, ' to ')
+    .replace(/\bibaba sa\b/g, ' to ')
+    .replace(/\bpa-([a-z])/g, ' to $1')
+    .replace(/\bpa\b/g, ' to ');
 
 const normalizePassengerCountText = (value: string) =>
   cleanWhitespace(
@@ -1017,20 +1200,55 @@ const GENERIC_STOP_ALIAS_WORDS = new Set([
   'proper',
   'plant',
   'school',
+  'highschool',
+  'elementary',
   'college',
   'terminal',
   'bypass',
   'poblacion',
   'elem',
   'ncc',
-  'psu'
+  'psu',
+  'plaza',
+  'bridge',
+  'hall',
+  'street',
+  'market',
+  'public',
+  'town',
+  'fuel',
+  'church',
+  'depot',
+  'hospital',
+  'office',
+  'compound',
+  'viewpoint',
+  'junction',
+  'station',
+  'restaurant',
+  'parish',
+  'municipal',
+  'barangay',
+  'brgy',
+  'subdivision',
+  'subd',
+  'north',
+  'south',
+  'east',
+  'west',
+  'road',
+  'tunnel',
+  'quarry',
+  'mall'
 ]);
 
-const createAliasCandidates = (stop: Stop) => {
-  const rawSeeds = new Set<string>([stop.name, ...(stop.aliases ?? [])]);
+const createAliasCandidates = (routeId: string, stop: Stop) => {
+  const routeContext = getRouteStopVoiceContext(routeId, stop.name);
   const candidates = new Set<string>();
+  const splitSeeds = [stop.name, ...(stop.aliases ?? [])];
+  const exactOnlySeeds = routeContext?.aliases ?? [];
 
-  rawSeeds.forEach(seed => {
+  splitSeeds.forEach(seed => {
     const normalized = normalizeStopText(seed);
     if (normalized) candidates.add(normalized);
 
@@ -1059,6 +1277,13 @@ const createAliasCandidates = (stop: Stop) => {
       });
   });
 
+  exactOnlySeeds.forEach(seed => {
+    const normalized = normalizeStopText(seed);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+  });
+
   const baseName = normalizeStopText(stop.name);
   if (baseName && !baseName.endsWith(' city')) {
     candidates.add(`${baseName} city`);
@@ -1069,7 +1294,7 @@ const createAliasCandidates = (stop: Stop) => {
 
 const buildStopAliasEntries = (route: RouteProfile) => {
   const entries = route.stops.flatMap(stop =>
-    createAliasCandidates(stop).map(alias => ({
+    createAliasCandidates(route.id, stop).map(alias => ({
       alias,
       stop
     }))
@@ -1179,6 +1404,60 @@ const parseIntegerTokens = (tokens: string[]) => {
     return tokens[0];
   }
 
+  const getSimpleNumberValue = (token: string) => {
+    if (/^\d+$/.test(token)) {
+      return Number(token);
+    }
+
+    if (token in DIGIT_WORDS) {
+      return Number(DIGIT_WORDS[token]);
+    }
+
+    if (token in SMALL_NUMBER_WORDS) {
+      return SMALL_NUMBER_WORDS[token];
+    }
+
+    if (token in TENS_NUMBER_WORDS) {
+      return TENS_NUMBER_WORDS[token];
+    }
+
+    return null;
+  };
+
+  if (tokens.length === 2) {
+    const firstValue = getSimpleNumberValue(tokens[0]);
+    const secondValue = getSimpleNumberValue(tokens[1]);
+    if (
+      firstValue !== null &&
+      firstValue > 0 &&
+      firstValue < 10 &&
+      secondValue !== null &&
+      secondValue >= 20 &&
+      secondValue % 10 === 0
+    ) {
+      return String(firstValue * 100 + secondValue);
+    }
+  }
+
+  if (tokens.length === 3) {
+    const firstValue = getSimpleNumberValue(tokens[0]);
+    const secondValue = getSimpleNumberValue(tokens[1]);
+    const thirdValue = getSimpleNumberValue(tokens[2]);
+    if (
+      firstValue !== null &&
+      firstValue > 0 &&
+      firstValue < 10 &&
+      secondValue !== null &&
+      secondValue >= 20 &&
+      secondValue % 10 === 0 &&
+      thirdValue !== null &&
+      thirdValue >= 0 &&
+      thirdValue < 10
+    ) {
+      return String(firstValue * 100 + secondValue + thirdValue);
+    }
+  }
+
   if (tokens.every(token => token in DIGIT_WORDS || /^\d$/.test(token))) {
     return tokens
       .map(token => (token in DIGIT_WORDS ? DIGIT_WORDS[token] : token))
@@ -1258,8 +1537,15 @@ const isVoiceNumberToken = (token: string) =>
   token === 'daan' ||
   token === 'libo';
 
-const extractPassengerCountMatch = (tokens: string[]) => {
-  let bestMatch: { start: number; end: number; passengerCount: number; score: number } | null = null;
+interface VoiceNumberMatch {
+  start: number;
+  end: number;
+  passengerCount: number;
+  spokenAmount: string;
+}
+
+const collectVoiceNumberMatches = (tokens: string[]) => {
+  const matches: VoiceNumberMatch[] = [];
 
   for (let start = 0; start < tokens.length; start += 1) {
     if (!isVoiceNumberToken(tokens[start])) {
@@ -1282,30 +1568,220 @@ const extractPassengerCountMatch = (tokens: string[]) => {
         continue;
       }
 
-      const before = tokens[start - 1];
-      const after = tokens[end + 1];
-      const score =
-        segment.length +
-        (STOP_REMINDER_COUNT_HINTS.has(before ?? '') ? 2 : 0) +
-        (STOP_REMINDER_COUNT_HINTS.has(after ?? '') ? 2 : 0) +
-        (end >= tokens.length - 1 ? 1 : 0);
-
-      if (
-        !bestMatch ||
-        score > bestMatch.score ||
-        (score === bestMatch.score && end > bestMatch.end)
-      ) {
-        bestMatch = {
-          start,
-          end,
-          passengerCount,
-          score
-        };
-      }
+      matches.push({
+        start,
+        end,
+        passengerCount,
+        spokenAmount: parsed
+      });
     }
   }
 
+  return matches;
+};
+
+const extractPassengerCountMatch = (tokens: string[]) => {
+  let bestMatch: { start: number; end: number; passengerCount: number; score: number } | null = null;
+
+  collectVoiceNumberMatches(tokens).forEach(({ start, end, passengerCount }) => {
+    const before = tokens[start - 1];
+    const after = tokens[end + 1];
+    const score =
+      end - start + 1 +
+      (STOP_REMINDER_COUNT_HINTS.has(before ?? '') ? 2 : 0) +
+      (STOP_REMINDER_COUNT_HINTS.has(after ?? '') ? 2 : 0) +
+      (end >= tokens.length - 1 ? 1 : 0);
+
+    if (
+      !bestMatch ||
+      score > bestMatch.score ||
+      (score === bestMatch.score && end > bestMatch.end)
+    ) {
+      bestMatch = {
+        start,
+        end,
+        passengerCount,
+        score
+      };
+    }
+  });
+
   return bestMatch;
+};
+
+const FARE_DETAIL_PASSENGER_HINTS = new Set([
+  'passenger',
+  'passengers',
+  'pax',
+  'tao',
+  'lang',
+  'regular',
+  'discounted',
+  'discount',
+  'student',
+  'senior',
+  'pwd'
+]);
+
+const FARE_DETAIL_MONEY_HINTS = new Set([
+  'money',
+  'cash',
+  'payment',
+  'paid',
+  'pay',
+  'bayad',
+  'pera',
+  'peso',
+  'pesos',
+  'hundred',
+  'thousand',
+  'libo',
+  'daan'
+]);
+
+const pickFareDetailCashMatch = (tokens: string[], matches: VoiceNumberMatch[]) => {
+  let bestMatch: { start: number; end: number; amount: number; score: number } | null = null;
+
+  matches.forEach(match => {
+    const before = tokens[match.start - 1];
+    const after = tokens[match.end + 1];
+    const score =
+      (match.passengerCount >= 20 ? 5 : 0) +
+      (FARE_DETAIL_MONEY_HINTS.has(before ?? '') ? 3 : 0) +
+      (FARE_DETAIL_MONEY_HINTS.has(after ?? '') ? 3 : 0) +
+      (match.end > match.start ? 2 : 0) +
+      (match.end >= tokens.length - 1 ? 1 : 0);
+
+    if (
+      !bestMatch ||
+      score > bestMatch.score ||
+      (score === bestMatch.score && match.passengerCount > bestMatch.amount) ||
+      (score === bestMatch.score && match.end > bestMatch.end)
+    ) {
+      bestMatch = {
+        start: match.start,
+        end: match.end,
+        amount: match.passengerCount,
+        score
+      };
+    }
+  });
+
+  if (bestMatch?.score && bestMatch.score >= 3) {
+    return bestMatch;
+  }
+
+  if (matches.length >= 2) {
+    const sortedByAmount = [...matches].sort((left, right) => right.passengerCount - left.passengerCount);
+    const likelyCash = sortedByAmount[0];
+    if (likelyCash.passengerCount >= 20) {
+      return {
+        start: likelyCash.start,
+        end: likelyCash.end,
+        amount: likelyCash.passengerCount,
+        score: 2
+      };
+    }
+  }
+
+  if (matches.length === 1 && matches[0].passengerCount >= 20) {
+    return {
+      start: matches[0].start,
+      end: matches[0].end,
+      amount: matches[0].passengerCount,
+      score: 1
+    };
+  }
+
+  return null;
+};
+
+const pickFareDetailPassengerCount = (
+  tokens: string[],
+  matches: VoiceNumberMatch[],
+  cashMatch: { start: number; end: number } | null
+) => {
+  let bestMatch: { passengerCount: number; score: number; end: number } | null = null;
+
+  matches.forEach(match => {
+    if (
+      cashMatch &&
+      match.start >= cashMatch.start &&
+      match.end <= cashMatch.end
+    ) {
+      return;
+    }
+
+    if (match.passengerCount <= 0 || match.passengerCount > 30) {
+      return;
+    }
+
+    const before = tokens[match.start - 1];
+    const after = tokens[match.end + 1];
+    const score =
+      (FARE_DETAIL_PASSENGER_HINTS.has(before ?? '') ? 4 : 0) +
+      (FARE_DETAIL_PASSENGER_HINTS.has(after ?? '') ? 4 : 0) +
+      (match.passengerCount <= 10 ? 2 : 0) +
+      (cashMatch && match.end < cashMatch.start ? 1 : 0) +
+      (match.end >= tokens.length - 1 ? 1 : 0);
+
+    if (
+      !bestMatch ||
+      score > bestMatch.score ||
+      (score === bestMatch.score && match.end > bestMatch.end)
+    ) {
+      bestMatch = {
+        passengerCount: match.passengerCount,
+        score,
+        end: match.end
+      };
+    }
+  });
+
+  if (bestMatch?.score && bestMatch.score >= 2) {
+    return bestMatch.passengerCount;
+  }
+
+  const smallMatches = matches
+    .filter(match => match.passengerCount > 0 && match.passengerCount <= 10)
+    .filter(match => !cashMatch || match.end < cashMatch.start);
+  if (smallMatches.length > 0) {
+    return smallMatches[smallMatches.length - 1].passengerCount;
+  }
+
+  return null;
+};
+
+export const parseFareVoiceDetails = (
+  transcript: string
+): FareVoiceDetailParseResult => {
+  const cleanedTranscript = collapseRepeatedSpeech(transcript);
+  const normalized = normalizeStopText(cleanedTranscript);
+  const fareType = parseFareTypeVoiceAnswer(cleanedTranscript);
+
+  if (!normalized) {
+    return {
+      transcript: cleanedTranscript,
+      normalized,
+      fareType,
+      passengerCount: null,
+      cashAmount: null
+    };
+  }
+
+  const detailTokens = normalized.split(' ').filter(Boolean);
+  const detailMatches = collectVoiceNumberMatches(detailTokens);
+  const cashMatch = pickFareDetailCashMatch(detailTokens, detailMatches);
+  const cashAmount = cashMatch?.amount ?? null;
+  const passengerCount = pickFareDetailPassengerCount(detailTokens, detailMatches, cashMatch);
+
+  return {
+    transcript: cleanedTranscript,
+    normalized,
+    fareType,
+    passengerCount,
+    cashAmount
+  };
 };
 
 const buildStopReminderQuery = (
@@ -1614,6 +2090,161 @@ export const parseVoiceBinaryAnswer = (transcript: string): VoiceBinaryAnswer | 
   return null;
 };
 
+export const parseVoiceFlowControlCommand = (
+  transcript: string
+): VoiceFlowControlParseResult => {
+  const normalized = normalizeStopText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Say cancel, manual, repeat, back, start over, or help.'
+    };
+  }
+
+  const createMatch = (command: VoiceFlowControlCommand, label: string): VoiceFlowControlParseResult => ({
+    status: 'match',
+    transcript,
+    normalized,
+    command,
+    label
+  });
+
+  if (/\b(cancel|stop listening|stop voice|exit voice|close voice|leave voice|exit)\b/.test(normalized)) {
+    return createMatch('cancel', 'Cancel Voice Flow');
+  }
+
+  if (/\b(manual|manual mode|i will tap|tap manually|switch to manual)\b/.test(normalized)) {
+    return createMatch('manual', 'Switch To Manual');
+  }
+
+  if (/\b(repeat|say that again|ulit|ulitin|pakiulit|repeat that)\b/.test(normalized)) {
+    return createMatch('repeat', 'Repeat Prompt');
+  }
+
+  if (/\b(help|tulong|what can i say|what can i say here|help me)\b/.test(normalized)) {
+    return createMatch('help', 'Help');
+  }
+
+  if (/\b(back|go back|previous|previous step|bumalik|balik)\b/.test(normalized)) {
+    return createMatch('back', 'Go Back');
+  }
+
+  if (/\b(start over|restart|reset voice|reset this|clear this|bagong simula|ulit from start)\b/.test(normalized)) {
+    return createMatch('start-over', 'Start Over');
+  }
+
+  return {
+    status: 'invalid',
+    transcript,
+    normalized,
+    message: 'Say cancel, manual, repeat, back, start over, or help.'
+  };
+};
+
+export const parseFareVoiceCorrectionCommand = (
+  transcript: string
+): FareVoiceCorrectionParseResult => {
+  const normalized = normalizeStopText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Say change destination, change amount, or say that is wrong.'
+    };
+  }
+
+  const createMatch = (
+    command: FareVoiceCorrectionCommand,
+    label: string
+  ): FareVoiceCorrectionParseResult => ({
+    status: 'match',
+    transcript,
+    normalized,
+    command,
+    label
+  });
+
+  if (/\b(change|edit|fix|correct)\s+(origin|pickup|starting point|start)\b/.test(normalized)) {
+    return createMatch('change-origin', 'Change Origin');
+  }
+
+  if (/\b(change|edit|fix|correct)\s+(destination|drop off|dropoff|ending point|end stop)\b/.test(normalized)) {
+    return createMatch('change-destination', 'Change Destination');
+  }
+
+  if (/\b(change|edit|fix|correct)\s+(fare type|discount|discounted|regular|fare)\b|\b(regular instead|discounted instead|change to regular|change to discounted)\b/.test(normalized)) {
+    return createMatch('change-fare-type', 'Change Fare Type');
+  }
+
+  if (/\b(change|edit|fix|correct)\s+(passenger count|passengers|passenger|count|quantity|pax|tao)\b/.test(normalized)) {
+    return createMatch('change-passenger-count', 'Change Passenger Count');
+  }
+
+  if (/\b(change|edit|fix|correct)\s+(amount|money|cash|payment|bayad|pera)\b/.test(normalized)) {
+    return createMatch('change-amount', 'Change Amount');
+  }
+
+  if (/\b(that'?s wrong|that is wrong|wrong|mali|incorrect|not that|hindi tama)\b/.test(normalized)) {
+    return createMatch('that-is-wrong', 'Correct Current Step');
+  }
+
+  return {
+    status: 'invalid',
+    transcript,
+    normalized,
+    message: 'Say change origin, change destination, change amount, or say that is wrong.'
+  };
+};
+
+export const parseCalculatorVoiceControlCommand = (
+  transcript: string
+): CalculatorVoiceControlParseResult => {
+  const normalized = normalizeStopText(transcript);
+
+  if (!normalized) {
+    return {
+      status: 'empty',
+      transcript,
+      message: 'Say clear, delete last, repeat, back, manual, start over, or exit.'
+    };
+  }
+
+  const globalCommand = parseVoiceFlowControlCommand(transcript);
+  if (globalCommand.status === 'match') {
+    return globalCommand;
+  }
+
+  if (/\b(clear|ac|all clear|reset expression)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'clear',
+      label: 'Clear Expression'
+    };
+  }
+
+  if (/\b(delete last|remove last|backspace|erase last)\b/.test(normalized)) {
+    return {
+      status: 'match',
+      transcript,
+      normalized,
+      command: 'delete-last',
+      label: 'Delete Last Token'
+    };
+  }
+
+  return {
+    status: 'invalid',
+    transcript,
+    normalized,
+    message: 'Say clear, delete last, repeat, back, manual, start over, or exit.'
+  };
+};
+
 export const parseShiftVoiceCommand = (
   transcript: string
 ): ShiftVoiceCommandParseResult => {
@@ -1692,7 +2323,7 @@ export const parseFareVoiceTranscript = (
   route: RouteProfile
 ): FareVoiceParseResult => {
   const cleanedTranscript = collapseRepeatedSpeech(transcript);
-  const normalized = normalizeStopText(cleanedTranscript);
+  const normalized = normalizeFareRouteText(cleanedTranscript);
   if (!normalized) {
     return {
       status: 'empty',

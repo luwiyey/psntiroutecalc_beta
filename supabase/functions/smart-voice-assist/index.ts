@@ -63,7 +63,7 @@ const clampStops = (stops: SmartVoiceStopContext[]) =>
     aliases: Array.isArray(stop.aliases)
       ? stop.aliases
           .filter((alias): alias is string => typeof alias === 'string' && alias.trim().length > 0)
-          .slice(0, 10)
+          .slice(0, 24)
       : []
   }));
 
@@ -122,11 +122,16 @@ ${stopsJson}
 Rules:
 - Be conservative. If you are unsure, keep values null and use low confidence.
 - The transcript may come from a noisy moving bus. Correct obvious phonetic or partial words when the intended meaning is still clear.
+- Philippine stop pronunciations often swap i/e and o/u sounds, clip syllables, or use local landmark names instead of printed stop names. Use the provided aliases to recover the intended stop when reasonably clear.
 - The stop list includes small KM-post places, landmark pieces, and common local references. Treat obscure stops just as valid as big terminals.
 - If the transcript sounds close to any provided stop alias, landmark, or split stop name, map it back to the exact stop name from the list.
 - Some printed stop names use slashes because they group nearby places under one KM-post. If the transcript closely matches one named place from that grouped stop, prefer that grouped KM-post stop instead of jumping to a different KM.
 - Do not invent a different stop just because two grouped stop names share similar slash-separated words. When unsure, ask a clarification question.
 - Filipino pronunciations may clip or merge syllables. McDo, Jollibee, PSU, bypass, crossing, bayan, villa, and similar local landmark words can point to a listed stop.
+- Conductors may mix English and Tagalog, such as "galing X pa Y", "hanggang Y", "ibaba sa Y", "tatlo regular", or "isang daan ang bayad". Map these into the slot fields instead of asking them to repeat everything.
+- Fill the slots in this order: origin, destination, fareType, passengerCount, cashAmount.
+- If one answer includes more than one missing slot, return all of them at once.
+- If the speaker corrects themselves in the same utterance, such as "tatlo ay hindi dalawa lang", use the latest corrected value.
 - If the user likely meant "discounted", accept common noisy variants like counted, discounted, dis counted, may discount, student, senior, pwd.
 - If the user likely meant yes, accept phrases like yes, yeah, yup, im done, i'm done, done, okay done, oo, opo, sige, tuloy.
 - If the user likely meant no, accept phrases like no, not yet, stop, cancel, hindi, wag, tama na, exit.
