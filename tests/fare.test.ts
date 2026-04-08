@@ -3,6 +3,7 @@ import {
   AIRCON_BAYAMBANG_ROUTE_ID,
   CUBAO_BAGUIO_ROUTE_ID,
   DAGUPAN_SAN_CARLOS_CUBAO_ROUTE_ID,
+  ORDINARY_BAYAMBANG_ROUTE_ID,
   ROUTES,
   TARLAC_ROUTE_ID
 } from '../constants';
@@ -18,6 +19,22 @@ const getRouteFare = (routeId: string) => {
 };
 
 describe('calculateFare', () => {
+  it('keeps the ordinary Bayambang minimum fare through 9 km', () => {
+    const fare = calculateFare(9, getRouteFare(ORDINARY_BAYAMBANG_ROUTE_ID));
+
+    expect(fare.reg).toBe(20);
+    expect(fare.disc).toBe(16);
+    expect(fare.isMinApplied).toBe(true);
+  });
+
+  it('uses the computed ordinary Bayambang fare after 9 km', () => {
+    const fare = calculateFare(11, getRouteFare(ORDINARY_BAYAMBANG_ROUTE_ID));
+
+    expect(fare.reg).toBe(21);
+    expect(fare.disc).toBe(17);
+    expect(fare.isMinApplied).toBe(false);
+  });
+
   it('keeps the aircon minimum fare through 24 km', () => {
     const fare = calculateFare(24, getRouteFare(AIRCON_BAYAMBANG_ROUTE_ID));
 

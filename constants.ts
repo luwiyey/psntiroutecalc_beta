@@ -1430,6 +1430,7 @@ export const ROUTES: RouteProfile[] = [
       discountRate: Number((1.9 * DISCOUNT_RATE_MULTIPLIER).toFixed(3)),
       minimumRegularFare: 20,
       minimumDiscountFare: 16,
+      minimumDistanceKm: 9,
       roundingMode: 'legacy'
     }
   },
