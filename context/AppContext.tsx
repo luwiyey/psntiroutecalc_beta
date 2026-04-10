@@ -845,31 +845,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const refreshedShift = applyShiftActivityUpdate(currentShift, Date.now(), { showMotivation: false });
-      const existingSession = sessions.find(session => session.shiftId === currentShift.id);
-      const openRouteSession = sessions.find(
-        session => session.routeId === baseActiveRoute.id && session.status === 'open'
-      );
-
-      if (existingSession) {
-        setTallyNav({
-          sessionId: existingSession.id,
-          tripIdx: 0,
-          sheetIdx: 0,
-          blockIdx: 0
-        });
-      } else if (openRouteSession) {
-        setSessions(prev =>
-          prev.map(session =>
-            session.id === openRouteSession.id ? { ...session, shiftId: currentShift.id } : session
-          )
-        );
-        setTallyNav({
-          sessionId: openRouteSession.id,
-          tripIdx: 0,
-          sheetIdx: 0,
-          blockIdx: 0
-        });
-      }
 
       if (!options?.silent) {
         showToast('Current shift is already open.', 'info');
@@ -884,35 +859,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authState.employeeName,
       mode
     );
-    const openRouteSession = sessions.find(
-      session => session.routeId === baseActiveRoute.id && session.status === 'open'
-    );
 
     setShiftHistory(prev => [nextShift, ...prev]);
     currentShiftRef.current = nextShift;
-
-    if (openRouteSession) {
-      setSessions(prev =>
-        prev.map(session =>
-          session.id === openRouteSession.id ? { ...session, shiftId: nextShift.id } : session
-        )
-      );
-      setTallyNav({
-        sessionId: openRouteSession.id,
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-    } else if (mode === 'manual') {
-      const nextSession = createDefaultSession(baseActiveRoute.id, baseActiveRoute.label, nextShift.id);
-      setSessions(prev => [nextSession, ...prev]);
-      setTallyNav({
-        sessionId: nextSession.id,
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-    }
 
     if (!options?.silent) {
       showToast(
@@ -932,9 +881,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     baseActiveRoute.label,
     baseActiveRoute.shortLabel,
     currentShift,
-    sessions,
-    setSessions,
-    setTallyNav,
     showToast
   ]);
 
@@ -957,32 +903,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setShiftHistory(prev => prev.map(shift => (shift.id === currentShift.id ? closedShift : shift)));
     currentShiftRef.current = null;
-    setSessions(prev =>
-      prev.map(session =>
-        session.shiftId === currentShift.id
-          ? { ...session, status: 'closed' }
-          : session
-      )
-    );
-
-    const shiftSessionIds = new Set(
-      sessions.filter(session => session.shiftId === currentShift.id).map(session => session.id)
-    );
-
-    if (shiftSessionIds.has(tallyNav.sessionId)) {
-      setTallyNav({
-        sessionId: '',
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-    }
 
     if (!options?.silent) {
       showToast(`Shift ended for ${currentShift.routeLabel}`);
     }
     return closedShift;
-  }, [applyShiftActivityUpdate, currentShift, sessions, setSessions, setTallyNav, showToast, tallyNav.sessionId]);
+  }, [applyShiftActivityUpdate, currentShift, showToast]);
 
   useEffect(() => {
     if (!authState.isAuthenticated || !currentShift) {

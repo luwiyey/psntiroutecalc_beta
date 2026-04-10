@@ -80,13 +80,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     () => routeSessions.filter(session => session.status !== 'closed'),
     [routeSessions]
   );
-  const activeShiftSession = useMemo(
-    () =>
-      currentShift?.routeId === activeRoute.id
-        ? routeSessions.find(session => session.shiftId === currentShift.id) ?? null
-        : null,
-    [activeRoute.id, currentShift, routeSessions]
-  );
   const fallbackSession = useMemo<TallySession>(() => ({
     id: `pending-${activeRoute.id}`,
     date: new Date().toISOString(),
@@ -107,7 +100,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     }]
   }), [activeRoute.id, activeRoute.label, currentShift]);
   const activeSession =
-    activeShiftSession ||
     openRouteSessions.find(s => s.id === tallyNav.sessionId) ||
     openRouteSessions[0] ||
     fallbackSession;
@@ -241,7 +233,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   }, [allBatchFares, fareBounds.minimumFare]);
 
   useEffect(() => {
-    if (currentShift?.routeId === activeRoute.id) return;
     if (openRouteSessions.length > 0) return;
 
     setSessions(prev => {
@@ -264,7 +255,6 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     );
   }, [
     activeRoute.id,
-    currentShift,
     fallbackSession,
     openRouteSessions.length,
     setSessions,
@@ -494,7 +484,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         ? lastPunched ?? 0
         : currentTypingValue > 0
           ? currentTypingValue
-          : stagedStandardEntries[stagedStandardEntries.length - 1] ?? 0;
+          : 0;
 
   const handleAddTrip = () => {
     const lastTrip = activeSession.trips[activeSession.trips.length - 1];
@@ -643,14 +633,15 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     const fillsSheet = selectedSlotIdx + finalEntries.length >= SLOTS_PER_SHEET;
     const nextSlotIdx = clampSlotIndex(selectedSlotIdx + finalEntries.length);
     const nextBlockIdx = Math.floor(nextSlotIdx / SLOTS_PER_BLOCK);
-    const ensuredShift = startShift('auto', { silent: true });
 
     setSessions(prev => {
       const applyEntriesToSession = (session: TallySession): TallySession => ({
         ...session,
         shiftId:
           session.routeId === activeRoute.id
-            ? ensuredShift?.id ?? session.shiftId ?? null
+            ? currentShift?.routeId === activeRoute.id
+              ? currentShift.id
+              : null
             : session.shiftId ?? null,
         trips: session.trips.map((trip, tripIdx) =>
           tripIdx === tallyNav.tripIdx
@@ -687,7 +678,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
         ...activeSession,
         shiftId:
           activeSession.routeId === activeRoute.id
-            ? ensuredShift?.id ?? activeSession.shiftId ?? null
+            ? currentShift?.routeId === activeRoute.id
+              ? currentShift.id
+              : null
             : activeSession.shiftId ?? null
       });
 

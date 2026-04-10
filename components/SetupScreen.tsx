@@ -364,7 +364,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
                 <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-300">
                   {activeShiftForRoute
                     ? 'This route is recording saved work inside one open shift. You can still end it manually any time.'
-                    : 'The app will start a shift automatically on the first saved fare, tally, or alert. Start one now only if you want to mark it ahead of time.'}
+                    : 'The app will start a shift automatically on the first saved fare or alert. Start one now only if you want to mark it ahead of time.'}
                 </p>
               </div>
               <span className={`rounded-2xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
@@ -466,7 +466,7 @@ const SetupScreen: React.FC<Props> = ({ onExit }) => {
 
             {auditScope === 'shift' && !activeShiftForRoute && (
               <div className="rounded-2xl bg-slate-50 px-4 py-4 text-xs font-semibold text-slate-500 dark:bg-black/30 dark:text-slate-300">
-                No open shift yet. The app will create one automatically on the first saved fare, tally, or alert.
+                No open shift yet. The app will create one automatically on the first saved fare or alert.
               </div>
             )}
 

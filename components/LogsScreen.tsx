@@ -10,7 +10,7 @@ const formatDistance = (distance: number) =>
   Number.isInteger(distance) ? `${distance} km` : `${distance.toFixed(1)} km`;
 
 const LogsScreen: React.FC<Props> = ({ onExit }) => {
-  const { settings, history, toggleFavorite, deleteHistory, activeRoute, currentShift } = useApp();
+  const { settings, history, toggleFavorite, deleteHistory, activeRoute, currentShift, shiftHistory } = useApp();
   const [tab, setTab] = useState<'all' | 'route' | 'shift' | 'fav'>('route');
 
   const allHistory = useMemo(() => history, [history]);
@@ -18,28 +18,40 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
     () => history.filter(record => record.routeId === activeRoute.id),
     [activeRoute.id, history]
   );
+  const routeShiftHistory = useMemo(
+    () => shiftHistory.filter(shift => shift.routeId === activeRoute.id),
+    [activeRoute.id, shiftHistory]
+  );
   const currentRouteShift = currentShift?.routeId === activeRoute.id ? currentShift : null;
-  const shiftHistory = useMemo(
-    () => currentRouteShift
-      ? routeHistory.filter(record => record.shiftId === currentRouteShift.id)
+  const lastClosedRouteShift = useMemo(
+    () =>
+      [...routeShiftHistory]
+        .filter(shift => shift.status === 'closed' && shift.endedAt)
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0] ?? null,
+    [routeShiftHistory]
+  );
+  const selectedRouteShift = currentRouteShift ?? lastClosedRouteShift;
+  const shiftLogHistory = useMemo(
+    () => selectedRouteShift
+      ? routeHistory.filter(record => record.shiftId === selectedRouteShift.id)
       : [],
-    [currentRouteShift, routeHistory]
+    [routeHistory, selectedRouteShift]
   );
   const favoriteHistory = useMemo(
     () => history.filter(record => record.isFavorite),
     [history]
   );
   const filtered = tab === 'all'
-    ? allHistory
-    : tab === 'shift'
-      ? shiftHistory
-      : tab === 'fav'
-        ? favoriteHistory
-        : routeHistory;
+      ? allHistory
+      : tab === 'shift'
+        ? shiftLogHistory
+        : tab === 'fav'
+          ? favoriteHistory
+          : routeHistory;
   const tabCards = [
     { id: 'all' as const, label: 'All Logs', icon: 'history', count: allHistory.length },
     { id: 'route' as const, label: 'Route Logs', icon: 'alt_route', count: routeHistory.length },
-    { id: 'shift' as const, label: 'Shift Logs', icon: 'badge', count: shiftHistory.length },
+    { id: 'shift' as const, label: 'Shift Logs', icon: 'badge', count: shiftLogHistory.length },
     { id: 'fav' as const, label: 'Favorites', icon: 'star', count: favoriteHistory.length }
   ];
   const isCM = settings.conductorMode;
@@ -104,9 +116,9 @@ const LogsScreen: React.FC<Props> = ({ onExit }) => {
       </div>
 
       <main className={`p-4 pb-8 transition-all ${isCM ? 'space-y-5' : 'space-y-4'}`}>
-        {tab === 'shift' && !currentRouteShift && (
+        {tab === 'shift' && !selectedRouteShift && (
           <div className="rounded-2xl bg-white px-4 py-5 text-sm font-semibold text-slate-500 shadow-sm dark:bg-night-charcoal dark:text-slate-300">
-            No open shift on this route yet. Start a shift in Settings to keep logs grouped per trip.
+            No shift logs saved on this route yet. Start and save work inside a shift if you want grouped trip records here.
           </div>
         )}
 
