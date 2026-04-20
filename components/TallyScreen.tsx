@@ -52,6 +52,76 @@ const getFirstEmptySlotIndex = (slots: number[]) => {
   return nextEmptySlot === -1 ? 0 : nextEmptySlot;
 };
 
+const getLastFilledSlotIndex = (slots: number[]) => {
+  for (let slotIdx = slots.length - 1; slotIdx >= 0; slotIdx -= 1) {
+    if (slots[slotIdx] > 0) {
+      return slotIdx;
+    }
+  }
+
+  return -1;
+};
+
+const getPreferredReopenTarget = (slots: number[]) => {
+  const lastFilledSlotIdx = getLastFilledSlotIndex(slots);
+  if (lastFilledSlotIdx === -1) {
+    return {
+      slotIdx: getFirstEmptySlotIndex(slots),
+      blockIdx: 0
+    };
+  }
+
+  const blockIdx = Math.floor(lastFilledSlotIdx / SLOTS_PER_BLOCK);
+  const blockStart = blockIdx * SLOTS_PER_BLOCK;
+  const blockSlice = slots.slice(blockStart, blockStart + SLOTS_PER_BLOCK);
+  const nextEmptyOffset = blockSlice.findIndex(slot => slot === 0);
+
+  return {
+    slotIdx: nextEmptyOffset === -1 ? lastFilledSlotIdx : blockStart + nextEmptyOffset,
+    blockIdx
+  };
+};
+
+const getPreferredTripTarget = (trip: TallyTrip) => {
+  let sheetIdx = 0;
+  for (let index = trip.sheets.length - 1; index >= 0; index -= 1) {
+    if (trip.sheets[index].slots.some(slot => slot > 0)) {
+      sheetIdx = index;
+      break;
+    }
+  }
+  const preferredSheet = trip.sheets[sheetIdx] ?? trip.sheets[0];
+  const preferredTarget = getPreferredReopenTarget(
+    preferredSheet?.slots ?? Array(SLOTS_PER_SHEET).fill(0)
+  );
+
+  return {
+    sheetIdx,
+    ...preferredTarget
+  };
+};
+
+const getPreferredSessionTarget = (session: TallySession) => {
+  let tripIdx = 0;
+  for (let index = session.trips.length - 1; index >= 0; index -= 1) {
+    if (session.trips[index].sheets.some(sheet => sheet.slots.some(slot => slot > 0))) {
+      tripIdx = index;
+      break;
+    }
+  }
+  const preferredTrip = session.trips[tripIdx] ?? session.trips[0];
+  const preferredTarget = preferredTrip ? getPreferredTripTarget(preferredTrip) : {
+    sheetIdx: 0,
+    blockIdx: 0,
+    slotIdx: 0
+  };
+
+  return {
+    tripIdx,
+    ...preferredTarget
+  };
+};
+
 const getPreferredSlotIndexForBlock = (slots: number[], blockIdx: number) => {
   const safeBlockIdx = Math.max(0, Math.min(blockIdx, Math.floor(SLOTS_PER_SHEET / SLOTS_PER_BLOCK) - 1));
   const blockStart = safeBlockIdx * SLOTS_PER_BLOCK;
@@ -264,15 +334,15 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   useEffect(() => {
     if (routeSessions.length === 0) return;
 
-    if (tallyNav.sessionId !== activeSession.id) {
-      setTallyNav({
-        sessionId: activeSession.id,
-        tripIdx: 0,
-        sheetIdx: 0,
-        blockIdx: 0
-      });
-    }
-  }, [activeSession.id, routeSessions.length, setTallyNav, tallyNav.sessionId]);
+    const preferredTarget = getPreferredSessionTarget(activeSession);
+    setSelectedSlotIdx(preferredTarget.slotIdx);
+    setTallyNav({
+      sessionId: activeSession.id,
+      tripIdx: preferredTarget.tripIdx,
+      sheetIdx: preferredTarget.sheetIdx,
+      blockIdx: preferredTarget.blockIdx
+    });
+  }, [activeSession.id, routeSessions.length, setTallyNav]);
 
   useEffect(() => {
     if (editorMode !== 'batch') return;
@@ -622,6 +692,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     options?: {
       closeEditor?: boolean;
       autoAdvanceWhenFull?: boolean;
+      keepVisibleSavedBlock?: boolean;
       successMessage?: string;
     }
   ) => {
@@ -633,6 +704,8 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     const fillsSheet = selectedSlotIdx + finalEntries.length >= SLOTS_PER_SHEET;
     const nextSlotIdx = clampSlotIndex(selectedSlotIdx + finalEntries.length);
     const nextBlockIdx = Math.floor(nextSlotIdx / SLOTS_PER_BLOCK);
+    const lastSavedSlotIdx = clampSlotIndex(selectedSlotIdx + finalEntries.length - 1);
+    const lastSavedBlockIdx = Math.floor(lastSavedSlotIdx / SLOTS_PER_BLOCK);
 
     setSessions(prev => {
       const applyEntriesToSession = (session: TallySession): TallySession => ({
@@ -716,7 +789,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
     setSelectedSlotIdx(nextSlotIdx);
     setTallyNav(prev => ({
       ...prev,
-      blockIdx: nextBlockIdx
+      blockIdx: options?.keepVisibleSavedBlock ? lastSavedBlockIdx : nextBlockIdx
     }));
     if (options?.closeEditor ?? true) {
       setIsEditorOpen(false);
@@ -768,7 +841,12 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
   };
 
   const handleConfirmAll = () => {
-    persistEntriesToSheet([...pendingEntriesPreview], { closeEditor: true, autoAdvanceWhenFull: true });
+    persistEntriesToSheet([...pendingEntriesPreview], {
+      closeEditor: true,
+      autoAdvanceWhenFull: true,
+      keepVisibleSavedBlock: true,
+      successMessage: `Saved ${pendingEntriesPreview.length} entr${pendingEntriesPreview.length === 1 ? 'y' : 'ies'} to Sheet ${tallyNav.sheetIdx + 1}. You can continue this tally later.`
+    });
   };
 
   const getTapeHighlight = (slotNum: number) => {
@@ -1067,7 +1145,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
 
           if (followUp.command === 'finalize-session') {
             const finalizeMessage =
-              'Finalizing saves the queued batch fares into the current sheet. Review it, then confirm below.';
+              'This will save the queued batch fares into the current sheet. You can still come back and continue this tally later.';
             setPendingVoiceNavAction({
               status: 'match',
               transcript,
@@ -1240,8 +1318,14 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               <button
                 key={t.id}
                 onClick={() => {
-                  setTallyNav(n => ({ ...n, tripIdx: i, sheetIdx: 0, blockIdx: 0 }));
-                  setSelectedSlotIdx(getFirstEmptySlotIndex(t.sheets[0]?.slots ?? Array(SLOTS_PER_SHEET).fill(0)));
+                  const preferredTarget = getPreferredTripTarget(t);
+                  setTallyNav(n => ({
+                    ...n,
+                    tripIdx: i,
+                    sheetIdx: preferredTarget.sheetIdx,
+                    blockIdx: preferredTarget.blockIdx
+                  }));
+                  setSelectedSlotIdx(preferredTarget.slotIdx);
                 }}
                 className={`flex-shrink-0 px-8 py-4 border-b-2 transition-all ${tallyNav.tripIdx === i ? 'bg-white dark:bg-night-charcoal border-primary text-primary' : 'border-transparent text-slate-400'}`}>
                 <span className="font-900 uppercase text-[11px] tracking-[0.1em]">{t.name}</span>
@@ -1258,8 +1342,9 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               <button
                 key={s.id}
                 onClick={() => {
-                  setTallyNav(n => ({ ...n, sheetIdx: i, blockIdx: 0 }));
-                  setSelectedSlotIdx(getFirstEmptySlotIndex(s.slots));
+                  const preferredTarget = getPreferredReopenTarget(s.slots);
+                  setTallyNav(n => ({ ...n, sheetIdx: i, blockIdx: preferredTarget.blockIdx }));
+                  setSelectedSlotIdx(preferredTarget.slotIdx);
                 }}
                 className={`flex-shrink-0 min-w-[90px] py-3.5 border-b-2 transition-all flex flex-col items-center justify-center ${tallyNav.sheetIdx === i ? 'border-primary text-primary bg-white dark:bg-white/5' : 'border-transparent text-slate-300'}`}>
                 <span className="font-900 uppercase text-[10px] tracking-wider leading-none">Sheet {i + 1}</span>
@@ -1803,7 +1888,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                  >
                    <div className="flex items-center gap-2">
                      <span className="material-icons text-emerald-500 text-sm">check_circle</span>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Finalize Session</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Save Current Entries</p>
                    </div>
                    <div className="flex items-center gap-4">
                      <p className="text-xl font-900 text-primary">{peso}{grandTotalInEditor}</p>
@@ -1835,7 +1920,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                       disabled={grandTotalInEditor === 0} 
                       className="w-full bg-primary text-white py-4 rounded-[1.5rem] font-black uppercase text-[10px] shadow-lg active:scale-95 border-b-[4px] border-black/20 flex items-center justify-center gap-2"
                     >
-                     Finalize Session {peso}{grandTotalInEditor}
+                     Save Current Entries {peso}{grandTotalInEditor}
                      <span className="material-icons text-sm">check_circle</span>
                    </button>
                  </div>
@@ -1875,7 +1960,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
             <div className="relative bg-white dark:bg-night-charcoal rounded-[2.5rem] p-8 w-full shadow-2xl text-center">
               <h3 className="text-lg font-900 text-slate-800 dark:text-white mb-6 uppercase">
                 {pendingAction.type === 'batch-typing-help' ? 'Typing Works In Standard' :
-                 pendingAction.type === 'finalize-session' ? 'Finalize This Entry?' :
+                 pendingAction.type === 'finalize-session' ? 'Save Current Entries?' :
                  pendingAction.type === 'reset-batch' ? 'Clear Batch Entries?' :
                  pendingAction.type === 'delete-sheet' ? `Delete Sheet ${(pendingAction.sheetIdx ?? 0) + 1}?` :
                  pendingAction.type === 'reset-block' ? `Reset Block ${pendingAction.blockIdx! + 1}?` :
@@ -1883,7 +1968,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
               </h3>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-6 -mt-4">
                 {pendingAction.type === 'batch-typing-help' ? 'Batch uses the plus and minus counters. If you want to type a fare in the punch box, switch to Standard first.' :
-                 pendingAction.type === 'finalize-session' ? `This will save ${previewEntryCount} pending entr${previewEntryCount === 1 ? 'y' : 'ies'} worth ${peso}${grandTotalInEditor} into the current sheet.` :
+                 pendingAction.type === 'finalize-session' ? `This will save ${previewEntryCount} pending entr${previewEntryCount === 1 ? 'y' : 'ies'} worth ${peso}${grandTotalInEditor} into the current sheet. You can open this tally again later and continue adding.` :
                  pendingAction.type === 'reset-batch' ? 'This will reset all current ticket counts to zero.' :
                  pendingAction.type === 'delete-sheet' ? 'This removes the current sheet and keeps the remaining sheet numbers in order.' :
                  pendingAction.type === 'reset-block' ? 'All 25 slots in this block will be cleared. This action cannot be undone.' :
@@ -1910,7 +1995,7 @@ const TallyScreen: React.FC<Props> = ({ onExit }) => {
                     {pendingAction.type === 'batch-typing-help'
                       ? 'Switch To Standard'
                       : pendingAction.type === 'finalize-session'
-                        ? 'Save And Finalize'
+                        ? 'Save Current Entries'
                         : 'Confirm'}
                   </button>
                   <button onClick={() => setPendingAction(null)} className="w-full py-3 text-slate-400 font-black uppercase text-[9px]">Cancel</button>

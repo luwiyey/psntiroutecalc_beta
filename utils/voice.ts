@@ -804,6 +804,12 @@ const STOP_SPEECH_CORRECTIONS: Array<[RegExp, string]> = [
   [/\blisa\b/g, ' realiza '],
   [/\bpugoo\b/g, ' pugo '],
   [/\btaloyy\b/g, ' taloy '],
+  [/\blunion\b/g, ' la union '],
+  [/\blaunion\b/g, ' la union '],
+  [/\bp[\s-]*s[\s-]*u\b/g, ' psu '],
+  [/\bps you\b/g, ' psu '],
+  [/\bpiece you\b/g, ' psu '],
+  [/\bpeace you\b/g, ' psu '],
   [/\btuba a\b/g, ' tuba '],
   [/\btuwa\b/g, ' tuba '],
   [/\brok shed\b/g, ' rockshed '],
@@ -1246,7 +1252,10 @@ const createAliasCandidates = (routeId: string, stop: Stop) => {
   const routeContext = getRouteStopVoiceContext(routeId, stop.name);
   const candidates = new Set<string>();
   const splitSeeds = [stop.name, ...(stop.aliases ?? [])];
-  const exactOnlySeeds = routeContext?.aliases ?? [];
+  const exactOnlySeeds = [
+    ...(routeContext?.aliases ?? []),
+    ...(routeContext?.locationLabel ? [routeContext.locationLabel] : [])
+  ];
 
   splitSeeds.forEach(seed => {
     const normalized = normalizeStopText(seed);

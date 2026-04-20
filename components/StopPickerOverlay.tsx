@@ -53,6 +53,7 @@ const StopPickerOverlay: React.FC<Props> = ({
   helperMessage = null
 }) => {
   const [search, setSearch] = useState('');
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
@@ -64,6 +65,7 @@ const StopPickerOverlay: React.FC<Props> = ({
   const [googleResolution, setGoogleResolution] = useState<GooglePlaceResolution | null>(null);
   const { activeRoute } = useApp();
   const voiceRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const canUseVoiceRecognition = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
   const routeStart = activeRoute.stops[0];
   const routeEnd = activeRoute.stops[activeRoute.stops.length - 1];
@@ -106,6 +108,30 @@ const StopPickerOverlay: React.FC<Props> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined' || !window.visualViewport) {
+      setKeyboardInset(0);
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const updateKeyboardInset = () => {
+      const nextInset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardInset(nextInset);
+    };
+
+    updateKeyboardInset();
+    viewport.addEventListener('resize', updateKeyboardInset);
+    viewport.addEventListener('scroll', updateKeyboardInset);
+    window.addEventListener('resize', updateKeyboardInset);
+
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardInset);
+      viewport.removeEventListener('scroll', updateKeyboardInset);
+      window.removeEventListener('resize', updateKeyboardInset);
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const searchText = search.trim().toLowerCase();
@@ -120,6 +146,7 @@ const StopPickerOverlay: React.FC<Props> = ({
   });
 
   const formatKM = (km: number) => (km % 1 === 0 ? km.toString() : km.toFixed(1));
+  const bottomInsetPadding = `calc(env(safe-area-inset-bottom) + ${keyboardInset}px)`;
 
   const applyVoiceStop = () => {
     if (!voiceStopResult || voiceStopResult.status !== 'match') return;
@@ -255,7 +282,10 @@ const StopPickerOverlay: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white animate-fade-in dark:bg-black">
+    <div
+      className="fixed inset-0 z-[100] flex flex-col bg-white animate-fade-in dark:bg-black"
+      style={{ paddingBottom: bottomInsetPadding }}
+    >
       <header
         className="flex items-center justify-between border-b border-slate-100 px-4 pb-4 dark:border-white/10"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}
@@ -272,10 +302,14 @@ const StopPickerOverlay: React.FC<Props> = ({
           <span className="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">search</span>
           <input
             autoFocus
+            ref={searchInputRef}
             className="w-full rounded-2xl border-2 border-slate-100 bg-white py-4 pl-12 pr-4 font-bold text-slate-800 outline-none transition-colors caret-primary focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-white/10 dark:bg-black dark:text-white"
             placeholder={`Search ${searchLabel} or nearby place...`}
             value={search}
             onChange={event => setSearch(event.target.value)}
+            onFocus={() => {
+              searchInputRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            }}
           />
         </div>
 
@@ -319,7 +353,10 @@ const StopPickerOverlay: React.FC<Props> = ({
         )}
 
         {googleResults.length > 0 && (
-          <div className="mb-4 space-y-2">
+          <div
+            className="mb-4 space-y-2 overflow-y-auto pr-1 visible-scrollbar"
+            style={{ maxHeight: keyboardInset > 0 ? '32vh' : '18rem' }}
+          >
             {googleResults.map(place => (
               <button
                 key={place.placeId}
@@ -460,7 +497,7 @@ const StopPickerOverlay: React.FC<Props> = ({
         )}
       </div>
 
-      <div style={{ height: 'calc(env(safe-area-inset-bottom) + 12px)' }} className="shrink-0 bg-white dark:bg-black" />
+      <div style={{ height: bottomInsetPadding }} className="shrink-0 bg-white dark:bg-black" />
 
       <FloatingVoiceButton
         active={isVoiceListening}

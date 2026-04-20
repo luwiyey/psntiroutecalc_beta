@@ -40,10 +40,12 @@ const MapPickerOverlay: React.FC<Props> = ({
   onConfirm
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const mapRef = useRef<import('leaflet').Map | null>(null);
   const markerRef = useRef<import('leaflet').Marker | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<MapPickerPoint>(initialPoint);
   const [search, setSearch] = useState('');
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<GooglePlaceCandidate[]>([]);
@@ -131,6 +133,30 @@ const MapPickerOverlay: React.FC<Props> = ({
     mapRef.current.setView(nextLatLng, mapRef.current.getZoom() || 16, { animate: false });
   }, [isOpen, selectedPoint.latitude, selectedPoint.longitude]);
 
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined' || !window.visualViewport) {
+      setKeyboardInset(0);
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const updateKeyboardInset = () => {
+      const nextInset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setKeyboardInset(nextInset);
+    };
+
+    updateKeyboardInset();
+    viewport.addEventListener('resize', updateKeyboardInset);
+    viewport.addEventListener('scroll', updateKeyboardInset);
+    window.addEventListener('resize', updateKeyboardInset);
+
+    return () => {
+      viewport.removeEventListener('resize', updateKeyboardInset);
+      viewport.removeEventListener('scroll', updateKeyboardInset);
+      window.removeEventListener('resize', updateKeyboardInset);
+    };
+  }, [isOpen]);
+
   const handlePlaceSearch = async () => {
     const trimmedQuery = search.trim();
     if (!trimmedQuery) {
@@ -177,9 +203,21 @@ const MapPickerOverlay: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
+  const modalMaxHeight = keyboardInset > 0 ? `calc(100dvh - ${keyboardInset + 24}px)` : '92vh';
+  const overlayPaddingBottom = `calc(env(safe-area-inset-bottom) + ${keyboardInset}px)`;
+
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-night-charcoal">
+    <div
+      className="fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm sm:items-center"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top) + 1rem)',
+        paddingBottom: overlayPaddingBottom
+      }}
+    >
+      <div
+        className="flex w-full max-w-lg flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-night-charcoal"
+        style={{ maxHeight: modalMaxHeight }}
+      >
         <div
           className="flex items-center justify-between border-b border-slate-100 px-5 pb-4 dark:border-white/10"
           style={{ paddingTop: 'calc(env(safe-area-inset-top) + 14px)' }}
@@ -206,6 +244,7 @@ const MapPickerOverlay: React.FC<Props> = ({
             </label>
             <div className="mt-3 flex gap-2">
               <input
+                ref={searchInputRef}
                 value={search}
                 onChange={event => setSearch(event.target.value)}
                 onKeyDown={event => {
@@ -213,6 +252,9 @@ const MapPickerOverlay: React.FC<Props> = ({
                     event.preventDefault();
                     void handlePlaceSearch();
                   }
+                }}
+                onFocus={() => {
+                  searchInputRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
                 }}
                 className="min-w-0 flex-1 rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
                 placeholder="Search terminal, landmark, or stop"
@@ -229,7 +271,10 @@ const MapPickerOverlay: React.FC<Props> = ({
               <p className="mt-3 text-xs font-semibold text-amber-700 dark:text-amber-200">{searchError}</p>
             )}
             {searchResults.length > 0 && (
-              <div className="mt-3 space-y-2">
+              <div
+                className="mt-3 space-y-2 overflow-y-auto pr-1 visible-scrollbar"
+                style={{ maxHeight: keyboardInset > 0 ? '32vh' : '16rem' }}
+              >
                 {searchResults.map(place => (
                   <button
                     key={place.placeId}

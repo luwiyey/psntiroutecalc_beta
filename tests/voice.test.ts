@@ -224,6 +224,30 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toBe('Baguio');
   });
 
+  it('matches Rosario La Union to PSU using location and campus aliases', () => {
+    const result = parseFareVoiceTranscript('Rosario La Union to PSU', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Rosario La Union to PSU.');
+    }
+
+    expect(result.originStop.name).toBe('Rosario (La Union)');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+  });
+
+  it('matches Rosario lunion to P S U from noisy spaced transcripts', () => {
+    const result = parseFareVoiceTranscript('Rosario lunion to P S U', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected a matched fare result for Rosario lunion to P S U.');
+    }
+
+    expect(result.originStop.name).toBe('Rosario (La Union)');
+    expect(result.destinationStop.name).toContain('Urdaneta');
+  });
+
   it('matches Magic Mall back to Pozzorubio Bayan', () => {
     const result = parseFareVoiceTranscript('Magic Mall to Baguio', ordinaryBayambangRoute);
 
@@ -724,6 +748,28 @@ describe('parseStopVoiceTranscript', () => {
 
     expect(sisonResult.stop.name).toContain('Sison');
     expect(pozzorubioResult.stop.name).toContain('Pozzorubio');
+  });
+
+  it('matches spaced or slurred campus aliases like P S U', () => {
+    const result = parseStopVoiceTranscript('P S U', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected P S U to match the Urdaneta campus stop.');
+    }
+
+    expect(result.stop.name).toContain('Urdaneta');
+  });
+
+  it('matches Rosario lunion to Rosario La Union', () => {
+    const result = parseStopVoiceTranscript('Rosario lunion', ordinaryBayambangRoute);
+
+    expect(result.status).toBe('match');
+    if (result.status !== 'match') {
+      throw new Error('Expected Rosario lunion to match Rosario La Union.');
+    }
+
+    expect(result.stop.name).toBe('Rosario (La Union)');
   });
 });
 
