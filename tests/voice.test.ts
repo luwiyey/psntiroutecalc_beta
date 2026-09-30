@@ -49,8 +49,8 @@ describe('parseFareVoiceTranscript', () => {
     expect(result.destinationStop.name).toBe('Dau');
     expect(result.fareType).toBe('regular');
     expect(result.distance).toBe(94);
-    expect(result.regularFare).toBe(221);
-    expect(result.discountedFare).toBe(177);
+    expect(result.regularFare).toBe(254);
+    expect(result.discountedFare).toBe(203);
   });
 
   it('rejects the same stop for origin and destination', () => {
