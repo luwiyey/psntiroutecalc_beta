@@ -21,6 +21,40 @@ const getRouteFare = (routeId: string) => {
   return route.fare;
 };
 
+const getRoute = (routeId: string) => {
+  const route = ROUTES.find(candidate => candidate.id === routeId);
+  if (!route) {
+    throw new Error(`Route ${routeId} not found`);
+  }
+
+  return route;
+};
+
+describe('Cabanatuan fare-guide route data', () => {
+  it.each([
+    [CABANATUAN_VIA_TARLAC_ROUTE_ID, 86],
+    [CABANATUAN_VIA_SAN_JOSE_ROUTE_ID, 83]
+  ])('starts %s at the guide KM', (routeId, startKm) => {
+    const route = getRoute(routeId);
+
+    expect(route.stops[0].km).toBe(startKm);
+    expect(route.stops[0].name).toBe('Cabanatuan');
+    expect(route.stops.at(-1)?.km).toBe(281);
+    expect(route.stops.at(-1)?.name).toBe('Baguio');
+  });
+
+  it.each([CABANATUAN_VIA_TARLAC_ROUTE_ID, CABANATUAN_VIA_SAN_JOSE_ROUTE_ID])(
+    'uses KM 239 for Maoasoas on %s',
+    routeId => {
+      const route = getRoute(routeId);
+      const maoasoas = route.stops.find(stop => stop.name === 'Maoasoas');
+
+      expect(maoasoas?.km).toBe(239);
+      expect(maoasoas?.distanceToBaguio).toBe(42);
+    }
+  );
+});
+
 describe('calculateFare', () => {
   it.each([
     [ORDINARY_BAYAMBANG_ROUTE_ID, 220, 176],
@@ -56,12 +90,52 @@ describe('calculateFare', () => {
     expect(fare.isMinApplied).toBe(false);
   });
 
-  it('keeps the aircon minimum fare through 24 km', () => {
-    const fare = calculateFare(24, getRouteFare(AIRCON_BAYAMBANG_ROUTE_ID));
+  it('keeps the aircon minimum fare through 26 km', () => {
+    const fare = calculateFare(26, getRouteFare(AIRCON_BAYAMBANG_ROUTE_ID));
 
-    expect(fare.reg).toBe(60);
-    expect(fare.disc).toBe(48);
+    expect(fare.reg).toBe(70);
+    expect(fare.disc).toBe(56);
     expect(fare.isMinApplied).toBe(true);
+  });
+
+  it('uses the computed Bayambang aircon fare after 26 km', () => {
+    const fare = calculateFare(27, getRouteFare(AIRCON_BAYAMBANG_ROUTE_ID));
+
+    expect(fare.reg).toBe(73);
+    expect(fare.disc).toBe(58);
+    expect(fare.isMinApplied).toBe(false);
+  });
+
+  it.each([1, 24, 25, 26])('uses the new Cabanatuan via Tarlac minimum at %s km', distance => {
+    const fare = calculateFare(distance, getRouteFare(CABANATUAN_VIA_TARLAC_ROUTE_ID));
+
+    expect(fare.reg).toBe(70);
+    expect(fare.disc).toBe(56);
+    expect(fare.isMinApplied).toBe(true);
+  });
+
+  it('computes Cabanatuan via Tarlac fares beyond the 26 km minimum window', () => {
+    const fare = calculateFare(27, getRouteFare(CABANATUAN_VIA_TARLAC_ROUTE_ID));
+
+    expect(fare.reg).toBe(73);
+    expect(fare.disc).toBe(58);
+    expect(fare.isMinApplied).toBe(false);
+  });
+
+  it('uses the new Cabanatuan via San Jose minimum through 26 km', () => {
+    const fare = calculateFare(26, getRouteFare(CABANATUAN_VIA_SAN_JOSE_ROUTE_ID));
+
+    expect(fare.reg).toBe(70);
+    expect(fare.disc).toBe(56);
+    expect(fare.isMinApplied).toBe(true);
+  });
+
+  it('computes Cabanatuan via San Jose fares after the 26 km minimum window', () => {
+    const fare = calculateFare(27, getRouteFare(CABANATUAN_VIA_SAN_JOSE_ROUTE_ID));
+
+    expect(fare.reg).toBe(73);
+    expect(fare.disc).toBe(58);
+    expect(fare.isMinApplied).toBe(false);
   });
 
   it('uses the computed fare after the new aircon minimum window', () => {
