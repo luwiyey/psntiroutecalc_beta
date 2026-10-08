@@ -26,8 +26,9 @@ being integrated from this guide.
 
 - Via San Jose header says PHP 60 minimum, but the user confirmed that the
   rows are authoritative: PHP 70 regular / PHP 56 discounted.
-- The image prints Maoasoas as KM 289, but the user confirmed the correct KM
-  is KM 239, between San Luis at KM 237 and Pugo at KM 245.
+- The earlier image printed Maoasoas as KM 289 and the user first corrected it
+  to KM 239. The newer October 8 guide supersedes that correction and prints
+  Maoasoas at KM 241 on both tables; KM 241 is now the active value.
 - Via Tarlac's San Isidro row sharing KM 165 with Apulid appears to show
   PHP 213 / 186; the stated formula from KM 86 gives PHP 213 / 171.
   Confirm whether the formula takes precedence over inconsistent printed cells.
@@ -45,5 +46,5 @@ being integrated from this guide.
 - Keep same-origin/destination journeys at zero; the terminal's printed
   minimum-fare cell is not a fare for travelling zero distance.
 
-The confirmed route and minimum-fare changes are being tested before push and
+The October 8 route and minimum-fare changes are being tested before push and
 deployment. The older unrelated worktree changes remain untouched.

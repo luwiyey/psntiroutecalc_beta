@@ -44,13 +44,13 @@ describe('Cabanatuan fare-guide route data', () => {
   });
 
   it.each([CABANATUAN_VIA_TARLAC_ROUTE_ID, CABANATUAN_VIA_SAN_JOSE_ROUTE_ID])(
-    'uses KM 239 for Maoasoas on %s',
+    'uses KM 241 for Maoasoas on %s',
     routeId => {
       const route = getRoute(routeId);
       const maoasoas = route.stops.find(stop => stop.name === 'Maoasoas');
 
-      expect(maoasoas?.km).toBe(239);
-      expect(maoasoas?.distanceToBaguio).toBe(42);
+      expect(maoasoas?.km).toBe(241);
+      expect(maoasoas?.distanceToBaguio).toBe(40);
     }
   );
 });
