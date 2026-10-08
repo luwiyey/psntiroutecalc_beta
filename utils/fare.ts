@@ -9,7 +9,8 @@ export interface FareCalculation {
 }
 
 export const roundToNearestPeso = (value: number) => Math.ceil(value - 0.5);
-export const roundToStandardPeso = (value: number) => Math.round(value);
+// Fare guides round an exact .50 down; only values above .50 round up.
+export const roundToStandardPeso = (value: number) => Math.ceil(value - 0.5);
 export const formatFareRate = (value: number) => {
   const fixedToThree = value.toFixed(3);
   return fixedToThree.endsWith('0') ? value.toFixed(2) : fixedToThree;

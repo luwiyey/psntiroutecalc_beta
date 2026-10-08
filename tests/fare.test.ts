@@ -146,6 +146,16 @@ describe('calculateFare', () => {
     expect(fare.isMinApplied).toBe(false);
   });
 
+  it('rounds an exact .50 fare down and a value above .50 up', () => {
+    const exactHalf = calculateFare(35, getRouteFare(TARLAC_ROUTE_ID));
+    const aboveHalf = calculateFare(37, getRouteFare(TARLAC_ROUTE_ID));
+
+    expect(exactHalf.rawReg).toBe(94.5);
+    expect(exactHalf.reg).toBe(94);
+    expect(aboveHalf.rawReg).toBeCloseTo(99.9);
+    expect(aboveHalf.reg).toBe(100);
+  });
+
   it('keeps the Cubao-Baguio minimum fare through 37 km', () => {
     const fare = calculateFare(37, getRouteFare(CUBAO_BAGUIO_ROUTE_ID));
 

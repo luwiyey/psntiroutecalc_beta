@@ -1,6 +1,6 @@
 import type { AppSettings, RouteProfile, Stop } from './types';
 
-export const FARE_SETTINGS_VERSION = 18;
+export const FARE_SETTINGS_VERSION = 19;
 export const DISCOUNT_RATE_MULTIPLIER = 0.8;
 export const VICE_VERSA = '\u2194';
 
